@@ -1,0 +1,10 @@
+# Domains to block during scheduled hours
+# One domain per line
+# Lines starting with # are ignored
+
+# NextDNS config access
+my.nextdns.io
+
+# Test with additional domains
+reddit.com
+twitter.com
