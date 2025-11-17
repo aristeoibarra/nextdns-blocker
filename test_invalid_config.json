@@ -1,0 +1,35 @@
+{
+  "domains": [
+    {
+      "domain": "test1.com",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["mon", "tuesday"],
+            "time_ranges": [
+              {"start": "09:00", "end": "17:00"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "test2.com",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["monday"],
+            "time_ranges": [
+              {"start": "25:00", "end": "17:00"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schedule": {
+        "available_hours": []
+      }
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 # Configuration with credentials
 .env
 
-# User's custom domain list (optional, uncomment if you want to ignore it)
-# domains.txt
+# User's custom domain configuration (optional, uncomment if you want to ignore it)
+# domains.json
 
 # Logs
 logs/

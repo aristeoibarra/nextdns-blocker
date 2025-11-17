@@ -1,0 +1,128 @@
+{
+  "domains": [
+    {
+      "domain": "example.com",
+      "description": "Example with different schedule per day",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["monday"],
+            "time_ranges": [
+              {"start": "09:00", "end": "12:00"}
+            ]
+          },
+          {
+            "days": ["tuesday"],
+            "time_ranges": [
+              {"start": "14:00", "end": "18:00"}
+            ]
+          },
+          {
+            "days": ["wednesday"],
+            "time_ranges": [
+              {"start": "10:00", "end": "16:00"}
+            ]
+          },
+          {
+            "days": ["thursday"],
+            "time_ranges": [
+              {"start": "08:00", "end": "11:30"}
+            ]
+          },
+          {
+            "days": ["friday"],
+            "time_ranges": [
+              {"start": "13:00", "end": "17:00"}
+            ]
+          },
+          {
+            "days": ["saturday"],
+            "time_ranges": [
+              {"start": "10:00", "end": "14:00"}
+            ]
+          },
+          {
+            "days": ["sunday"],
+            "time_ranges": [
+              {"start": "16:00", "end": "20:00"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "reddit.com",
+      "description": "Social media - only available during lunch and after work",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              {"start": "12:00", "end": "13:00"},
+              {"start": "18:00", "end": "22:00"}
+            ]
+          },
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              {"start": "10:00", "end": "22:00"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "twitter.com",
+      "description": "Social media - only evenings",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+            "time_ranges": [
+              {"start": "19:00", "end": "23:00"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "my.nextdns.io",
+      "description": "NextDNS config - only weekends",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              {"start": "00:00", "end": "23:59"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "youtube.com",
+      "description": "Video streaming - limited to evenings and weekends",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              {"start": "20:00", "end": "23:00"}
+            ]
+          },
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              {"start": "08:00", "end": "23:00"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "facebook.com",
+      "description": "Always blocked (no schedule = always blocked)",
+      "schedule": null
+    }
+  ]
+}
