@@ -141,13 +141,13 @@ To always block a domain (no available hours), set schedule to `null`:
 
 ## Commands
 
-### Sync (Recommended for Scheduled Blocking)
+### Sync (Recommended)
 
 ```bash
 python3 nextdns_blocker.py sync
 ```
 
-Synchronizes all domains based on their configured schedules. This is the main command for schedule-based blocking.
+Synchronizes all domains based on their configured schedules. This is the main command and runs automatically every 10 minutes via cron.
 
 ### Status
 
@@ -157,20 +157,20 @@ python3 nextdns_blocker.py status
 
 Shows the current blocking status of all domains.
 
-### Manual Block/Unblock (Legacy)
+### Force Block/Unblock
 
 ```bash
-python3 nextdns_blocker.py block    # Block all domains
-python3 nextdns_blocker.py unblock  # Unblock all domains
+python3 nextdns_blocker.py block    # Force block all domains (ignores schedules)
+python3 nextdns_blocker.py unblock  # Force unblock all domains (ignores schedules)
 ```
 
-These commands still work for manual override but don't respect schedules.
+These commands force block/unblock all domains regardless of their schedules. Use for manual override only.
 
 ## Automatic Synchronization
 
-When you run `install.sh` and a `domains.json` file exists, the system automatically:
+When you run `install.sh`, the system automatically:
 
-1. Detects schedule-based mode
+1. Validates your `domains.json` configuration
 2. Sets up a cron job to run `sync` every 10 minutes
 3. Continuously evaluates and applies domain schedules
 
@@ -184,38 +184,26 @@ The installer creates:
 
 This ensures domains are automatically blocked/unblocked according to their schedules.
 
-## Migration from domains.txt
+## Getting Started
 
-### Legacy Mode (domains.txt)
-
-If you have an existing `domains.txt` file:
-
-```
-my.nextdns.io
-reddit.com
-twitter.com
-```
-
-This still works! The system will:
-- Use time-based blocking (UNLOCK_HOUR and LOCK_HOUR from .env)
-- Apply the same schedule to ALL domains
-- Use two cron jobs (one for block, one for unblock)
-
-### Migration Steps
+### Setup Steps
 
 1. Copy the example configuration:
    ```bash
    cp domains.json.example domains.json
    ```
 
-2. Edit `domains.json` with your domains and schedules
+2. Edit `domains.json` with your domains and schedules:
+   ```bash
+   nano domains.json
+   ```
 
 3. Test the configuration:
    ```bash
    python3 nextdns_blocker.py sync
    ```
 
-4. Re-run the installer to update cron jobs:
+4. Run the installer to set up automatic sync:
    ```bash
    ./install.sh
    ```

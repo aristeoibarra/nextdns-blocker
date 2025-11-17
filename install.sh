@@ -80,49 +80,43 @@ if grep -q "tu_api_key_aqui\|your_api_key_here" .env; then
     exit 1
 fi
 
+# Verify domains.json exists
+if [ ! -f "$INSTALL_DIR/domains.json" ]; then
+    echo -e "${RED}❌ domains.json file not found${NC}"
+    echo ""
+    echo "Please create domains.json file:"
+    echo "  1. Copy example: cp domains.json.example domains.json"
+    echo "  2. Edit file: nano domains.json"
+    echo "  3. Configure your domains and schedules"
+    echo "  4. Run this script again"
+    exit 1
+fi
+
+# Validate JSON syntax
+if ! python3 -m json.tool "$INSTALL_DIR/domains.json" > /dev/null 2>&1; then
+    echo -e "${RED}❌ domains.json has invalid JSON syntax${NC}"
+    echo "Please fix the JSON errors and run this script again"
+    exit 1
+fi
+
 echo -e "${GREEN}✓${NC} Configuration valid"
 echo ""
 
 # Setup cron jobs
 echo -e "${YELLOW}[7/7]${NC} Setting up cron jobs..."
 
-# Check if domains.json exists for schedule-based sync
-if [ -f "$INSTALL_DIR/domains.json" ]; then
-    echo -e "${BLUE}Using schedule-based sync mode (domains.json detected)${NC}"
+# Sync every 10 minutes based on domain schedules
+CRON_SYNC="*/10 * * * * cd $INSTALL_DIR && /usr/bin/python3 nextdns_blocker.py sync >> $INSTALL_DIR/logs/cron.log 2>&1"
 
-    # Sync every 10 minutes based on domain schedules
-    CRON_SYNC="*/10 * * * * cd $INSTALL_DIR && /usr/bin/python3 nextdns_blocker.py sync >> $INSTALL_DIR/logs/cron.log 2>&1"
+# Remove old cron jobs
+crontab -l 2>/dev/null | grep -v "nextdns_blocker.py" | crontab - 2>/dev/null || true
 
-    # Remove old cron jobs
-    crontab -l 2>/dev/null | grep -v "nextdns_blocker.py" | crontab - 2>/dev/null || true
+# Add new sync cron job
+(crontab -l 2>/dev/null; echo "$CRON_SYNC") | crontab -
 
-    # Add new sync cron job
-    (crontab -l 2>/dev/null; echo "$CRON_SYNC") | crontab -
-
-    echo -e "${GREEN}✓${NC} Cron job configured:"
-    echo "   - Sync: Every 10 minutes (based on domain schedules)"
-    echo ""
-else
-    echo -e "${BLUE}Using legacy time-based mode (domains.txt)${NC}"
-
-    source .env
-    UNLOCK_HOUR=${UNLOCK_HOUR:-18}
-    LOCK_HOUR=${LOCK_HOUR:-22}
-
-    CRON_UNLOCK="0 $UNLOCK_HOUR * * * cd $INSTALL_DIR && /usr/bin/python3 nextdns_blocker.py unblock >> $INSTALL_DIR/logs/cron.log 2>&1"
-    CRON_LOCK="0 $LOCK_HOUR * * * cd $INSTALL_DIR && /usr/bin/python3 nextdns_blocker.py block >> $INSTALL_DIR/logs/cron.log 2>&1"
-
-    # Remove old cron jobs
-    crontab -l 2>/dev/null | grep -v "nextdns_blocker.py" | crontab - 2>/dev/null || true
-
-    # Add new cron jobs
-    (crontab -l 2>/dev/null; echo "$CRON_UNLOCK"; echo "$CRON_LOCK") | crontab -
-
-    echo -e "${GREEN}✓${NC} Cron jobs configured:"
-    echo "   - Unblock: ${UNLOCK_HOUR}:00"
-    echo "   - Block:   ${LOCK_HOUR}:00"
-    echo ""
-fi
+echo -e "${GREEN}✓${NC} Cron job configured:"
+echo "   - Sync: Every 10 minutes (schedule-based blocking)"
+echo ""
 
 # Verify installation
 echo -e "${BLUE}========================================${NC}"
@@ -136,22 +130,14 @@ echo ""
 echo -e "${BLUE}Info:${NC}"
 echo "  📁 Directory: $INSTALL_DIR"
 echo "  📝 Logs: $INSTALL_DIR/logs/"
-
-if [ -f "$INSTALL_DIR/domains.json" ]; then
-    echo "  ⏰ Mode: Schedule-based (domains.json)"
-    echo "  🔄 Sync: Every 10 minutes"
-else
-    echo "  ⏰ Mode: Legacy time-based (domains.txt)"
-    echo "  🔓 Unblock: ${UNLOCK_HOUR}:00"
-    echo "  🔒 Block: ${LOCK_HOUR}:00"
-fi
-
+echo "  ⏰ Sync: Every 10 minutes (schedule-based)"
+echo "  📋 Config: domains.json"
 echo ""
 echo -e "${BLUE}Commands:${NC}"
 echo "  Check status:  python3 $INSTALL_DIR/nextdns_blocker.py status"
 echo "  Manual sync:   python3 $INSTALL_DIR/nextdns_blocker.py sync"
-echo "  Block now:     python3 $INSTALL_DIR/nextdns_blocker.py block"
-echo "  Unblock now:   python3 $INSTALL_DIR/nextdns_blocker.py unblock"
+echo "  Force block:   python3 $INSTALL_DIR/nextdns_blocker.py block"
+echo "  Force unblock: python3 $INSTALL_DIR/nextdns_blocker.py unblock"
 echo "  View logs:     tail -f $INSTALL_DIR/logs/nextdns_blocker.log"
 echo "  View cron:     crontab -l"
 echo ""

@@ -238,7 +238,7 @@ class ScheduleEvaluator:
 
 def load_domain_configs(script_dir: str) -> List[Dict]:
     """
-    Loads domain configurations with schedules from domains.json or domains.txt
+    Loads domain configurations with schedules from domains.json
 
     Returns list of dicts with format:
     [
@@ -251,75 +251,28 @@ def load_domain_configs(script_dir: str) -> List[Dict]:
     ]
     """
     json_file = os.path.join(script_dir, 'domains.json')
-    txt_file = os.path.join(script_dir, 'domains.txt')
 
-    # Try to load from JSON first (new format with schedules)
-    if os.path.exists(json_file):
-        try:
-            with open(json_file, 'r') as f:
-                config = json.load(f)
+    if not os.path.exists(json_file):
+        logger.error(f"❌ Configuration file not found: {json_file}")
+        logger.error("Please create domains.json file. See domains.json.example for reference.")
+        sys.exit(1)
 
-            domains_config = config.get('domains', [])
-            if not domains_config:
-                logger.warning("No domains found in domains.json")
-                return []
+    try:
+        with open(json_file, 'r') as f:
+            config = json.load(f)
 
-            logger.info(f"Loaded {len(domains_config)} domain(s) with schedules from domains.json")
-            return domains_config
+        domains_config = config.get('domains', [])
+        if not domains_config:
+            logger.error("❌ No domains found in domains.json")
+            sys.exit(1)
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing domains.json: {e}")
-            logger.info("Falling back to domains.txt")
+        logger.info(f"Loaded {len(domains_config)} domain(s) with schedules from domains.json")
+        return domains_config
 
-    # Fall back to domains.txt (legacy format, no schedules)
-    if os.path.exists(txt_file):
-        domains = []
-        with open(txt_file, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    # Legacy format: no schedule means always blocked
-                    domains.append({
-                        "domain": line,
-                        "schedule": None
-                    })
-
-        if not domains:
-            logger.warning("No domains found in domains.txt")
-            return []
-
-        logger.info(f"Loaded {len(domains)} domain(s) from domains.txt (legacy mode, no schedules)")
-        return domains
-
-    # No configuration found
-    logger.warning("No domains.json or domains.txt found, using default")
-    return [{
-        "domain": "my.nextdns.io",
-        "schedule": None
-    }]
-
-
-def load_domains(script_dir: str) -> list:
-    """Loads domains from domains.txt file (legacy, kept for compatibility)"""
-    domains_file = os.path.join(script_dir, 'domains.txt')
-    domains = []
-
-    if not os.path.exists(domains_file):
-        logger.warning(f"domains.txt not found, using default: my.nextdns.io")
-        return ["my.nextdns.io"]
-
-    with open(domains_file, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#'):
-                domains.append(line)
-
-    if not domains:
-        logger.warning("No domains found in domains.txt, using default: my.nextdns.io")
-        return ["my.nextdns.io"]
-
-    logger.info(f"Loaded {len(domains)} domain(s) from domains.txt")
-    return domains
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ Error parsing domains.json: {e}")
+        logger.error("Please check your JSON syntax. Use: python3 -m json.tool domains.json")
+        sys.exit(1)
 
 
 def load_config() -> Dict[str, str]:
@@ -358,24 +311,24 @@ def load_config() -> Dict[str, str]:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: nextdns_blocker.py [block|unblock|status|sync]")
+        print("Usage: nextdns_blocker.py [sync|status|block|unblock]")
         print("")
         print("Commands:")
-        print("  block   - Block all domains")
-        print("  unblock - Unblock all domains")
-        print("  status  - Show current status of domains")
-        print("  sync    - Sync domains based on schedule configuration")
+        print("  sync    - Sync domains based on schedule configuration (recommended)")
+        print("  status  - Show current status of all domains")
+        print("  block   - Force block all domains (ignores schedules)")
+        print("  unblock - Force unblock all domains (ignores schedules)")
         sys.exit(1)
 
     action = sys.argv[1].lower()
     config = load_config()
     blocker = NextDNSBlocker(config['api_key'], config['profile_id'])
+    domain_configs = load_domain_configs(config['script_dir'])
 
     logger.info(f"=== NextDNS Blocker - Action: {action.upper()} ===")
 
     if action == "sync":
-        # New sync command: syncs domains based on their schedules
-        domain_configs = load_domain_configs(config['script_dir'])
+        # Sync command: syncs domains based on their schedules
         evaluator = ScheduleEvaluator(config['timezone'])
 
         logger.info(f"Synchronizing {len(domain_configs)} domain(s) based on schedules...")
@@ -418,28 +371,10 @@ def main():
         logger.info(f"Sync complete: {blocked_count} blocked, {unblocked_count} unblocked")
         sys.exit(0 if all_success else 1)
 
-    # Legacy commands (for backward compatibility)
-    domains = load_domains(config['script_dir'])
-
-    if action == "block":
-        all_success = True
-        for domain in domains:
-            success = blocker.block_domain(domain)
-            if not success:
-                all_success = False
-        sys.exit(0 if all_success else 1)
-
-    elif action == "unblock":
-        all_success = True
-        for domain in domains:
-            success = blocker.unblock_domain(domain)
-            if not success:
-                all_success = False
-        sys.exit(0 if all_success else 1)
-
     elif action == "status":
-        print(f"\nChecking {len(domains)} domain(s):\n")
-        for domain in domains:
+        print(f"\nChecking {len(domain_configs)} domain(s):\n")
+        for domain_config in domain_configs:
+            domain = domain_config['domain']
             domain_id = blocker.find_domain_in_denylist(domain)
             if domain_id:
                 print(f"  🔒 BLOCKED   - {domain}")
@@ -448,9 +383,29 @@ def main():
         print("")
         sys.exit(0)
 
+    elif action == "block":
+        logger.warning("Force blocking all domains (ignoring schedules)")
+        all_success = True
+        for domain_config in domain_configs:
+            domain = domain_config['domain']
+            success = blocker.block_domain(domain)
+            if not success:
+                all_success = False
+        sys.exit(0 if all_success else 1)
+
+    elif action == "unblock":
+        logger.warning("Force unblocking all domains (ignoring schedules)")
+        all_success = True
+        for domain_config in domain_configs:
+            domain = domain_config['domain']
+            success = blocker.unblock_domain(domain)
+            if not success:
+                all_success = False
+        sys.exit(0 if all_success else 1)
+
     else:
         logger.error(f"Unknown action: {action}")
-        print("Usage: nextdns_blocker.py [block|unblock|status|sync]")
+        print("Usage: nextdns_blocker.py [sync|status|block|unblock]")
         sys.exit(1)
 
 
