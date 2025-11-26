@@ -48,7 +48,7 @@ if ! command -v gcc &> /dev/null; then
 fi
 
 # Verify config files
-echo "  [6/9] config"
+echo "  [6/10] config"
 if [ ! -f "$INSTALL_DIR/.env" ]; then
     echo "  error: .env not found"
     exit 1
@@ -58,12 +58,31 @@ if [ ! -f "$INSTALL_DIR/domains.json" ]; then
     exit 1
 fi
 
+# Validate API credentials
+echo "  [7/10] validating API"
+source "$INSTALL_DIR/.env"
+if [ -z "$NEXTDNS_API_KEY" ] || [ -z "$NEXTDNS_PROFILE_ID" ]; then
+    echo "  error: NEXTDNS_API_KEY or NEXTDNS_PROFILE_ID not set in .env"
+    exit 1
+fi
+
+API_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+    -H "X-Api-Key: $NEXTDNS_API_KEY" \
+    "https://api.nextdns.io/profiles/$NEXTDNS_PROFILE_ID")
+
+if [ "$API_RESPONSE" != "200" ]; then
+    echo "  error: API validation failed (HTTP $API_RESPONSE)"
+    echo "         Check your API key and profile ID"
+    exit 1
+fi
+echo "         credentials valid"
+
 # Create audit directory
-echo "  [7/9] directories"
+echo "  [8/10] directories"
 mkdir -p "$AUDIT_DIR"
 
 # Compile to binary
-echo "  [8/9] compiling"
+echo "  [9/10] compiling"
 echo "         blocker..."
 python3 -m nuitka --onefile --quiet --output-filename=blocker.bin nextdns_blocker.py 2>/dev/null || \
 python3 -m nuitka --onefile --output-filename=blocker.bin nextdns_blocker.py
@@ -81,7 +100,7 @@ rm -rf watchdog.build watchdog.dist watchdog.onefile-build
 rm -f *.spec 2>/dev/null || true
 
 # Setup cron jobs
-echo "  [9/9] cron"
+echo "  [10/10] cron"
 
 CRON_SYNC="*/2 * * * * cd $INSTALL_DIR && ./blocker.bin sync >> $AUDIT_DIR/cron.log 2>&1"
 CRON_WD="* * * * * cd $INSTALL_DIR && ./watchdog.bin check >> $AUDIT_DIR/wd.log 2>&1"

@@ -55,25 +55,22 @@ chmod +x install.sh
 ./install.sh
 ```
 
-Done! The system will now automatically sync every 10 minutes based on your configured schedules.
+Done! The system will now automatically sync every 2 minutes based on your configured schedules.
 
 ## Commands
 
 ```bash
-# Sync based on schedules (runs automatically every 10 min)
-python3 ~/nextdns-blocker/nextdns_blocker.py sync
+# Sync based on schedules (runs automatically every 2 min)
+./blocker.bin sync
 
 # Check current status
-python3 ~/nextdns-blocker/nextdns_blocker.py status
-
-# Force block all (ignores schedules)
-python3 ~/nextdns-blocker/nextdns_blocker.py block
-
-# Force unblock all (ignores schedules)
-python3 ~/nextdns-blocker/nextdns_blocker.py unblock
+./blocker.bin status
 
 # View logs
-tail -f ~/nextdns-blocker/logs/nextdns_blocker.log
+tail -f ~/.local/share/nextdns-audit/logs/app.log
+
+# View audit log
+cat ~/.local/share/nextdns-audit/logs/audit.log
 
 # View cron jobs
 crontab -l
@@ -118,7 +115,7 @@ Example configuration:
 }
 ```
 
-Changes take effect on next sync (every 10 minutes).
+Changes take effect on next sync (every 2 minutes).
 
 See [SCHEDULE_GUIDE.md](SCHEDULE_GUIDE.md) for complete documentation and examples.
 
@@ -135,10 +132,10 @@ See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_z
 ## Troubleshooting
 
 **Sync not working?**
-- Check cron: `crontab -l` (should see sync job running every 10 minutes)
-- Check logs: `tail -f ~/nextdns-blocker/logs/nextdns_blocker.log`
-- Test manually: `python3 ~/nextdns-blocker/nextdns_blocker.py sync`
-- Validate JSON: `python3 -m json.tool ~/nextdns-blocker/domains.json`
+- Check cron: `crontab -l` (should see sync job running every 2 minutes)
+- Check logs: `tail -f ~/.local/share/nextdns-audit/logs/app.log`
+- Test manually: `./blocker.bin sync`
+- Validate JSON: `python3 -m json.tool domains.json`
 
 **Domains.json errors?**
 - Ensure valid JSON syntax (use [jsonlint.com](https://jsonlint.com))
@@ -161,13 +158,43 @@ sudo service cron status || sudo service crond status
 
 ```bash
 # Remove cron jobs
-crontab -l | grep -v "nextdns_blocker.py" | crontab -
-
-# Unblock all domains before removing
-python3 ~/nextdns-blocker/nextdns_blocker.py unblock
+crontab -l | grep -v "blocker" | grep -v "watchdog" | crontab -
 
 # Remove files
 rm -rf ~/nextdns-blocker
+
+# Remove logs (optional)
+rm -rf ~/.local/share/nextdns-audit
+```
+
+## Log Rotation
+
+To prevent log files from growing indefinitely, set up log rotation:
+
+```bash
+chmod +x setup-logrotate.sh
+./setup-logrotate.sh
+```
+
+This configures automatic rotation with:
+- `app.log`: daily, 7 days retention
+- `audit.log`: weekly, 12 weeks retention
+- `cron.log`: daily, 7 days retention
+- `wd.log`: daily, 7 days retention
+
+## Development
+
+### Running Tests
+
+```bash
+pip3 install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+### Test Coverage
+
+```bash
+pytest tests/ --cov=nextdns_blocker --cov-report=html
 ```
 
 ## Documentation

@@ -33,6 +33,16 @@ wheels/
 .installed.cfg
 *.egg
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Compiled binaries
+*.bin
+
 # IDE
 .vscode/
 .idea/

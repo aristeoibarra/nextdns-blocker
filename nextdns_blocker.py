@@ -85,7 +85,8 @@ class ScheduleEvaluator:
             h, m = map(int, time_str.split(':'))
             if not (0 <= h <= 23 and 0 <= m <= 59): raise ValueError
             return time(h, m)
-        except: raise ValueError(f"Invalid time: {time_str}")
+        except (ValueError, AttributeError) as e:
+            raise ValueError(f"Invalid time: {time_str}") from e
 
     def is_time_in_range(self, current: time, start: time, end: time) -> bool:
         if start <= end: return start <= current <= end
