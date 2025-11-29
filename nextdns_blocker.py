@@ -32,6 +32,9 @@ from common import (
     read_secure_file,
 )
 
+# Import notification module
+from notifications import NotificationManager
+
 
 # =============================================================================
 # CONFIGURATION & CONSTANTS
@@ -507,7 +510,23 @@ def load_config() -> Dict[str, Any]:
         'domains_url': os.getenv('DOMAINS_URL'),
         'timeout': safe_int(os.getenv('API_TIMEOUT'), DEFAULT_TIMEOUT, 'API_TIMEOUT'),
         'retries': safe_int(os.getenv('API_RETRIES'), DEFAULT_RETRIES, 'API_RETRIES'),
-        'script_dir': str(script_dir)
+        'script_dir': str(script_dir),
+        # Notification settings (all optional)
+        'NOTIFICATION_EMAIL_ENABLED': os.getenv('NOTIFICATION_EMAIL_ENABLED', ''),
+        'NOTIFICATION_EMAIL_SMTP_HOST': os.getenv('NOTIFICATION_EMAIL_SMTP_HOST', ''),
+        'NOTIFICATION_EMAIL_SMTP_PORT': os.getenv('NOTIFICATION_EMAIL_SMTP_PORT', '587'),
+        'NOTIFICATION_EMAIL_SMTP_USER': os.getenv('NOTIFICATION_EMAIL_SMTP_USER', ''),
+        'NOTIFICATION_EMAIL_SMTP_PASSWORD': os.getenv('NOTIFICATION_EMAIL_SMTP_PASSWORD', ''),
+        'NOTIFICATION_EMAIL_FROM': os.getenv('NOTIFICATION_EMAIL_FROM', ''),
+        'NOTIFICATION_EMAIL_TO': os.getenv('NOTIFICATION_EMAIL_TO', ''),
+        'NOTIFICATION_EMAIL_USE_TLS': os.getenv('NOTIFICATION_EMAIL_USE_TLS', 'true'),
+        'NOTIFICATION_TELEGRAM_ENABLED': os.getenv('NOTIFICATION_TELEGRAM_ENABLED', ''),
+        'NOTIFICATION_TELEGRAM_BOT_TOKEN': os.getenv('NOTIFICATION_TELEGRAM_BOT_TOKEN', ''),
+        'NOTIFICATION_TELEGRAM_CHAT_ID': os.getenv('NOTIFICATION_TELEGRAM_CHAT_ID', ''),
+        'NOTIFICATION_DISCORD_ENABLED': os.getenv('NOTIFICATION_DISCORD_ENABLED', ''),
+        'NOTIFICATION_DISCORD_WEBHOOK_URL': os.getenv('NOTIFICATION_DISCORD_WEBHOOK_URL', ''),
+        'NOTIFICATION_SLACK_ENABLED': os.getenv('NOTIFICATION_SLACK_ENABLED', ''),
+        'NOTIFICATION_SLACK_WEBHOOK_URL': os.getenv('NOTIFICATION_SLACK_WEBHOOK_URL', ''),
     }
 
     # Validate required fields
@@ -656,7 +675,8 @@ class NextDNSClient:
         api_key: str,
         profile_id: str,
         timeout: int = DEFAULT_TIMEOUT,
-        retries: int = DEFAULT_RETRIES
+        retries: int = DEFAULT_RETRIES,
+        notification_manager: Optional[NotificationManager] = None
     ) -> None:
         """
         Initialize the NextDNS client.
@@ -666,6 +686,7 @@ class NextDNSClient:
             profile_id: NextDNS profile ID
             timeout: Request timeout in seconds
             retries: Number of retry attempts for failed requests
+            notification_manager: Optional notification manager for sending alerts
         """
         self.profile_id = profile_id
         self.timeout = timeout
@@ -676,6 +697,7 @@ class NextDNSClient:
         }
         self._rate_limiter = RateLimiter()
         self._cache = DenylistCache()
+        self._notifications = notification_manager
 
     def _calculate_backoff(self, attempt: int) -> float:
         """
@@ -879,9 +901,18 @@ class NextDNSClient:
             # Optimistic cache update
             self._cache.add_domain(domain)
             logger.info(f"Blocked: {domain}")
+            # Send notification
+            if self._notifications:
+                self._notifications.notify_block(domain)
             return True
 
         logger.error(f"Failed to block: {domain}")
+        # Send error notification
+        if self._notifications:
+            self._notifications.notify_error(
+                f"Failed to block domain: {domain}",
+                context="NextDNS API request failed"
+            )
         return False
 
     def unblock(self, domain: str) -> bool:
@@ -913,9 +944,18 @@ class NextDNSClient:
             # Optimistic cache update
             self._cache.remove_domain(domain)
             logger.info(f"Unblocked: {domain}")
+            # Send notification
+            if self._notifications:
+                self._notifications.notify_unblock(domain)
             return True
 
         logger.error(f"Failed to unblock: {domain}")
+        # Send error notification
+        if self._notifications:
+            self._notifications.notify_error(
+                f"Failed to unblock domain: {domain}",
+                context="NextDNS API request failed"
+            )
         return False
 
     def refresh_cache(self) -> bool:
@@ -1511,18 +1551,28 @@ def main() -> int:
         print(f"\n  Configuration error: {e}\n")
         return 1
 
+    # Initialize notification manager early (after config is loaded)
+    try:
+        notification_manager = NotificationManager(config)
+    except Exception as e:
+        logger.warning(f"Failed to initialize notification manager: {e}")
+        notification_manager = None
+
     try:
         domains = load_domains(config['script_dir'], config.get('domains_url'))
     except ConfigurationError as e:
         logger.error(str(e))
         print(f"\n  Configuration error: {e}\n")
+        if notification_manager:
+            notification_manager.notify_error(str(e), context="Domain configuration loading")
         return 1
 
     client = NextDNSClient(
         config['api_key'],
         config['profile_id'],
         timeout=config['timeout'],
-        retries=config['retries']
+        retries=config['retries'],
+        notification_manager=notification_manager
     )
     protected_domains = get_protected_domains(domains)
 

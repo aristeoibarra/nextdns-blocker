@@ -16,6 +16,7 @@ Automated system to control domain access with per-domain schedule configuration
 - **Smart caching**: Reduces API calls with intelligent denylist caching
 - **Rate limiting**: Built-in protection against API rate limits
 - **Exponential backoff**: Automatic retries with increasing delays on failures
+- **Notifications**: Get alerts via Email, Telegram, Discord, or Slack when domains are blocked/unblocked or errors occur
 
 ## Requirements
 
@@ -147,6 +148,69 @@ crontab -l
 | `API_TIMEOUT` | No | `10` | API request timeout in seconds |
 | `API_RETRIES` | No | `3` | Number of retry attempts |
 | `DOMAINS_URL` | No | - | URL to fetch domains.json from |
+
+### Notification Configuration
+
+Notifications are optional and can be enabled for one or more channels. Notifications are sent when:
+- Domains are blocked or unblocked
+- Errors occur during API operations
+- Configuration errors are detected
+
+#### Email (SMTP) Notifications
+
+```bash
+NOTIFICATION_EMAIL_ENABLED=true
+NOTIFICATION_EMAIL_SMTP_HOST=smtp.gmail.com
+NOTIFICATION_EMAIL_SMTP_PORT=587
+NOTIFICATION_EMAIL_SMTP_USER=your-email@gmail.com
+NOTIFICATION_EMAIL_SMTP_PASSWORD=your-app-password
+NOTIFICATION_EMAIL_FROM=your-email@gmail.com
+NOTIFICATION_EMAIL_TO=recipient@example.com
+NOTIFICATION_EMAIL_USE_TLS=true
+```
+
+**Gmail Setup:**
+1. Enable 2-factor authentication
+2. Generate an [App Password](https://myaccount.google.com/apppasswords)
+3. Use the app password as `NOTIFICATION_EMAIL_SMTP_PASSWORD`
+
+#### Telegram Notifications
+
+```bash
+NOTIFICATION_TELEGRAM_ENABLED=true
+NOTIFICATION_TELEGRAM_BOT_TOKEN=your-bot-token
+NOTIFICATION_TELEGRAM_CHAT_ID=your-chat-id
+```
+
+**Telegram Setup:**
+1. Create a bot via [@BotFather](https://t.me/botfather) on Telegram
+2. Get your bot token from BotFather
+3. Get your chat ID by messaging [@userinfobot](https://t.me/userinfobot) or [@getidsbot](https://t.me/getidsbot)
+4. Start a chat with your bot and send a message
+
+#### Discord Notifications
+
+```bash
+NOTIFICATION_DISCORD_ENABLED=true
+NOTIFICATION_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
+
+**Discord Setup:**
+1. Go to your Discord server settings
+2. Navigate to Integrations → Webhooks
+3. Create a new webhook and copy the webhook URL
+
+#### Slack Notifications
+
+```bash
+NOTIFICATION_SLACK_ENABLED=true
+NOTIFICATION_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
+**Slack Setup:**
+1. Go to your Slack workspace settings
+2. Navigate to Apps → Incoming Webhooks
+3. Create a new webhook and copy the webhook URL
 
 ### Domain Schedules
 
