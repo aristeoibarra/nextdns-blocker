@@ -7,11 +7,14 @@ requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Aristeo Ibarra" }]
 keywords = ["blocker", "dns", "nextdns", "parental-control", "productivity"]
-dependencies = ["requests>=2.32.5", "tzdata>=2025.2"]
+dependencies = ["click>=8.3.1", "requests>=2.32.5", "tzdata>=2025.2"]
 
 [project.urls]
 Homepage = "https://github.com/aristeoibarra/nextdns-blocker"
 Repository = "https://github.com/aristeoibarra/nextdns-blocker"
+
+[project.scripts]
+blocker = "nextdns_blocker.cli:main"
 
 [dependency-groups]
 dev = [
