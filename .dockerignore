@@ -1,0 +1,54 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+.eggs
+*.egg
+.pytest_cache
+.coverage
+htmlcov
+.tox
+.nox
+.mypy_cache
+
+# Virtual environments
+venv
+.venv
+env
+.env.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Tests
+tests/
+pytest.ini
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Build artifacts
+dist/
+build/
+*.spec
+
+# Local configuration (will be mounted as volume)
+domains.json
+
+# Misc
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,29 @@
+# NextDNS Blocker - Docker Compose Configuration
+# Run with: docker compose up -d
+
+services:
+  nextdns-blocker:
+    build: .
+    container_name: nextdns-blocker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Required: NextDNS API credentials
+      - NEXTDNS_API_KEY=${NEXTDNS_API_KEY}
+      - NEXTDNS_PROFILE_ID=${NEXTDNS_PROFILE_ID}
+      # Optional: Remote domains configuration
+      - DOMAINS_URL=${DOMAINS_URL:-}
+      # Optional: Timezone (default: America/Mexico_City)
+      - TZ=${TZ:-America/Mexico_City}
+    volumes:
+      # Mount domains.json for local configuration (optional if using DOMAINS_URL)
+      - ./domains.json:/app/domains.json:ro
+      # Persist logs
+      - nextdns-logs:/home/blocker/.local/share/nextdns-audit/logs
+    # Run sync every 5 minutes using watchdog
+    command: ["python", "watchdog.py"]
+
+volumes:
+  nextdns-logs:
+    name: nextdns-blocker-logs

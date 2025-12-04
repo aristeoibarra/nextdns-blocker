@@ -63,6 +63,61 @@ chmod +x install.sh
 
 Done! The system will now automatically sync every 2 minutes based on your configured schedules.
 
+## Docker Setup
+
+Alternatively, run NextDNS Blocker using Docker:
+
+### 1. Configure Environment
+
+```bash
+cp .env.example .env
+nano .env  # Add your API key, profile ID, and timezone
+```
+
+### 2. Configure Domains
+
+```bash
+cp domains.json.example domains.json
+nano domains.json  # Configure your domains and schedules
+```
+
+### 3. Run with Docker Compose
+
+```bash
+docker compose up -d
+```
+
+### Docker Commands
+
+```bash
+# View logs
+docker compose logs -f
+
+# Stop the container
+docker compose down
+
+# Rebuild after changes
+docker compose up -d --build
+
+# Check status
+docker compose ps
+
+# Run a one-time sync
+docker compose exec nextdns-blocker python nextdns_blocker.py sync -v
+
+# Check blocking status
+docker compose exec nextdns-blocker python nextdns_blocker.py status
+```
+
+### Environment Variables for Docker
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `NEXTDNS_API_KEY` | Yes | - | Your NextDNS API key |
+| `NEXTDNS_PROFILE_ID` | Yes | - | Your NextDNS profile ID |
+| `DOMAINS_URL` | No | - | URL to fetch domains.json remotely |
+| `TZ` | No | `America/Mexico_City` | Container timezone |
+
 ## Commands
 
 ### Main Blocker Commands
