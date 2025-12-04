@@ -3,18 +3,15 @@ name = "nextdns-blocker"
 version = "4.0.0"
 description = "Automated domain blocking scheduler for NextDNS"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 license = "MIT"
 authors = [{ name = "Aristeo Ibarra" }]
 keywords = ["blocker", "dns", "nextdns", "parental-control", "productivity"]
-dependencies = ["click>=8.3.1", "requests>=2.32.5", "tzdata>=2025.2"]
+dependencies = ["requests>=2.32.5", "tzdata>=2025.2"]
 
 [project.urls]
 Homepage = "https://github.com/aristeoibarra/nextdns-blocker"
 Repository = "https://github.com/aristeoibarra/nextdns-blocker"
-
-[project.scripts]
-blocker = "nextdns_blocker.cli:main"
 
 [dependency-groups]
 dev = [
@@ -27,11 +24,3 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.pytest.ini_options]
-addopts = ["-v", "--tb=short"]
-filterwarnings = ["ignore::DeprecationWarning"]
-python_classes = ["Test*"]
-python_files = ["test_*.py"]
-python_functions = ["test_*"]
-testpaths = ["tests"]
