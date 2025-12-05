@@ -84,126 +84,75 @@ class RateLimiter:
 # CACHES
 # =============================================================================
 
-class DenylistCache:
+class DomainCache:
+    """Base cache class for domain lists to reduce API calls."""
+
+    def __init__(self, ttl: int = CACHE_TTL) -> None:
+        """
+        Initialize the cache.
+
+        Args:
+            ttl: Time to live in seconds
+        """
+        self.ttl = ttl
+        self._data: Optional[List[Dict[str, Any]]] = None
+        self._domains: Set[str] = set()
+        self._timestamp: float = 0
+
+    def is_valid(self) -> bool:
+        """Check if cache is still valid."""
+        return (
+            self._data is not None and
+            (datetime.now().timestamp() - self._timestamp) < self.ttl
+        )
+
+    def get(self) -> Optional[List[Dict[str, Any]]]:
+        """Get cached data if valid."""
+        if self.is_valid():
+            return self._data
+        return None
+
+    def set(self, data: List[Dict[str, Any]]) -> None:
+        """Update cache with new data."""
+        self._data = data
+        self._domains = {entry.get("id", "") for entry in data}
+        self._timestamp = datetime.now().timestamp()
+
+    def contains(self, domain: str) -> Optional[bool]:
+        """
+        Check if domain is in cache.
+
+        Returns:
+            True/False if cache is valid, None if cache is invalid
+        """
+        if not self.is_valid():
+            return None
+        return domain in self._domains
+
+    def invalidate(self) -> None:
+        """Invalidate the cache."""
+        self._data = None
+        self._domains = set()
+        self._timestamp = 0
+
+    def add_domain(self, domain: str) -> None:
+        """Add a domain to the cache (for optimistic updates)."""
+        if self._data is not None:
+            self._domains.add(domain)
+
+    def remove_domain(self, domain: str) -> None:
+        """Remove a domain from the cache (for optimistic updates)."""
+        self._domains.discard(domain)
+
+
+class DenylistCache(DomainCache):
     """Cache for denylist to reduce API calls."""
-
-    def __init__(self, ttl: int = CACHE_TTL) -> None:
-        """
-        Initialize the cache.
-
-        Args:
-            ttl: Time to live in seconds
-        """
-        self.ttl = ttl
-        self._data: Optional[List[Dict[str, Any]]] = None
-        self._domains: Set[str] = set()
-        self._timestamp: float = 0
-
-    def is_valid(self) -> bool:
-        """Check if cache is still valid."""
-        return (
-            self._data is not None and
-            (datetime.now().timestamp() - self._timestamp) < self.ttl
-        )
-
-    def get(self) -> Optional[List[Dict[str, Any]]]:
-        """Get cached denylist if valid."""
-        if self.is_valid():
-            return self._data
-        return None
-
-    def set(self, data: List[Dict[str, Any]]) -> None:
-        """Update cache with new data."""
-        self._data = data
-        self._domains = {entry.get("id", "") for entry in data}
-        self._timestamp = datetime.now().timestamp()
-
-    def contains(self, domain: str) -> Optional[bool]:
-        """
-        Check if domain is in cached denylist.
-
-        Returns:
-            True/False if cache is valid, None if cache is invalid
-        """
-        if not self.is_valid():
-            return None
-        return domain in self._domains
-
-    def invalidate(self) -> None:
-        """Invalidate the cache."""
-        self._data = None
-        self._domains = set()
-        self._timestamp = 0
-
-    def add_domain(self, domain: str) -> None:
-        """Add a domain to the cache (for optimistic updates)."""
-        if self._data is not None:
-            self._domains.add(domain)
-
-    def remove_domain(self, domain: str) -> None:
-        """Remove a domain from the cache (for optimistic updates)."""
-        self._domains.discard(domain)
+    pass
 
 
-class AllowlistCache:
+class AllowlistCache(DomainCache):
     """Cache for allowlist to reduce API calls."""
-
-    def __init__(self, ttl: int = CACHE_TTL) -> None:
-        """
-        Initialize the cache.
-
-        Args:
-            ttl: Time to live in seconds
-        """
-        self.ttl = ttl
-        self._data: Optional[List[Dict[str, Any]]] = None
-        self._domains: Set[str] = set()
-        self._timestamp: float = 0
-
-    def is_valid(self) -> bool:
-        """Check if cache is still valid."""
-        return (
-            self._data is not None and
-            (datetime.now().timestamp() - self._timestamp) < self.ttl
-        )
-
-    def get(self) -> Optional[List[Dict[str, Any]]]:
-        """Get cached allowlist if valid."""
-        if self.is_valid():
-            return self._data
-        return None
-
-    def set(self, data: List[Dict[str, Any]]) -> None:
-        """Update cache with new data."""
-        self._data = data
-        self._domains = {entry.get("id", "") for entry in data}
-        self._timestamp = datetime.now().timestamp()
-
-    def contains(self, domain: str) -> Optional[bool]:
-        """
-        Check if domain is in cached allowlist.
-
-        Returns:
-            True/False if cache is valid, None if cache is invalid
-        """
-        if not self.is_valid():
-            return None
-        return domain in self._domains
-
-    def invalidate(self) -> None:
-        """Invalidate the cache."""
-        self._data = None
-        self._domains = set()
-        self._timestamp = 0
-
-    def add_domain(self, domain: str) -> None:
-        """Add a domain to the cache (for optimistic updates)."""
-        if self._data is not None:
-            self._domains.add(domain)
-
-    def remove_domain(self, domain: str) -> None:
-        """Remove a domain from the cache (for optimistic updates)."""
-        self._domains.discard(domain)
+    pass
 
 
 # =============================================================================
