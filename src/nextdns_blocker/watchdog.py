@@ -1,5 +1,6 @@
 """Cron Watchdog - Monitors and restores cron jobs if deleted."""
 
+import logging
 import shlex
 import subprocess
 import sys
@@ -8,6 +9,8 @@ from pathlib import Path
 from typing import Optional
 
 import click
+
+logger = logging.getLogger(__name__)
 
 from .common import (
     SECURE_FILE_MODE,
@@ -110,8 +113,8 @@ def _remove_disabled_file() -> None:
     """Remove the disabled file safely."""
     try:
         DISABLED_FILE.unlink(missing_ok=True)
-    except OSError:
-        pass
+    except OSError as e:
+        logger.debug(f"Failed to remove disabled file: {e}")
 
 
 def set_disabled(minutes: Optional[int] = None) -> None:
@@ -232,8 +235,8 @@ def cmd_check() -> None:
                 ['nextdns-blocker', 'sync'],
                 timeout=SUBPROCESS_TIMEOUT
             )
-        except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
-            pass
+        except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+            logger.warning(f"Failed to run sync after cron restore: {e}")
 
 
 @watchdog_cli.command('install')

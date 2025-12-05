@@ -1,6 +1,7 @@
 """Common utilities shared between NextDNS Blocker modules."""
 
 import fcntl
+import logging
 import os
 import re
 import stat
@@ -9,6 +10,8 @@ from pathlib import Path
 from typing import Optional
 
 from platformdirs import user_data_dir
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -218,8 +221,8 @@ def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
             finally:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
-    except OSError:
-        pass  # Fail silently for audit logging
+    except OSError as e:
+        logger.debug(f"Failed to write audit log: {e}")
 
 
 def write_secure_file(path: Path, content: str) -> None:
