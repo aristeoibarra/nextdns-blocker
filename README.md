@@ -146,67 +146,67 @@ docker compose exec nextdns-blocker python nextdns_blocker.py status
 
 ```bash
 # Sync based on schedules (runs automatically every 2 min)
-./blocker sync
+nextdns-blocker sync
 
 # Preview what sync would do without making changes
-./blocker sync --dry-run
+nextdns-blocker sync --dry-run
 
 # Sync with verbose output showing all actions
-./blocker sync --verbose
-./blocker sync -v
+nextdns-blocker sync --verbose
+nextdns-blocker sync -v
 
 # Check current blocking status
-./blocker status
+nextdns-blocker status
 
 # Manually unblock a domain (won't work on protected domains)
-./blocker unblock example.com
+nextdns-blocker unblock example.com
 
 # Pause all blocking for 30 minutes (default)
-./blocker pause
+nextdns-blocker pause
 
 # Pause for custom duration (e.g., 60 minutes)
-./blocker pause 60
+nextdns-blocker pause 60
 
 # Resume blocking immediately
-./blocker resume
+nextdns-blocker resume
 ```
 
 ### Watchdog Commands
 
 ```bash
 # Check cron status
-./watchdog status
+nextdns-blocker watchdog status
 
 # Disable watchdog for 30 minutes
-./watchdog disable 30
+nextdns-blocker watchdog disable 30
 
 # Disable watchdog permanently
-./watchdog disable
+nextdns-blocker watchdog disable
 
 # Re-enable watchdog
-./watchdog enable
+nextdns-blocker watchdog enable
 
 # Manually install cron jobs
-./watchdog install
+nextdns-blocker watchdog install
 
 # Remove cron jobs
-./watchdog uninstall
+nextdns-blocker watchdog uninstall
 ```
 
 ### Logs
 
 ```bash
 # View application logs
-tail -f ~/.local/share/nextdns-audit/logs/app.log
+tail -f ~/.local/share/nextdns-blocker/logs/app.log
 
 # View audit log (all blocking/unblocking actions)
-cat ~/.local/share/nextdns-audit/logs/audit.log
+cat ~/.local/share/nextdns-blocker/logs/audit.log
 
 # View cron execution logs
-tail -f ~/.local/share/nextdns-audit/logs/cron.log
+tail -f ~/.local/share/nextdns-blocker/logs/cron.log
 
 # View watchdog logs
-tail -f ~/.local/share/nextdns-audit/logs/wd.log
+tail -f ~/.local/share/nextdns-blocker/logs/wd.log
 
 # View cron jobs
 crontab -l
@@ -314,13 +314,13 @@ Use the `allowlist` to keep specific subdomains accessible even when their paren
 
 ```bash
 # Add domain to allowlist (always accessible)
-./blocker allow aws.amazon.com
+nextdns-blocker allow aws.amazon.com
 
 # Remove domain from allowlist
-./blocker disallow aws.amazon.com
+nextdns-blocker disallow aws.amazon.com
 
 # View current status including allowlist
-./blocker status
+nextdns-blocker status
 ```
 
 ### Timezone
@@ -337,8 +337,8 @@ See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_z
 
 **Sync not working?**
 - Check cron: `crontab -l` (should see sync job running every 2 minutes)
-- Check logs: `tail -f ~/.local/share/nextdns-audit/logs/app.log`
-- Test manually: `./blocker sync`
+- Check logs: `tail -f ~/.local/share/nextdns-blocker/logs/app.log`
+- Test manually: `nextdns-blocker sync`
 - Validate JSON: `python3 -m json.tool domains.json`
 
 **Domains.json errors?**
@@ -363,20 +363,20 @@ See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_z
 sudo service cron status || sudo service crond status
 
 # Check watchdog status
-./watchdog status
+nextdns-blocker watchdog status
 ```
 
 ## Uninstall
 
 ```bash
 # Remove cron jobs
-./watchdog uninstall
+nextdns-blocker watchdog uninstall
 
 # Remove files
 rm -rf ~/nextdns-blocker
 
 # Remove logs (optional)
-rm -rf ~/.local/share/nextdns-audit
+rm -rf ~/.local/share/nextdns-blocker
 ```
 
 ## Log Rotation
@@ -399,7 +399,7 @@ This configures automatic rotation with:
 ### Running Tests
 
 ```bash
-pip3 install -r requirements-dev.txt
+pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
@@ -409,7 +409,7 @@ pytest tests/ -v
 pytest tests/ --cov=nextdns_blocker --cov-report=html
 ```
 
-Current coverage: **92%** with **287 tests**.
+Current coverage: **82%** with **383 tests**.
 
 ### Code Quality
 

@@ -1058,3 +1058,236 @@ class TestMainHealthAndStats:
 
         assert result.exit_code == 0
         assert "Statistics" in result.output
+
+
+class TestSyncWithDomainsUrl:
+    """Tests for sync command with --domains-url flag."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+        return CliRunner()
+
+    @responses.activate
+    def test_sync_with_domains_url_flag(self, runner, mock_pause_file, tmp_path):
+        """Test sync uses --domains-url flag to fetch remote domains."""
+        remote_url = "https://example.com/domains.json"
+
+        # Mock remote domains response
+        responses.add(
+            responses.GET,
+            remote_url,
+            json={
+                'domains': [{'domain': 'remote.com'}],
+                'allowlist': []
+            },
+            status=200
+        )
+
+        # Mock NextDNS API
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": []},
+            status=200
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"success": True},
+            status=200
+        )
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+
+        with patch('nextdns_blocker.cli.get_pause_file', return_value=mock_pause_file):
+            with patch('nextdns_blocker.config.get_domains_cache_file', return_value=tmp_path / "cache.json"):
+                result = runner.invoke(main, [
+                    'sync',
+                    '--config-dir', str(tmp_path),
+                    '--domains-url', remote_url,
+                    '--dry-run'
+                ])
+
+        assert result.exit_code == 0
+        assert "remote.com" in result.output or "DRY RUN" in result.output
+
+    @responses.activate
+    def test_sync_domains_url_overrides_config(self, runner, mock_pause_file, tmp_path):
+        """Test --domains-url flag overrides DOMAINS_URL from config."""
+        config_url = "https://config.example.com/domains.json"
+        flag_url = "https://flag.example.com/domains.json"
+
+        # Mock flag URL response (should be used)
+        responses.add(
+            responses.GET,
+            flag_url,
+            json={
+                'domains': [{'domain': 'flag-domain.com'}],
+                'allowlist': []
+            },
+            status=200
+        )
+
+        # Mock NextDNS API
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": []},
+            status=200
+        )
+
+        env_file = tmp_path / ".env"
+        env_file.write_text(f"NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\nDOMAINS_URL={config_url}\n")
+
+        with patch('nextdns_blocker.cli.get_pause_file', return_value=mock_pause_file):
+            with patch('nextdns_blocker.config.get_domains_cache_file', return_value=tmp_path / "cache.json"):
+                result = runner.invoke(main, [
+                    'sync',
+                    '--config-dir', str(tmp_path),
+                    '--domains-url', flag_url,
+                    '--dry-run'
+                ])
+
+        # Verify flag URL was called, not config URL
+        called_urls = [call.request.url for call in responses.calls]
+        assert flag_url in called_urls
+        assert config_url not in called_urls
+
+
+class TestHealthWithCacheStatus:
+    """Tests for health command with remote domains cache status."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+        return CliRunner()
+
+    @responses.activate
+    def test_health_shows_cache_status_valid(self, runner, mock_pause_file, tmp_path):
+        """Test health shows valid cache status."""
+        import json
+        import time
+
+        # Setup config with DOMAINS_URL
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\nDOMAINS_URL=https://example.com/domains.json\n")
+
+        # Create domains.json for fallback
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text('{"domains": [{"domain": "test.com"}], "allowlist": []}')
+
+        # Create valid cache file
+        cache_file = tmp_path / "cache.json"
+        cache_data = {
+            'timestamp': time.time() - 600,  # 10 minutes ago
+            'data': {'domains': [{'domain': 'cached.com'}], 'allowlist': []}
+        }
+        cache_file.write_text(json.dumps(cache_data))
+
+        # Mock NextDNS API
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": []},
+            status=200
+        )
+
+        with patch('nextdns_blocker.cli.get_pause_file', return_value=mock_pause_file):
+            with patch('nextdns_blocker.cli.get_log_dir', return_value=mock_pause_file.parent):
+                with patch('nextdns_blocker.cli.get_cache_status') as mock_cache:
+                    mock_cache.return_value = {
+                        'exists': True,
+                        'expired': False,
+                        'age_seconds': 600,
+                        'path': str(cache_file)
+                    }
+                    with patch('nextdns_blocker.cli.load_config') as mock_config:
+                        with patch('nextdns_blocker.cli.load_domains') as mock_domains:
+                            mock_config.return_value = {
+                                'api_key': 'test',
+                                'profile_id': 'test_profile',
+                                'timeout': 10,
+                                'retries': 3,
+                                'timezone': 'UTC',
+                                'script_dir': str(tmp_path),
+                                'domains_url': 'https://example.com/domains.json'
+                            }
+                            mock_domains.return_value = ([{'domain': 'test.com'}], [])
+                            result = runner.invoke(main, ['health'])
+
+        assert result.exit_code == 0
+        assert "cache" in result.output.lower()
+        assert "valid" in result.output.lower()
+
+    @responses.activate
+    def test_health_shows_cache_status_expired(self, runner, mock_pause_file, tmp_path):
+        """Test health shows expired cache status."""
+        # Mock NextDNS API
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": []},
+            status=200
+        )
+
+        with patch('nextdns_blocker.cli.get_pause_file', return_value=mock_pause_file):
+            with patch('nextdns_blocker.cli.get_log_dir', return_value=mock_pause_file.parent):
+                with patch('nextdns_blocker.cli.get_cache_status') as mock_cache:
+                    mock_cache.return_value = {
+                        'exists': True,
+                        'expired': True,
+                        'age_seconds': 7200,
+                        'path': '/tmp/cache.json'
+                    }
+                    with patch('nextdns_blocker.cli.load_config') as mock_config:
+                        with patch('nextdns_blocker.cli.load_domains') as mock_domains:
+                            mock_config.return_value = {
+                                'api_key': 'test',
+                                'profile_id': 'test_profile',
+                                'timeout': 10,
+                                'retries': 3,
+                                'timezone': 'UTC',
+                                'script_dir': str(tmp_path),
+                                'domains_url': 'https://example.com/domains.json'
+                            }
+                            mock_domains.return_value = ([{'domain': 'test.com'}], [])
+                            result = runner.invoke(main, ['health'])
+
+        assert result.exit_code == 0
+        assert "cache" in result.output.lower()
+        assert "expired" in result.output.lower()
+
+    @responses.activate
+    def test_health_no_cache_when_no_remote_url(self, runner, mock_pause_file, tmp_path):
+        """Test health doesn't show cache status when no remote URL configured."""
+        # Mock NextDNS API
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": []},
+            status=200
+        )
+
+        with patch('nextdns_blocker.cli.get_pause_file', return_value=mock_pause_file):
+            with patch('nextdns_blocker.cli.get_log_dir', return_value=mock_pause_file.parent):
+                with patch('nextdns_blocker.cli.load_config') as mock_config:
+                    with patch('nextdns_blocker.cli.load_domains') as mock_domains:
+                        mock_config.return_value = {
+                            'api_key': 'test',
+                            'profile_id': 'test_profile',
+                            'timeout': 10,
+                            'retries': 3,
+                            'timezone': 'UTC',
+                            'script_dir': str(tmp_path),
+                            # No domains_url
+                        }
+                        mock_domains.return_value = ([{'domain': 'test.com'}], [])
+                        result = runner.invoke(main, ['health'])
+
+        assert result.exit_code == 0
+        # Should not mention cache since no remote URL
+        assert "Remote domains cache" not in result.output
