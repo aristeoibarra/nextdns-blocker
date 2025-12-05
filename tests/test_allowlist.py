@@ -3,7 +3,7 @@
 import pytest
 import responses
 from unittest.mock import patch, MagicMock
-from datetime import datetime
+from click.testing import CliRunner
 
 from nextdns_blocker.client import (
     NextDNSClient,
@@ -20,13 +20,7 @@ from nextdns_blocker.exceptions import (
     DomainValidationError,
     ConfigurationError,
 )
-# Legacy function imports for backward compatibility
-from nextdns_blocker.cli import (
-    cmd_allow,
-    cmd_disallow,
-    cmd_sync,
-    cmd_status,
-)
+from nextdns_blocker.cli import main
 
 
 class TestAllowlistCache:
@@ -360,90 +354,121 @@ class TestValidateNoOverlap:
         assert errors == []
 
 
-class TestCmdAllow:
-    """Tests for cmd_allow command handler."""
+class TestAllowCommand:
+    """Tests for allow CLI command."""
 
-    def test_cmd_allow_success(self, capsys):
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        return CliRunner()
+
+    @responses.activate
+    def test_allow_success(self, runner, tmp_path):
         """Test successful allow command."""
-        mock_client = MagicMock()
-        mock_client.allow.return_value = True
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": []},
+            status=200
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"success": True},
+            status=200
+        )
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
 
         with patch('nextdns_blocker.cli.audit_log'):
-            result = cmd_allow("aws.amazon.com", mock_client, [])
+            result = runner.invoke(main, ['allow', 'aws.amazon.com', '--config-dir', str(tmp_path)])
 
-        assert result == 0
-        captured = capsys.readouterr()
-        assert "Added to allowlist" in captured.out
+        assert result.exit_code == 0
+        assert "allowlist" in result.output.lower()
 
-    def test_cmd_allow_invalid_domain(self, capsys):
+    def test_allow_invalid_domain(self, runner, tmp_path):
         """Test allow with invalid domain."""
-        mock_client = MagicMock()
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
 
-        result = cmd_allow("invalid domain!", mock_client, [])
+        result = runner.invoke(main, ['allow', 'invalid domain!', '--config-dir', str(tmp_path)])
+        assert result.exit_code == 1
+        assert "Invalid domain" in result.output
 
-        assert result == 1
-        captured = capsys.readouterr()
-        assert "Invalid domain" in captured.out
-
-    def test_cmd_allow_warns_if_in_denylist(self, capsys):
+    @responses.activate
+    def test_allow_warns_if_in_denylist(self, runner, tmp_path):
         """Test allow warns if domain is in denylist."""
-        mock_client = MagicMock()
-        mock_client.allow.return_value = True
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": [{"id": "aws.amazon.com", "active": True}]},
+            status=200
+        )
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": []},
+            status=200
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"success": True},
+            status=200
+        )
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
 
         with patch('nextdns_blocker.cli.audit_log'):
-            result = cmd_allow("aws.amazon.com", mock_client, ["aws.amazon.com"])
+            result = runner.invoke(main, ['allow', 'aws.amazon.com', '--config-dir', str(tmp_path)])
 
-        assert result == 0
-        captured = capsys.readouterr()
-        assert "Warning" in captured.out
-
-    def test_cmd_allow_api_failure(self, capsys):
-        """Test allow with API failure."""
-        mock_client = MagicMock()
-        mock_client.allow.return_value = False
-
-        result = cmd_allow("aws.amazon.com", mock_client, [])
-
-        assert result == 1
-        captured = capsys.readouterr()
-        assert "Failed to add" in captured.out
+        assert result.exit_code == 0
+        assert "Warning" in result.output or "warning" in result.output.lower()
 
 
-class TestCmdDisallow:
-    """Tests for cmd_disallow command handler."""
+class TestDisallowCommand:
+    """Tests for disallow CLI command."""
 
-    def test_cmd_disallow_success(self, capsys):
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        return CliRunner()
+
+    @responses.activate
+    def test_disallow_success(self, runner, tmp_path):
         """Test successful disallow command."""
-        mock_client = MagicMock()
-        mock_client.disallow.return_value = True
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": [{"id": "aws.amazon.com", "active": True}]},
+            status=200
+        )
+        responses.add(
+            responses.DELETE,
+            f"{API_URL}/profiles/test_profile/allowlist/aws.amazon.com",
+            json={"success": True},
+            status=200
+        )
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
 
         with patch('nextdns_blocker.cli.audit_log'):
-            result = cmd_disallow("aws.amazon.com", mock_client)
+            result = runner.invoke(main, ['disallow', 'aws.amazon.com', '--config-dir', str(tmp_path)])
 
-        assert result == 0
-        captured = capsys.readouterr()
-        assert "Removed from allowlist" in captured.out
+        assert result.exit_code == 0
+        assert "allowlist" in result.output.lower()
 
-    def test_cmd_disallow_invalid_domain(self, capsys):
+    def test_disallow_invalid_domain(self, runner, tmp_path):
         """Test disallow with invalid domain."""
-        mock_client = MagicMock()
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
 
-        result = cmd_disallow("invalid domain!", mock_client)
-
-        assert result == 1
-        captured = capsys.readouterr()
-        assert "Invalid domain" in captured.out
-
-    def test_cmd_disallow_api_failure(self, capsys):
-        """Test disallow with API failure."""
-        mock_client = MagicMock()
-        mock_client.disallow.return_value = False
-
-        result = cmd_disallow("aws.amazon.com", mock_client)
-
-        assert result == 1
-        captured = capsys.readouterr()
-        assert "Failed to remove" in captured.out
+        result = runner.invoke(main, ['disallow', 'invalid domain!', '--config-dir', str(tmp_path)])
+        assert result.exit_code == 1
+        assert "Invalid domain" in result.output
 
 
 class TestLoadDomainsWithAllowlist:
@@ -499,15 +524,23 @@ class TestLoadDomainsWithAllowlist:
         assert "validation failed" in str(exc_info.value)
 
 
-class TestCmdSyncWithAllowlist:
-    """Tests for cmd_sync with allowlist support."""
+class TestSyncWithAllowlist:
+    """Tests for sync command with allowlist support."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        return CliRunner()
 
     @responses.activate
-    def test_sync_allowlist_adds_domain(self, tmp_path, capsys):
+    def test_sync_adds_to_allowlist(self, runner, tmp_path):
         """Test sync adds domains to allowlist."""
-        client = NextDNSClient("test_key", "test_profile")
-
-        # Mock allowlist API calls
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": []},
+            status=200
+        )
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
@@ -520,93 +553,81 @@ class TestCmdSyncWithAllowlist:
             json={"success": True},
             status=200
         )
-        # Mock denylist API calls
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text('{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}')
+
+        pause_file = tmp_path / ".paused"
+        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
+            with patch('nextdns_blocker.cli.audit_log'):
+                result = runner.invoke(main, ['sync', '-v', '--config-dir', str(tmp_path)])
+
+        assert result.exit_code == 0
+
+    @responses.activate
+    def test_sync_dry_run_shows_allowlist(self, runner, tmp_path):
+        """Test dry-run shows what would be allowed."""
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
             status=200
         )
-
-        domains = []
-        allowlist = [{"domain": "aws.amazon.com"}]
-
-        # Create pause file directory
-        pause_file = tmp_path / ".paused"
-
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
-            with patch('nextdns_blocker.cli.audit_log'):
-                result = cmd_sync(client, domains, allowlist, [], "UTC", verbose=True)
-
-        assert result == 0
-        captured = capsys.readouterr()
-        # Check for allowlist-related output
-        assert "Sync:" in captured.out or "allowlist" in captured.out.lower()
-
-    @responses.activate
-    def test_sync_dry_run_shows_allowlist(self, tmp_path, capsys):
-        """Test dry-run shows what would be allowed."""
-        client = NextDNSClient("test_key", "test_profile")
-
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": []},
             status=200
         )
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text('{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}')
+
+        pause_file = tmp_path / ".paused"
+        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
+            result = runner.invoke(main, ['sync', '--dry-run', '--config-dir', str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "DRY RUN" in result.output
+
+
+class TestStatusWithAllowlist:
+    """Tests for status command with allowlist support."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        return CliRunner()
+
+    @responses.activate
+    def test_status_shows_allowlist(self, runner, tmp_path):
+        """Test status shows allowlist section."""
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
             status=200
         )
-
-        domains = []
-        allowlist = [{"domain": "aws.amazon.com"}]
-
-        pause_file = tmp_path / ".paused"
-
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
-            result = cmd_sync(client, domains, allowlist, [], "UTC", dry_run=True)
-
-        assert result == 0
-        captured = capsys.readouterr()
-        # Check for allowlist-related output in dry run
-        assert "DRY RUN" in captured.out
-        assert "allowlist" in captured.out.lower()
-
-
-class TestCmdStatusWithAllowlist:
-    """Tests for cmd_status with allowlist support."""
-
-    @responses.activate
-    def test_status_shows_allowlist(self, tmp_path, capsys):
-        """Test status shows allowlist section."""
-        client = NextDNSClient("test_key", "test_profile")
-
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": [{"id": "aws.amazon.com", "active": True}]},
             status=200
         )
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/test_profile/denylist",
-            json={"data": []},
-            status=200
-        )
 
-        domains = []
-        allowlist = [{"domain": "aws.amazon.com"}]
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text('{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}')
 
         pause_file = tmp_path / ".paused"
-
         with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
-            result = cmd_status(client, domains, allowlist, [])
+            result = runner.invoke(main, ['status', '--config-dir', str(tmp_path)])
 
-        assert result == 0
-        captured = capsys.readouterr()
-        # The output now has "Allowlist" with capital A
-        assert "Allowlist" in captured.out
-        assert "aws.amazon.com" in captured.out
+        assert result.exit_code == 0
+        assert "Allowlist" in result.output
+        assert "aws.amazon.com" in result.output

@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2024-12-04
+
+### Added
+- **Allowlist Management**: Block parent domains while keeping subdomains accessible
+  - New commands: `./blocker allow <domain>` and `./blocker disallow <domain>`
+  - Allowlist configuration in domains.json with 24/7 availability
+  - Validation to prevent overlap between denylist and allowlist
+  - AllowlistCache with same TTL strategy as DenylistCache
+  - 42 new tests for allowlist functionality
+- **Docker Support**: Run NextDNS Blocker in containers
+  - Dockerfile with Python 3.11 Alpine (~50MB image)
+  - docker-compose.yml with watchdog as default command
+  - .dockerignore for optimized builds
+  - Health check endpoint for container orchestration
+  - Volume mounts for domains.json and persistent logs
+- **GitHub Actions CI**: Automated testing pipeline
+  - Runs on push/PR to main and stage branches
+  - Matrix testing: Python 3.9, 3.10, 3.11, 3.12
+  - pip dependency caching for faster builds
+
+### Changed
+- `load_domains()` now returns tuple `(domains, allowlist)` for backwards compatibility
+- `cmd_sync()` and `cmd_status()` signatures updated to include allowlist parameter
+- README updated with Docker setup section and allowlist documentation
+- Test count increased from 287 to 329 (42 new allowlist tests)
+
 ## [3.1.0] - 2024-11-27
 
 ### Changed
@@ -120,6 +146,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[4.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v2.0.0...v2.1.0
