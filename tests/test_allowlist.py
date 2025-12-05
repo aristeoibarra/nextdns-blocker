@@ -1,26 +1,26 @@
 """Tests for allowlist functionality."""
 
+from unittest.mock import patch
+
 import pytest
 import responses
-from unittest.mock import patch, MagicMock
 from click.testing import CliRunner
 
+from nextdns_blocker.cli import main
 from nextdns_blocker.client import (
-    NextDNSClient,
     API_URL,
     AllowlistCache,
-    CACHE_TTL,
+    NextDNSClient,
 )
 from nextdns_blocker.config import (
+    load_domains,
     validate_allowlist_config,
     validate_no_overlap,
-    load_domains,
 )
 from nextdns_blocker.exceptions import (
-    DomainValidationError,
     ConfigurationError,
+    DomainValidationError,
 )
-from nextdns_blocker.cli import main
 
 
 class TestAllowlistCache:
@@ -88,7 +88,7 @@ class TestGetAllowlist:
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": [{"id": "aws.amazon.com", "active": True}]},
-            status=200
+            status=200,
         )
 
         result = client.get_allowlist()
@@ -103,7 +103,7 @@ class TestGetAllowlist:
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": []},
-            status=200
+            status=200,
         )
 
         result = client.get_allowlist()
@@ -118,7 +118,7 @@ class TestGetAllowlist:
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": [{"id": "aws.amazon.com", "active": True}]},
-            status=200
+            status=200,
         )
 
         result1 = client.get_allowlist()
@@ -132,11 +132,7 @@ class TestGetAllowlist:
         """Test allowlist fetch with API error."""
         client = NextDNSClient("test_key", "test_profile")
 
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/test_profile/allowlist",
-            status=500
-        )
+        responses.add(responses.GET, f"{API_URL}/profiles/test_profile/allowlist", status=500)
 
         result = client.get_allowlist(use_cache=False)
         assert result is None
@@ -154,7 +150,7 @@ class TestFindInAllowlist:
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": [{"id": "aws.amazon.com", "active": True}]},
-            status=200
+            status=200,
         )
 
         result = client.find_in_allowlist("aws.amazon.com")
@@ -169,7 +165,7 @@ class TestFindInAllowlist:
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": []},
-            status=200
+            status=200,
         )
 
         result = client.find_in_allowlist("aws.amazon.com")
@@ -188,13 +184,13 @@ class TestAllow:
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": []},
-            status=200
+            status=200,
         )
         responses.add(
             responses.POST,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"success": True},
-            status=200
+            status=200,
         )
 
         result = client.allow("aws.amazon.com")
@@ -209,7 +205,7 @@ class TestAllow:
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": [{"id": "aws.amazon.com", "active": True}]},
-            status=200
+            status=200,
         )
 
         result = client.allow("aws.amazon.com")
@@ -236,13 +232,13 @@ class TestDisallow:
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": [{"id": "aws.amazon.com", "active": True}]},
-            status=200
+            status=200,
         )
         responses.add(
             responses.DELETE,
             f"{API_URL}/profiles/test_profile/allowlist/aws.amazon.com",
             json={"success": True},
-            status=200
+            status=200,
         )
 
         result = client.disallow("aws.amazon.com")
@@ -257,7 +253,7 @@ class TestDisallow:
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": []},
-            status=200
+            status=200,
         )
 
         result = client.disallow("aws.amazon.com")
@@ -304,10 +300,7 @@ class TestValidateAllowlistConfig:
 
     def test_schedule_not_allowed(self):
         """Test that schedule field is not allowed in allowlist."""
-        config = {
-            "domain": "aws.amazon.com",
-            "schedule": {"available_hours": []}
-        }
+        config = {"domain": "aws.amazon.com", "schedule": {"available_hours": []}}
         errors = validate_allowlist_config(config, 0)
         assert len(errors) == 1
         assert "schedule" in errors[0]
@@ -315,10 +308,7 @@ class TestValidateAllowlistConfig:
 
     def test_null_schedule_ok(self):
         """Test that null schedule is ok (will be ignored)."""
-        config = {
-            "domain": "aws.amazon.com",
-            "schedule": None
-        }
+        config = {"domain": "aws.amazon.com", "schedule": None}
         errors = validate_allowlist_config(config, 0)
         assert errors == []
 
@@ -369,20 +359,20 @@ class TestAllowCommand:
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": []},
-            status=200
+            status=200,
         )
         responses.add(
             responses.POST,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"success": True},
-            status=200
+            status=200,
         )
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
 
-        with patch('nextdns_blocker.cli.audit_log'):
-            result = runner.invoke(main, ['allow', 'aws.amazon.com', '--config-dir', str(tmp_path)])
+        with patch("nextdns_blocker.cli.audit_log"):
+            result = runner.invoke(main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "allowlist" in result.output.lower()
@@ -392,7 +382,7 @@ class TestAllowCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
 
-        result = runner.invoke(main, ['allow', 'invalid domain!', '--config-dir', str(tmp_path)])
+        result = runner.invoke(main, ["allow", "invalid domain!", "--config-dir", str(tmp_path)])
         assert result.exit_code == 1
         assert "Invalid domain" in result.output
 
@@ -403,26 +393,26 @@ class TestAllowCommand:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": [{"id": "aws.amazon.com", "active": True}]},
-            status=200
+            status=200,
         )
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": []},
-            status=200
+            status=200,
         )
         responses.add(
             responses.POST,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"success": True},
-            status=200
+            status=200,
         )
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
 
-        with patch('nextdns_blocker.cli.audit_log'):
-            result = runner.invoke(main, ['allow', 'aws.amazon.com', '--config-dir', str(tmp_path)])
+        with patch("nextdns_blocker.cli.audit_log"):
+            result = runner.invoke(main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "Warning" in result.output or "warning" in result.output.lower()
@@ -443,20 +433,22 @@ class TestDisallowCommand:
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": [{"id": "aws.amazon.com", "active": True}]},
-            status=200
+            status=200,
         )
         responses.add(
             responses.DELETE,
             f"{API_URL}/profiles/test_profile/allowlist/aws.amazon.com",
             json={"success": True},
-            status=200
+            status=200,
         )
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
 
-        with patch('nextdns_blocker.cli.audit_log'):
-            result = runner.invoke(main, ['disallow', 'aws.amazon.com', '--config-dir', str(tmp_path)])
+        with patch("nextdns_blocker.cli.audit_log"):
+            result = runner.invoke(
+                main, ["disallow", "aws.amazon.com", "--config-dir", str(tmp_path)]
+            )
 
         assert result.exit_code == 0
         assert "allowlist" in result.output.lower()
@@ -466,7 +458,7 @@ class TestDisallowCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
 
-        result = runner.invoke(main, ['disallow', 'invalid domain!', '--config-dir', str(tmp_path)])
+        result = runner.invoke(main, ["disallow", "invalid domain!", "--config-dir", str(tmp_path)])
         assert result.exit_code == 1
         assert "Invalid domain" in result.output
 
@@ -477,9 +469,10 @@ class TestLoadDomainsWithAllowlist:
     def test_load_domains_with_allowlist(self, tmp_path):
         """Test loading domains.json with allowlist."""
         import json
+
         config = {
             "domains": [{"domain": "amazon.com", "schedule": None}],
-            "allowlist": [{"domain": "aws.amazon.com"}]
+            "allowlist": [{"domain": "aws.amazon.com"}],
         }
         json_file = tmp_path / "domains.json"
         with open(json_file, "w") as f:
@@ -495,9 +488,8 @@ class TestLoadDomainsWithAllowlist:
     def test_load_domains_without_allowlist(self, tmp_path):
         """Test loading domains.json without allowlist key."""
         import json
-        config = {
-            "domains": [{"domain": "amazon.com", "schedule": None}]
-        }
+
+        config = {"domains": [{"domain": "amazon.com", "schedule": None}]}
         json_file = tmp_path / "domains.json"
         with open(json_file, "w") as f:
             json.dump(config, f)
@@ -510,9 +502,10 @@ class TestLoadDomainsWithAllowlist:
     def test_load_domains_overlap_error(self, tmp_path):
         """Test that overlap between domains and allowlist raises error."""
         import json
+
         config = {
             "domains": [{"domain": "example.com", "schedule": None}],
-            "allowlist": [{"domain": "example.com"}]
+            "allowlist": [{"domain": "example.com"}],
         }
         json_file = tmp_path / "domains.json"
         with open(json_file, "w") as f:
@@ -539,30 +532,32 @@ class TestSyncWithAllowlist:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": []},
-            status=200
+            status=200,
         )
         responses.add(
             responses.POST,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"success": True},
-            status=200
+            status=200,
         )
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
         domains_file = tmp_path / "domains.json"
-        domains_file.write_text('{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}')
+        domains_file.write_text(
+            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
+        )
 
         pause_file = tmp_path / ".paused"
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
-            with patch('nextdns_blocker.cli.audit_log'):
-                result = runner.invoke(main, ['sync', '-v', '--config-dir', str(tmp_path)])
+        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
+            with patch("nextdns_blocker.cli.audit_log"):
+                result = runner.invoke(main, ["sync", "-v", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
 
@@ -573,23 +568,25 @@ class TestSyncWithAllowlist:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": []},
-            status=200
+            status=200,
         )
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
         domains_file = tmp_path / "domains.json"
-        domains_file.write_text('{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}')
+        domains_file.write_text(
+            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
+        )
 
         pause_file = tmp_path / ".paused"
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
-            result = runner.invoke(main, ['sync', '--dry-run', '--config-dir', str(tmp_path)])
+        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
+            result = runner.invoke(main, ["sync", "--dry-run", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "DRY RUN" in result.output
@@ -610,23 +607,25 @@ class TestStatusWithAllowlist:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/allowlist",
             json={"data": [{"id": "aws.amazon.com", "active": True}]},
-            status=200
+            status=200,
         )
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
         domains_file = tmp_path / "domains.json"
-        domains_file.write_text('{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}')
+        domains_file.write_text(
+            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
+        )
 
         pause_file = tmp_path / ".paused"
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
-            result = runner.invoke(main, ['status', '--config-dir', str(tmp_path)])
+        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
+            result = runner.invoke(main, ["status", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "Allowlist" in result.output

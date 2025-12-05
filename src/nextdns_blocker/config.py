@@ -5,13 +5,13 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-import requests
-from platformdirs import user_config_dir, user_data_dir
+from typing import Any, Optional
 
 # Timezone support: use zoneinfo (Python 3.9+)
 from zoneinfo import ZoneInfo
+
+import requests
+from platformdirs import user_config_dir, user_data_dir
 
 from .common import (
     VALID_DAYS,
@@ -22,7 +22,6 @@ from .common import (
     validate_url,
 )
 from .exceptions import ConfigurationError
-
 
 # =============================================================================
 # CONSTANTS
@@ -45,6 +44,7 @@ logger = logging.getLogger(__name__)
 # XDG DIRECTORY FUNCTIONS
 # =============================================================================
 
+
 def get_config_dir(override: Optional[Path] = None) -> Path:
     """
     Get the configuration directory path.
@@ -66,7 +66,7 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
 
     # Backwards compatibility: check CWD for existing configs
     cwd = Path.cwd()
-    if (cwd / '.env').exists() or (cwd / 'domains.json').exists():
+    if (cwd / ".env").exists() or (cwd / "domains.json").exists():
         return cwd
 
     return Path(user_config_dir(APP_NAME))
@@ -107,6 +107,7 @@ def get_cache_dir() -> Path:
 # REMOTE DOMAINS CACHING
 # =============================================================================
 
+
 def get_domains_cache_file() -> Path:
     """
     Get the path to the domains cache file.
@@ -117,7 +118,7 @@ def get_domains_cache_file() -> Path:
     return get_cache_dir() / DOMAINS_CACHE_FILE
 
 
-def get_cached_domains(max_age: int = DOMAINS_CACHE_TTL) -> Optional[Dict[str, Any]]:
+def get_cached_domains(max_age: int = DOMAINS_CACHE_TTL) -> Optional[dict[str, Any]]:
     """
     Retrieve cached domains data if valid.
 
@@ -133,10 +134,10 @@ def get_cached_domains(max_age: int = DOMAINS_CACHE_TTL) -> Optional[Dict[str, A
         return None
 
     try:
-        with open(cache_file, 'r') as f:
+        with open(cache_file) as f:
             cache = json.load(f)
 
-        timestamp = cache.get('timestamp', 0)
+        timestamp = cache.get("timestamp", 0)
         age = time.time() - timestamp
 
         if age > max_age:
@@ -144,14 +145,14 @@ def get_cached_domains(max_age: int = DOMAINS_CACHE_TTL) -> Optional[Dict[str, A
             return None
 
         logger.debug(f"Using cached domains (age: {age:.0f}s)")
-        return cache.get('data')
+        return cache.get("data")
 
     except (json.JSONDecodeError, OSError) as e:
         logger.warning(f"Failed to read cache: {e}")
         return None
 
 
-def save_domains_cache(data: Dict[str, Any]) -> bool:
+def save_domains_cache(data: dict[str, Any]) -> bool:
     """
     Save domains data to cache.
 
@@ -167,12 +168,9 @@ def save_domains_cache(data: Dict[str, Any]) -> bool:
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-        cache = {
-            'timestamp': time.time(),
-            'data': data
-        }
+        cache = {"timestamp": time.time(), "data": data}
 
-        with open(cache_file, 'w') as f:
+        with open(cache_file, "w") as f:
             json.dump(cache, f)
 
         logger.debug(f"Saved domains to cache: {cache_file}")
@@ -183,10 +181,7 @@ def save_domains_cache(data: Dict[str, Any]) -> bool:
         return False
 
 
-def fetch_remote_domains(
-    url: str,
-    use_cache: bool = True
-) -> Dict[str, Any]:
+def fetch_remote_domains(url: str, use_cache: bool = True) -> dict[str, Any]:
     """
     Fetch domains from remote URL with caching support.
 
@@ -231,18 +226,17 @@ def fetch_remote_domains(
 
         # Try to use cache as fallback
         if use_cache:
-            cached = get_cached_domains(max_age=float('inf'))  # Accept any age on failure
+            cached = get_cached_domains(max_age=float("inf"))  # Accept any age on failure
             if cached:
                 logger.info("Using cached domains as fallback")
                 return cached
 
         raise ConfigurationError(
-            f"Failed to load domains from URL: {e}. "
-            f"No cached data available."
+            f"Failed to load domains from URL: {e}. " f"No cached data available."
         )
 
 
-def get_cache_status() -> Dict[str, Any]:
+def get_cache_status() -> dict[str, Any]:
     """
     Get information about the domains cache status.
 
@@ -252,40 +246,34 @@ def get_cache_status() -> Dict[str, Any]:
     cache_file = get_domains_cache_file()
 
     if not cache_file.exists():
-        return {
-            'exists': False,
-            'path': str(cache_file)
-        }
+        return {"exists": False, "path": str(cache_file)}
 
     try:
-        with open(cache_file, 'r') as f:
+        with open(cache_file) as f:
             cache = json.load(f)
 
-        timestamp = cache.get('timestamp', 0)
+        timestamp = cache.get("timestamp", 0)
         age = time.time() - timestamp
         expired = age > DOMAINS_CACHE_TTL
 
         return {
-            'exists': True,
-            'path': str(cache_file),
-            'age_seconds': int(age),
-            'expired': expired,
-            'ttl_seconds': DOMAINS_CACHE_TTL
+            "exists": True,
+            "path": str(cache_file),
+            "age_seconds": int(age),
+            "expired": expired,
+            "ttl_seconds": DOMAINS_CACHE_TTL,
         }
 
     except (json.JSONDecodeError, OSError):
-        return {
-            'exists': True,
-            'path': str(cache_file),
-            'corrupted': True
-        }
+        return {"exists": True, "path": str(cache_file), "corrupted": True}
 
 
 # =============================================================================
 # DOMAIN CONFIG VALIDATION
 # =============================================================================
 
-def validate_domain_config(config: Dict[str, Any], index: int) -> List[str]:
+
+def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
     """
     Validate a single domain configuration entry.
 
@@ -296,13 +284,13 @@ def validate_domain_config(config: Dict[str, Any], index: int) -> List[str]:
     Returns:
         List of error messages (empty if valid)
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     # Check domain field exists and is valid
-    if 'domain' not in config:
+    if "domain" not in config:
         return [f"#{index}: Missing 'domain' field"]
 
-    domain = config['domain']
+    domain = config["domain"]
     if not domain or not isinstance(domain, str) or not domain.strip():
         return [f"#{index}: Empty or invalid domain"]
 
@@ -311,17 +299,17 @@ def validate_domain_config(config: Dict[str, Any], index: int) -> List[str]:
         return [f"#{index}: Invalid domain format '{domain}'"]
 
     # Check schedule if present
-    schedule = config.get('schedule')
+    schedule = config.get("schedule")
     if schedule is None:
         return errors
 
     if not isinstance(schedule, dict):
         return [f"'{domain}': schedule must be a dictionary"]
 
-    if 'available_hours' not in schedule:
+    if "available_hours" not in schedule:
         return errors
 
-    hours = schedule['available_hours']
+    hours = schedule["available_hours"]
     if not isinstance(hours, list):
         return [f"'{domain}': available_hours must be a list"]
 
@@ -332,16 +320,16 @@ def validate_domain_config(config: Dict[str, Any], index: int) -> List[str]:
             continue
 
         # Validate days
-        for day in block.get('days', []):
+        for day in block.get("days", []):
             if isinstance(day, str) and day.lower() not in VALID_DAYS:
                 errors.append(f"'{domain}': invalid day '{day}'")
 
         # Validate time ranges
-        for tr_idx, time_range in enumerate(block.get('time_ranges', [])):
+        for tr_idx, time_range in enumerate(block.get("time_ranges", [])):
             if not isinstance(time_range, dict):
                 errors.append(f"'{domain}': time_range #{tr_idx} must be a dictionary")
                 continue
-            for key in ['start', 'end']:
+            for key in ["start", "end"]:
                 if key not in time_range:
                     errors.append(f"'{domain}': missing '{key}' in time_range")
                 elif not validate_time_format(time_range[key]):
@@ -353,7 +341,7 @@ def validate_domain_config(config: Dict[str, Any], index: int) -> List[str]:
     return errors
 
 
-def validate_allowlist_config(config: Dict[str, Any], index: int) -> List[str]:
+def validate_allowlist_config(config: dict[str, Any], index: int) -> list[str]:
     """
     Validate a single allowlist configuration entry.
 
@@ -364,13 +352,13 @@ def validate_allowlist_config(config: Dict[str, Any], index: int) -> List[str]:
     Returns:
         List of error messages (empty if valid)
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     # Check domain field exists and is valid
-    if 'domain' not in config:
+    if "domain" not in config:
         return [f"allowlist #{index}: Missing 'domain' field"]
 
-    domain = config['domain']
+    domain = config["domain"]
     if not domain or not isinstance(domain, str) or not domain.strip():
         return [f"allowlist #{index}: Empty or invalid domain"]
 
@@ -379,19 +367,17 @@ def validate_allowlist_config(config: Dict[str, Any], index: int) -> List[str]:
         return [f"allowlist #{index}: Invalid domain format '{domain}'"]
 
     # Allowlist should NOT have schedule (it's always 24/7)
-    if 'schedule' in config and config['schedule'] is not None:
+    if "schedule" in config and config["schedule"] is not None:
         errors.append(
-            f"allowlist '{domain}': 'schedule' field not allowed "
-            f"(allowlist is always 24/7)"
+            f"allowlist '{domain}': 'schedule' field not allowed " f"(allowlist is always 24/7)"
         )
 
     return errors
 
 
 def validate_no_overlap(
-    domains: List[Dict[str, Any]],
-    allowlist: List[Dict[str, Any]]
-) -> List[str]:
+    domains: list[dict[str, Any]], allowlist: list[dict[str, Any]]
+) -> list[str]:
     """
     Validate that no domain appears in both denylist and allowlist.
 
@@ -402,17 +388,17 @@ def validate_no_overlap(
     Returns:
         List of error messages (empty if no conflicts)
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     denylist_domains = {
-        d['domain'].strip().lower()
+        d["domain"].strip().lower()
         for d in domains
-        if 'domain' in d and isinstance(d['domain'], str)
+        if "domain" in d and isinstance(d["domain"], str)
     }
     allowlist_domains = {
-        a['domain'].strip().lower()
+        a["domain"].strip().lower()
         for a in allowlist
-        if 'domain' in a and isinstance(a['domain'], str)
+        if "domain" in a and isinstance(a["domain"], str)
     }
 
     overlap = denylist_domains & allowlist_domains
@@ -430,11 +416,10 @@ def validate_no_overlap(
 # CONFIGURATION LOADING
 # =============================================================================
 
+
 def load_domains(
-    script_dir: str,
-    domains_url: Optional[str] = None,
-    use_cache: bool = True
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    script_dir: str, domains_url: Optional[str] = None, use_cache: bool = True
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     Load domain configurations from URL or local file.
 
@@ -455,12 +440,12 @@ def load_domains(
         # Use fetch_remote_domains with caching and fallback support
         config = fetch_remote_domains(domains_url, use_cache=use_cache)
     else:
-        json_file = Path(script_dir) / 'domains.json'
+        json_file = Path(script_dir) / "domains.json"
         if not json_file.exists():
             raise ConfigurationError(f"Config file not found: {json_file}")
 
         try:
-            with open(json_file, 'r') as f:
+            with open(json_file) as f:
                 config = json.load(f)
             logger.info("Loaded domains from local file")
         except json.JSONDecodeError as e:
@@ -470,15 +455,15 @@ def load_domains(
     if not isinstance(config, dict):
         raise ConfigurationError("Config must be a JSON object with 'domains' array")
 
-    domains = config.get('domains', [])
+    domains = config.get("domains", [])
     if not domains:
         raise ConfigurationError("No domains configured")
 
     # Load allowlist (optional, defaults to empty)
-    allowlist = config.get('allowlist', [])
+    allowlist = config.get("allowlist", [])
 
     # Validate each domain in denylist
-    all_errors: List[str] = []
+    all_errors: list[str] = []
     for idx, domain_config in enumerate(domains):
         all_errors.extend(validate_domain_config(domain_config, idx))
 
@@ -497,7 +482,7 @@ def load_domains(
     return domains, allowlist
 
 
-def load_config(config_dir: Optional[Path] = None) -> Dict[str, Any]:
+def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
     """
     Load configuration from .env file and environment variables.
 
@@ -515,28 +500,28 @@ def load_config(config_dir: Optional[Path] = None) -> Dict[str, Any]:
         # Default to looking in current working directory first,
         # then fall back to package directory
         cwd = Path.cwd()
-        if (cwd / '.env').exists():
+        if (cwd / ".env").exists():
             config_dir = cwd
         else:
             config_dir = Path(__file__).parent.parent.parent.absolute()
 
-    env_file = config_dir / '.env'
+    env_file = config_dir / ".env"
 
     if env_file.exists():
-        with open(env_file, 'r', encoding='utf-8-sig') as f:  # utf-8-sig handles BOM
+        with open(env_file, encoding="utf-8-sig") as f:  # utf-8-sig handles BOM
             for line_num, line in enumerate(f, 1):
                 line = line.strip()
 
                 # Skip empty lines and comments
-                if not line or line.startswith('#'):
+                if not line or line.startswith("#"):
                     continue
 
                 # Validate line format
-                if '=' not in line:
+                if "=" not in line:
                     logger.warning(f".env line {line_num}: missing '=' separator, skipping")
                     continue
 
-                key, value = line.split('=', 1)
+                key, value = line.split("=", 1)
                 key = key.strip()
 
                 if not key:
@@ -546,26 +531,26 @@ def load_config(config_dir: Optional[Path] = None) -> Dict[str, Any]:
                 os.environ[key] = parse_env_value(value)
 
     # Build configuration with validated values
-    config: Dict[str, Any] = {
-        'api_key': os.getenv('NEXTDNS_API_KEY'),
-        'profile_id': os.getenv('NEXTDNS_PROFILE_ID'),
-        'timezone': os.getenv('TIMEZONE', DEFAULT_TIMEZONE),
-        'domains_url': os.getenv('DOMAINS_URL'),
-        'timeout': safe_int(os.getenv('API_TIMEOUT'), DEFAULT_TIMEOUT, 'API_TIMEOUT'),
-        'retries': safe_int(os.getenv('API_RETRIES'), DEFAULT_RETRIES, 'API_RETRIES'),
-        'script_dir': str(config_dir)
+    config: dict[str, Any] = {
+        "api_key": os.getenv("NEXTDNS_API_KEY"),
+        "profile_id": os.getenv("NEXTDNS_PROFILE_ID"),
+        "timezone": os.getenv("TIMEZONE", DEFAULT_TIMEZONE),
+        "domains_url": os.getenv("DOMAINS_URL"),
+        "timeout": safe_int(os.getenv("API_TIMEOUT"), DEFAULT_TIMEOUT, "API_TIMEOUT"),
+        "retries": safe_int(os.getenv("API_RETRIES"), DEFAULT_RETRIES, "API_RETRIES"),
+        "script_dir": str(config_dir),
     }
 
     # Validate required fields
-    if not config['api_key']:
+    if not config["api_key"]:
         raise ConfigurationError("Missing NEXTDNS_API_KEY in .env or environment")
 
-    if not config['profile_id']:
+    if not config["profile_id"]:
         raise ConfigurationError("Missing NEXTDNS_PROFILE_ID in .env or environment")
 
     # Validate timezone early to fail fast
     try:
-        ZoneInfo(config['timezone'])
+        ZoneInfo(config["timezone"])
     except KeyError:
         raise ConfigurationError(
             f"Invalid TIMEZONE '{config['timezone']}'. "
@@ -573,7 +558,7 @@ def load_config(config_dir: Optional[Path] = None) -> Dict[str, Any]:
         )
 
     # Validate DOMAINS_URL if provided
-    if config['domains_url'] and not validate_url(config['domains_url']):
+    if config["domains_url"] and not validate_url(config["domains_url"]):
         raise ConfigurationError(
             f"Invalid DOMAINS_URL '{config['domains_url']}'. "
             f"Must be a valid http:// or https:// URL"
@@ -582,7 +567,7 @@ def load_config(config_dir: Optional[Path] = None) -> Dict[str, Any]:
     return config
 
 
-def get_protected_domains(domains: List[Dict[str, Any]]) -> List[str]:
+def get_protected_domains(domains: list[dict[str, Any]]) -> list[str]:
     """
     Extract domains marked as protected from config.
 
@@ -592,4 +577,4 @@ def get_protected_domains(domains: List[Dict[str, Any]]) -> List[str]:
     Returns:
         List of protected domain names
     """
-    return [d['domain'] for d in domains if d.get('protected', False)]
+    return [d["domain"] for d in domains if d.get("protected", False)]

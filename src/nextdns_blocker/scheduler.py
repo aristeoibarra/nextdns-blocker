@@ -1,8 +1,7 @@
 """Schedule evaluation for time-based domain blocking."""
 
 from datetime import datetime, time, timedelta
-from typing import Any, Dict, Optional
-
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 from .common import DAYS_MAP
@@ -47,11 +46,11 @@ class ScheduleEvaluator:
         if not time_str or not isinstance(time_str, str):
             raise ValueError(f"Invalid time format: {time_str}")
 
-        if ':' not in time_str:
+        if ":" not in time_str:
             raise ValueError(f"Invalid time format: {time_str}")
 
         try:
-            parts = time_str.split(':')
+            parts = time_str.split(":")
             if len(parts) != 2:
                 raise ValueError(f"Invalid time format: {time_str}")
 
@@ -65,12 +64,7 @@ class ScheduleEvaluator:
         except (ValueError, TypeError):
             raise ValueError(f"Invalid time format: {time_str}")
 
-    def is_time_in_range(
-        self,
-        current: time,
-        start: time,
-        end: time
-    ) -> bool:
+    def is_time_in_range(self, current: time, start: time, end: time) -> bool:
         """
         Check if current time is within a time range.
 
@@ -91,11 +85,7 @@ class ScheduleEvaluator:
             # Overnight range (e.g., 22:00 - 02:00)
             return current >= start or current <= end
 
-    def _check_overnight_yesterday(
-        self,
-        now: datetime,
-        schedule: Dict[str, Any]
-    ) -> bool:
+    def _check_overnight_yesterday(self, now: datetime, schedule: dict[str, Any]) -> bool:
         """
         Check if we're in an overnight schedule from yesterday.
 
@@ -113,14 +103,14 @@ class ScheduleEvaluator:
         yesterday_day = list(DAYS_MAP.keys())[yesterday.weekday()]
         current_time = now.time()
 
-        for block in schedule.get('available_hours', []):
-            days = [d.lower() for d in block.get('days', [])]
+        for block in schedule.get("available_hours", []):
+            days = [d.lower() for d in block.get("days", [])]
             if yesterday_day not in days:
                 continue
 
-            for time_range in block.get('time_ranges', []):
-                start = self.parse_time(time_range['start'])
-                end = self.parse_time(time_range['end'])
+            for time_range in block.get("time_ranges", []):
+                start = self.parse_time(time_range["start"])
+                end = self.parse_time(time_range["end"])
 
                 # Only check overnight ranges
                 if start > end:
@@ -130,7 +120,7 @@ class ScheduleEvaluator:
 
         return False
 
-    def should_block(self, schedule: Optional[Dict[str, Any]]) -> bool:
+    def should_block(self, schedule: Optional[dict[str, Any]]) -> bool:
         """
         Determine if a domain should be blocked based on its schedule.
 
@@ -141,7 +131,7 @@ class ScheduleEvaluator:
             True if domain should be blocked, False if available
         """
         # No schedule = always blocked
-        if not schedule or 'available_hours' not in schedule:
+        if not schedule or "available_hours" not in schedule:
             return True
 
         now = self._get_current_time()
@@ -149,14 +139,14 @@ class ScheduleEvaluator:
         current_time = now.time()
 
         # Check today's schedule
-        for block in schedule.get('available_hours', []):
-            days = [d.lower() for d in block.get('days', [])]
+        for block in schedule.get("available_hours", []):
+            days = [d.lower() for d in block.get("days", [])]
             if current_day not in days:
                 continue
 
-            for time_range in block.get('time_ranges', []):
-                start = self.parse_time(time_range['start'])
-                end = self.parse_time(time_range['end'])
+            for time_range in block.get("time_ranges", []):
+                start = self.parse_time(time_range["start"])
+                end = self.parse_time(time_range["end"])
 
                 if self.is_time_in_range(current_time, start, end):
                     return False  # Available, don't block
@@ -167,7 +157,7 @@ class ScheduleEvaluator:
 
         return True  # Outside all available windows, block
 
-    def should_block_domain(self, domain_config: Dict[str, Any]) -> bool:
+    def should_block_domain(self, domain_config: dict[str, Any]) -> bool:
         """
         Determine if a domain should be blocked based on its config.
 
@@ -179,11 +169,9 @@ class ScheduleEvaluator:
         Returns:
             True if domain should be blocked, False if available
         """
-        return self.should_block(domain_config.get('schedule'))
+        return self.should_block(domain_config.get("schedule"))
 
-    def get_next_change(
-        self, domain_config: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+    def get_next_change(self, domain_config: dict[str, Any]) -> Optional[dict[str, Any]]:
         """
         Get information about the next schedule change for a domain.
 
@@ -194,13 +182,13 @@ class ScheduleEvaluator:
             Dictionary with 'action' (block/unblock) and 'time' (datetime),
             or None if no schedule
         """
-        schedule = domain_config.get('schedule')
-        if not schedule or 'available_hours' not in schedule:
+        schedule = domain_config.get("schedule")
+        if not schedule or "available_hours" not in schedule:
             return None
 
         currently_blocked = self.should_block(schedule)
 
         return {
-            'currently_blocked': currently_blocked,
-            'domain': domain_config.get('domain', 'unknown')
+            "currently_blocked": currently_blocked,
+            "domain": domain_config.get("domain", "unknown"),
         }

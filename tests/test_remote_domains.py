@@ -2,19 +2,16 @@
 
 import json
 import time
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 import requests as req
 import responses
 
 from nextdns_blocker.config import (
-    DOMAINS_CACHE_TTL,
     fetch_remote_domains,
     get_cache_status,
     get_cached_domains,
-    get_domains_cache_file,
     load_domains,
     save_domains_cache,
 )
@@ -26,37 +23,34 @@ class TestGetCachedDomains:
 
     def test_returns_none_when_no_cache(self, tmp_path):
         """Should return None when cache file doesn't exist."""
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=tmp_path / "nonexistent.json"):
+        with patch(
+            "nextdns_blocker.config.get_domains_cache_file",
+            return_value=tmp_path / "nonexistent.json",
+        ):
             result = get_cached_domains()
             assert result is None
 
     def test_returns_cached_data_when_valid(self, tmp_path):
         """Should return cached data when cache is valid."""
         cache_file = tmp_path / "domains_cache.json"
-        cache_data = {
-            'timestamp': time.time(),
-            'data': {'domains': [{'domain': 'example.com'}]}
-        }
+        cache_data = {"timestamp": time.time(), "data": {"domains": [{"domain": "example.com"}]}}
         cache_file.write_text(json.dumps(cache_data))
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             result = get_cached_domains()
-            assert result == {'domains': [{'domain': 'example.com'}]}
+            assert result == {"domains": [{"domain": "example.com"}]}
 
     def test_returns_none_when_expired(self, tmp_path):
         """Should return None when cache is expired."""
         cache_file = tmp_path / "domains_cache.json"
         # Set timestamp to 2 hours ago (beyond 1 hour TTL)
         cache_data = {
-            'timestamp': time.time() - 7200,
-            'data': {'domains': [{'domain': 'example.com'}]}
+            "timestamp": time.time() - 7200,
+            "data": {"domains": [{"domain": "example.com"}]},
         }
         cache_file.write_text(json.dumps(cache_data))
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             result = get_cached_domains()
             assert result is None
 
@@ -65,13 +59,12 @@ class TestGetCachedDomains:
         cache_file = tmp_path / "domains_cache.json"
         # Set timestamp to 30 seconds ago
         cache_data = {
-            'timestamp': time.time() - 30,
-            'data': {'domains': [{'domain': 'example.com'}]}
+            "timestamp": time.time() - 30,
+            "data": {"domains": [{"domain": "example.com"}]},
         }
         cache_file.write_text(json.dumps(cache_data))
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             # With 60 second max_age, should return data
             result = get_cached_domains(max_age=60)
             assert result is not None
@@ -85,8 +78,7 @@ class TestGetCachedDomains:
         cache_file = tmp_path / "domains_cache.json"
         cache_file.write_text("not valid json")
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             result = get_cached_domains()
             assert result is None
 
@@ -98,25 +90,23 @@ class TestSaveDomainsCache:
         """Should create cache file with correct content."""
         cache_file = tmp_path / "cache" / "domains_cache.json"
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
-            data = {'domains': [{'domain': 'example.com'}]}
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
+            data = {"domains": [{"domain": "example.com"}]}
             result = save_domains_cache(data)
 
             assert result is True
             assert cache_file.exists()
 
             saved = json.loads(cache_file.read_text())
-            assert 'timestamp' in saved
-            assert saved['data'] == data
+            assert "timestamp" in saved
+            assert saved["data"] == data
 
     def test_creates_parent_directory(self, tmp_path):
         """Should create parent directories if needed."""
         cache_file = tmp_path / "nested" / "cache" / "domains_cache.json"
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
-            result = save_domains_cache({'domains': []})
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
+            result = save_domains_cache({"domains": []})
             assert result is True
             assert cache_file.exists()
 
@@ -129,17 +119,11 @@ class TestFetchRemoteDomains:
         """Should fetch and cache domains on success."""
         cache_file = tmp_path / "domains_cache.json"
         url = "https://example.com/domains.json"
-        data = {'domains': [{'domain': 'example.com'}]}
+        data = {"domains": [{"domain": "example.com"}]}
 
-        responses.add(
-            responses.GET,
-            url,
-            json=data,
-            status=200
-        )
+        responses.add(responses.GET, url, json=data, status=200)
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             result = fetch_remote_domains(url)
 
             assert result == data
@@ -150,21 +134,16 @@ class TestFetchRemoteDomains:
         """Should fall back to cache on fetch failure."""
         cache_file = tmp_path / "domains_cache.json"
         url = "https://example.com/domains.json"
-        cached_data = {'domains': [{'domain': 'cached.com'}]}
+        cached_data = {"domains": [{"domain": "cached.com"}]}
 
         # Create existing cache
-        cache_content = {'timestamp': time.time() - 3600, 'data': cached_data}
+        cache_content = {"timestamp": time.time() - 3600, "data": cached_data}
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(json.dumps(cache_content))
 
-        responses.add(
-            responses.GET,
-            url,
-            body=req.exceptions.ConnectionError("Network error")
-        )
+        responses.add(responses.GET, url, body=req.exceptions.ConnectionError("Network error"))
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             result = fetch_remote_domains(url)
 
             assert result == cached_data
@@ -175,14 +154,9 @@ class TestFetchRemoteDomains:
         cache_file = tmp_path / "nonexistent.json"
         url = "https://example.com/domains.json"
 
-        responses.add(
-            responses.GET,
-            url,
-            body=req.exceptions.ConnectionError("Network error")
-        )
+        responses.add(responses.GET, url, body=req.exceptions.ConnectionError("Network error"))
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             with pytest.raises(ConfigurationError) as excinfo:
                 fetch_remote_domains(url)
 
@@ -194,15 +168,9 @@ class TestFetchRemoteDomains:
         cache_file = tmp_path / "domains_cache.json"
         url = "https://example.com/domains.json"
 
-        responses.add(
-            responses.GET,
-            url,
-            body="not json",
-            status=200
-        )
+        responses.add(responses.GET, url, body="not json", status=200)
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             with pytest.raises(ConfigurationError) as excinfo:
                 fetch_remote_domains(url, use_cache=False)
 
@@ -214,15 +182,9 @@ class TestFetchRemoteDomains:
         cache_file = tmp_path / "domains_cache.json"
         url = "https://example.com/domains.json"
 
-        responses.add(
-            responses.GET,
-            url,
-            json=["not", "an", "object"],
-            status=200
-        )
+        responses.add(responses.GET, url, json=["not", "an", "object"], status=200)
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             with pytest.raises(ConfigurationError) as excinfo:
                 fetch_remote_domains(url)
 
@@ -234,16 +196,13 @@ class TestFetchRemoteDomains:
         cache_file = tmp_path / "domains_cache.json"
         url = "https://example.com/domains.json"
 
-        responses.add(
-            responses.GET,
-            url,
-            body=req.exceptions.ConnectionError("Network error")
-        )
+        responses.add(responses.GET, url, body=req.exceptions.ConnectionError("Network error"))
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
-            with pytest.raises(ConfigurationError):
-                fetch_remote_domains(url, use_cache=False)
+        with (
+            patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file),
+            pytest.raises(ConfigurationError),
+        ):
+            fetch_remote_domains(url, use_cache=False)
 
 
 class TestGetCacheStatus:
@@ -253,57 +212,47 @@ class TestGetCacheStatus:
         """Should report cache not existing."""
         cache_file = tmp_path / "nonexistent.json"
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             status = get_cache_status()
 
-            assert status['exists'] is False
-            assert 'path' in status
+            assert status["exists"] is False
+            assert "path" in status
 
     def test_valid_cache(self, tmp_path):
         """Should report valid cache status."""
         cache_file = tmp_path / "domains_cache.json"
-        cache_data = {
-            'timestamp': time.time() - 600,  # 10 minutes ago
-            'data': {'domains': []}
-        }
+        cache_data = {"timestamp": time.time() - 600, "data": {"domains": []}}  # 10 minutes ago
         cache_file.write_text(json.dumps(cache_data))
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             status = get_cache_status()
 
-            assert status['exists'] is True
-            assert status['expired'] is False
-            assert 500 < status['age_seconds'] < 700
+            assert status["exists"] is True
+            assert status["expired"] is False
+            assert 500 < status["age_seconds"] < 700
 
     def test_expired_cache(self, tmp_path):
         """Should report expired cache status."""
         cache_file = tmp_path / "domains_cache.json"
-        cache_data = {
-            'timestamp': time.time() - 7200,  # 2 hours ago
-            'data': {'domains': []}
-        }
+        cache_data = {"timestamp": time.time() - 7200, "data": {"domains": []}}  # 2 hours ago
         cache_file.write_text(json.dumps(cache_data))
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             status = get_cache_status()
 
-            assert status['exists'] is True
-            assert status['expired'] is True
+            assert status["exists"] is True
+            assert status["expired"] is True
 
     def test_corrupted_cache(self, tmp_path):
         """Should report corrupted cache status."""
         cache_file = tmp_path / "domains_cache.json"
         cache_file.write_text("not valid json")
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             status = get_cache_status()
 
-            assert status['exists'] is True
-            assert status.get('corrupted') is True
+            assert status["exists"] is True
+            assert status.get("corrupted") is True
 
 
 class TestLoadDomainsWithCache:
@@ -314,24 +263,15 @@ class TestLoadDomainsWithCache:
         """Should load from URL and cache the result."""
         cache_file = tmp_path / "domains_cache.json"
         url = "https://example.com/domains.json"
-        data = {
-            'domains': [{'domain': 'example.com'}],
-            'allowlist': []
-        }
+        data = {"domains": [{"domain": "example.com"}], "allowlist": []}
 
-        responses.add(
-            responses.GET,
-            url,
-            json=data,
-            status=200
-        )
+        responses.add(responses.GET, url, json=data, status=200)
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             domains, allowlist = load_domains(str(tmp_path), domains_url=url)
 
             assert len(domains) == 1
-            assert domains[0]['domain'] == 'example.com'
+            assert domains[0]["domain"] == "example.com"
             assert cache_file.exists()
 
     @responses.activate
@@ -339,39 +279,28 @@ class TestLoadDomainsWithCache:
         """Should use cached data when network fails."""
         cache_file = tmp_path / "cache" / "domains_cache.json"
         url = "https://example.com/domains.json"
-        cached_data = {
-            'domains': [{'domain': 'cached.com'}],
-            'allowlist': []
-        }
+        cached_data = {"domains": [{"domain": "cached.com"}], "allowlist": []}
 
         # Create existing cache
         cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_content = {'timestamp': time.time() - 3600, 'data': cached_data}
+        cache_content = {"timestamp": time.time() - 3600, "data": cached_data}
         cache_file.write_text(json.dumps(cache_content))
 
-        responses.add(
-            responses.GET,
-            url,
-            body=req.exceptions.ConnectionError("Network error")
-        )
+        responses.add(responses.GET, url, body=req.exceptions.ConnectionError("Network error"))
 
-        with patch('nextdns_blocker.config.get_domains_cache_file',
-                   return_value=cache_file):
+        with patch("nextdns_blocker.config.get_domains_cache_file", return_value=cache_file):
             domains, allowlist = load_domains(str(tmp_path), domains_url=url)
 
             assert len(domains) == 1
-            assert domains[0]['domain'] == 'cached.com'
+            assert domains[0]["domain"] == "cached.com"
 
     def test_load_from_local_file(self, tmp_path):
         """Should load from local file without caching."""
         domains_file = tmp_path / "domains.json"
-        data = {
-            'domains': [{'domain': 'local.com'}],
-            'allowlist': []
-        }
+        data = {"domains": [{"domain": "local.com"}], "allowlist": []}
         domains_file.write_text(json.dumps(data))
 
         domains, allowlist = load_domains(str(tmp_path))
 
         assert len(domains) == 1
-        assert domains[0]['domain'] == 'local.com'
+        assert domains[0]["domain"] == "local.com"

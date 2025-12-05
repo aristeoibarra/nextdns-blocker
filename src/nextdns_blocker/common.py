@@ -20,14 +20,17 @@ logger = logging.getLogger(__name__)
 
 APP_NAME = "nextdns-blocker"
 
+
 # Use functions for dynamic path resolution (XDG support)
 def get_log_dir() -> Path:
     """Get the log directory path using XDG conventions."""
     return Path(user_data_dir(APP_NAME)) / "logs"
 
+
 def get_audit_log_file() -> Path:
     """Get the audit log file path."""
     return get_log_dir() / "audit.log"
+
 
 # Keep legacy constants for backwards compatibility with tests
 # These are evaluated at import time but point to the same location
@@ -43,38 +46,44 @@ MAX_LABEL_LENGTH = 63
 
 # Domain validation pattern (RFC 1035 compliant, no trailing dot)
 DOMAIN_PATTERN = re.compile(
-    r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*'
-    r'[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$'
+    r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*"
+    r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$"
 )
 
 # Time format pattern (HH:MM, 24-hour format)
-TIME_PATTERN = re.compile(r'^([01]?[0-9]|2[0-3]):([0-5][0-9])$')
+TIME_PATTERN = re.compile(r"^([01]?[0-9]|2[0-3]):([0-5][0-9])$")
 
 # URL pattern for DOMAINS_URL validation
 URL_PATTERN = re.compile(
-    r'^https?://'  # http:// or https://
-    r'(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+'  # domain labels
-    r'[a-zA-Z]{2,}'  # TLD (at least 2 chars)
-    r'(?::\d{1,5})?'  # optional port
-    r'(?:/[^\s]*)?$',  # optional path
-    re.IGNORECASE
+    r"^https?://"  # http:// or https://
+    r"(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+"  # domain labels
+    r"[a-zA-Z]{2,}"  # TLD (at least 2 chars)
+    r"(?::\d{1,5})?"  # optional port
+    r"(?:/[^\s]*)?$",  # optional path
+    re.IGNORECASE,
 )
 
 # Valid day names for schedules
-VALID_DAYS = frozenset({
-    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
-})
+VALID_DAYS = frozenset(
+    {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+)
 
 # Day name to weekday number mapping (Monday=0, Sunday=6)
 DAYS_MAP = {
-    'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
-    'friday': 4, 'saturday': 5, 'sunday': 6
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
 }
 
 
 # =============================================================================
 # DIRECTORY MANAGEMENT
 # =============================================================================
+
 
 def ensure_log_dir() -> None:
     """Ensure log directory exists. Called lazily when needed."""
@@ -84,6 +93,7 @@ def ensure_log_dir() -> None:
 # =============================================================================
 # VALIDATION FUNCTIONS
 # =============================================================================
+
 
 def validate_domain(domain: str) -> bool:
     """
@@ -98,7 +108,7 @@ def validate_domain(domain: str) -> bool:
     if not domain or len(domain) > MAX_DOMAIN_LENGTH:
         return False
     # Reject trailing dots (FQDN notation not supported)
-    if domain.endswith('.'):
+    if domain.endswith("."):
         return False
     return DOMAIN_PATTERN.match(domain) is not None
 
@@ -137,6 +147,7 @@ def validate_url(url: str) -> bool:
 # PARSING FUNCTIONS
 # =============================================================================
 
+
 def parse_env_value(value: str) -> str:
     """
     Parse .env value, handling quotes and whitespace.
@@ -148,10 +159,11 @@ def parse_env_value(value: str) -> str:
         Cleaned value with quotes removed
     """
     value = value.strip()
-    if len(value) >= 2:
-        if (value.startswith('"') and value.endswith('"')) or \
-           (value.startswith("'") and value.endswith("'")):
-            value = value[1:-1]
+    if len(value) >= 2 and (
+        (value.startswith('"') and value.endswith('"'))
+        or (value.startswith("'") and value.endswith("'"))
+    ):
+        value = value[1:-1]
     return value
 
 
@@ -188,6 +200,7 @@ def safe_int(value: Optional[str], default: int, name: str = "value") -> int:
 # FILE I/O FUNCTIONS
 # =============================================================================
 
+
 def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
     """
     Log an action to the audit log file with secure permissions and file locking.
@@ -214,7 +227,7 @@ def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
         log_entry = " | ".join(parts) + "\n"
 
         # Write with exclusive lock to prevent corruption from concurrent writes
-        with open(audit_file, 'a') as f:
+        with open(audit_file, "a") as f:
             fcntl.flock(f.fileno(), fcntl.LOCK_EX)
             try:
                 f.write(log_entry)
@@ -249,7 +262,7 @@ def write_secure_file(path: Path, content: str) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECURE_FILE_MODE)
     fd_owned = False
     try:
-        f = os.fdopen(fd, 'w')
+        f = os.fdopen(fd, "w")
         fd_owned = True  # os.fdopen now owns the fd, don't close manually
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
@@ -277,7 +290,7 @@ def read_secure_file(path: Path) -> Optional[str]:
         return None
 
     try:
-        with open(path, 'r') as f:
+        with open(path) as f:
             fcntl.flock(f.fileno(), fcntl.LOCK_SH)
             try:
                 return f.read().strip()

@@ -5,12 +5,12 @@ import sys
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 # Add src directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
 from nextdns_blocker import watchdog
 
@@ -26,8 +26,8 @@ def temp_log_dir():
 def mock_disabled_file(temp_log_dir):
     """Mock the DISABLED_FILE path by patching the getter function."""
     disabled_file = temp_log_dir / ".watchdog_disabled"
-    with patch.object(watchdog, 'get_disabled_file', return_value=disabled_file):
-        with patch.object(watchdog, 'DISABLED_FILE', disabled_file):
+    with patch.object(watchdog, "get_disabled_file", return_value=disabled_file):
+        with patch.object(watchdog, "DISABLED_FILE", disabled_file):
             yield disabled_file
 
 
@@ -35,8 +35,8 @@ def mock_disabled_file(temp_log_dir):
 def mock_audit_log_file(temp_log_dir):
     """Mock the AUDIT_LOG_FILE path by patching the common module."""
     audit_file = temp_log_dir / "audit.log"
-    with patch('nextdns_blocker.common.get_audit_log_file', return_value=audit_file):
-        with patch('nextdns_blocker.common.get_log_dir', return_value=temp_log_dir):
+    with patch("nextdns_blocker.common.get_audit_log_file", return_value=audit_file):
+        with patch("nextdns_blocker.common.get_log_dir", return_value=temp_log_dir):
             yield audit_file
 
 
@@ -200,7 +200,7 @@ class TestGetCrontab:
         mock_result.returncode = 0
         mock_result.stdout = "*/5 * * * * some_job\n"
 
-        with patch('subprocess.run', return_value=mock_result):
+        with patch("subprocess.run", return_value=mock_result):
             result = watchdog.get_crontab()
             assert result == "*/5 * * * * some_job\n"
 
@@ -210,13 +210,13 @@ class TestGetCrontab:
         mock_result.returncode = 1
         mock_result.stdout = ""
 
-        with patch('subprocess.run', return_value=mock_result):
+        with patch("subprocess.run", return_value=mock_result):
             result = watchdog.get_crontab()
             assert result == ""
 
     def test_get_crontab_error(self):
         """Should return empty string on error."""
-        with patch('subprocess.run', side_effect=OSError("error")):
+        with patch("subprocess.run", side_effect=OSError("error")):
             result = watchdog.get_crontab()
             assert result == ""
 
@@ -230,7 +230,7 @@ class TestSetCrontab:
         mock_process.returncode = 0
         mock_process.communicate = MagicMock()
 
-        with patch('subprocess.Popen', return_value=mock_process):
+        with patch("subprocess.Popen", return_value=mock_process):
             result = watchdog.set_crontab("*/5 * * * * job\n")
             assert result is True
 
@@ -240,13 +240,13 @@ class TestSetCrontab:
         mock_process.returncode = 1
         mock_process.communicate = MagicMock()
 
-        with patch('subprocess.Popen', return_value=mock_process):
+        with patch("subprocess.Popen", return_value=mock_process):
             result = watchdog.set_crontab("*/5 * * * * job\n")
             assert result is False
 
     def test_set_crontab_error(self):
         """Should return False on error."""
-        with patch('subprocess.Popen', side_effect=OSError("error")):
+        with patch("subprocess.Popen", side_effect=OSError("error")):
             result = watchdog.set_crontab("*/5 * * * * job\n")
             assert result is False
 
@@ -258,6 +258,7 @@ class TestCmdCheck:
     def runner(self):
         """Create Click CLI test runner."""
         from click.testing import CliRunner
+
         return CliRunner()
 
     def test_cmd_check_disabled(self, runner, mock_disabled_file):
@@ -271,7 +272,7 @@ class TestCmdCheck:
         """Should do nothing when all cron jobs present."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
 
-        with patch.object(watchdog, 'get_crontab', return_value=crontab):
+        with patch.object(watchdog, "get_crontab", return_value=crontab):
             result = runner.invoke(watchdog.cmd_check)
             assert result.exit_code == 0
 
@@ -283,13 +284,14 @@ class TestCmdStatus:
     def runner(self):
         """Create Click CLI test runner."""
         from click.testing import CliRunner
+
         return CliRunner()
 
     def test_cmd_status_all_ok(self, runner, mock_disabled_file):
         """Should show OK status when all cron jobs present."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
 
-        with patch.object(watchdog, 'get_crontab', return_value=crontab):
+        with patch.object(watchdog, "get_crontab", return_value=crontab):
             result = runner.invoke(watchdog.cmd_status)
             assert result.exit_code == 0
             assert "ok" in result.output
@@ -297,7 +299,7 @@ class TestCmdStatus:
 
     def test_cmd_status_missing_crons(self, runner, mock_disabled_file):
         """Should show missing status when cron jobs absent."""
-        with patch.object(watchdog, 'get_crontab', return_value=""):
+        with patch.object(watchdog, "get_crontab", return_value=""):
             result = runner.invoke(watchdog.cmd_status)
             assert result.exit_code == 0
             assert "missing" in result.output
@@ -308,7 +310,7 @@ class TestCmdStatus:
         mock_disabled_file.write_text("permanent")
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
 
-        with patch.object(watchdog, 'get_crontab', return_value=crontab):
+        with patch.object(watchdog, "get_crontab", return_value=crontab):
             result = runner.invoke(watchdog.cmd_status)
             assert result.exit_code == 0
             assert "DISABLED" in result.output
@@ -321,11 +323,12 @@ class TestCmdDisable:
     def runner(self):
         """Create Click CLI test runner."""
         from click.testing import CliRunner
+
         return CliRunner()
 
     def test_cmd_disable_temporary(self, runner, mock_disabled_file, mock_audit_log_file):
         """Should disable for specified minutes."""
-        result = runner.invoke(watchdog.cmd_disable, ['30'])
+        result = runner.invoke(watchdog.cmd_disable, ["30"])
         assert result.exit_code == 0
         assert "30 minutes" in result.output
 
@@ -344,6 +347,7 @@ class TestCmdEnable:
     def runner(self):
         """Create Click CLI test runner."""
         from click.testing import CliRunner
+
         return CliRunner()
 
     def test_cmd_enable_when_disabled(self, runner, mock_disabled_file, mock_audit_log_file):
@@ -408,20 +412,21 @@ class TestCmdInstall:
     def runner(self):
         """Create Click CLI test runner."""
         from click.testing import CliRunner
+
         return CliRunner()
 
     def test_cmd_install_success(self, runner, mock_audit_log_file):
         """Should install cron jobs successfully."""
-        with patch.object(watchdog, 'get_crontab', return_value=""):
-            with patch.object(watchdog, 'set_crontab', return_value=True):
+        with patch.object(watchdog, "get_crontab", return_value=""):
+            with patch.object(watchdog, "set_crontab", return_value=True):
                 result = runner.invoke(watchdog.cmd_install)
                 assert result.exit_code == 0
                 assert "cron installed" in result.output
 
     def test_cmd_install_failure(self, runner):
         """Should return error when cron install fails."""
-        with patch.object(watchdog, 'get_crontab', return_value=""):
-            with patch.object(watchdog, 'set_crontab', return_value=False):
+        with patch.object(watchdog, "get_crontab", return_value=""):
+            with patch.object(watchdog, "set_crontab", return_value=False):
                 result = runner.invoke(watchdog.cmd_install)
                 assert result.exit_code == 1
                 assert "failed" in result.output
@@ -429,9 +434,9 @@ class TestCmdInstall:
     def test_cmd_install_preserves_existing(self, runner, mock_audit_log_file):
         """Should preserve existing cron jobs."""
         existing_cron = "0 * * * * other_job\n"
-        with patch.object(watchdog, 'get_crontab', return_value=existing_cron):
-            with patch.object(watchdog, 'set_crontab', return_value=True) as mock_set:
-                result = runner.invoke(watchdog.cmd_install)
+        with patch.object(watchdog, "get_crontab", return_value=existing_cron):
+            with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
+                runner.invoke(watchdog.cmd_install)
                 # Verify existing job is preserved
                 call_arg = mock_set.call_args[0][0]
                 assert "other_job" in call_arg
@@ -444,30 +449,31 @@ class TestCmdUninstall:
     def runner(self):
         """Create Click CLI test runner."""
         from click.testing import CliRunner
+
         return CliRunner()
 
     def test_cmd_uninstall_success(self, runner, mock_audit_log_file):
         """Should uninstall cron jobs successfully."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
-        with patch.object(watchdog, 'get_crontab', return_value=crontab):
-            with patch.object(watchdog, 'set_crontab', return_value=True):
+        with patch.object(watchdog, "get_crontab", return_value=crontab):
+            with patch.object(watchdog, "set_crontab", return_value=True):
                 result = runner.invoke(watchdog.cmd_uninstall)
                 assert result.exit_code == 0
                 assert "removed" in result.output
 
     def test_cmd_uninstall_failure(self, runner):
         """Should return error when uninstall fails."""
-        with patch.object(watchdog, 'get_crontab', return_value=""):
-            with patch.object(watchdog, 'set_crontab', return_value=False):
+        with patch.object(watchdog, "get_crontab", return_value=""):
+            with patch.object(watchdog, "set_crontab", return_value=False):
                 result = runner.invoke(watchdog.cmd_uninstall)
                 assert result.exit_code == 1
 
     def test_cmd_uninstall_preserves_other_jobs(self, runner, mock_audit_log_file):
         """Should preserve non-blocker cron jobs."""
         crontab = "0 * * * * other_job\n*/2 * * * * nextdns-blocker sync\n"
-        with patch.object(watchdog, 'get_crontab', return_value=crontab):
-            with patch.object(watchdog, 'set_crontab', return_value=True) as mock_set:
-                result = runner.invoke(watchdog.cmd_uninstall)
+        with patch.object(watchdog, "get_crontab", return_value=crontab):
+            with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
+                runner.invoke(watchdog.cmd_uninstall)
                 call_arg = mock_set.call_args[0][0]
                 assert "other_job" in call_arg
                 assert "nextdns-blocker" not in call_arg
@@ -480,41 +486,48 @@ class TestCmdCheckRestoration:
     def runner(self):
         """Create Click CLI test runner."""
         from click.testing import CliRunner
+
         return CliRunner()
 
     def test_cmd_check_restores_missing_sync(self, runner, mock_disabled_file, mock_audit_log_file):
         """Should restore missing sync cron."""
         # First call returns no sync, second returns with sync added
-        crontab_states = ["* * * * * nextdns-blocker watchdog check\n",
-                         "* * * * * nextdns-blocker watchdog check\n*/2 * * * * nextdns-blocker sync\n"]
+        crontab_states = [
+            "* * * * * nextdns-blocker watchdog check\n",
+            "* * * * * nextdns-blocker watchdog check\n*/2 * * * * nextdns-blocker sync\n",
+        ]
         call_count = [0]
 
         def get_crontab_side_effect():
-            result = crontab_states[min(call_count[0], len(crontab_states)-1)]
+            result = crontab_states[min(call_count[0], len(crontab_states) - 1)]
             call_count[0] += 1
             return result
 
-        with patch.object(watchdog, 'get_crontab', side_effect=get_crontab_side_effect):
-            with patch.object(watchdog, 'set_crontab', return_value=True):
-                with patch('subprocess.run'):
+        with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
+            with patch.object(watchdog, "set_crontab", return_value=True):
+                with patch("subprocess.run"):
                     result = runner.invoke(watchdog.cmd_check)
                     assert result.exit_code == 0
                     assert "sync cron restored" in result.output
 
-    def test_cmd_check_restores_missing_watchdog(self, runner, mock_disabled_file, mock_audit_log_file):
+    def test_cmd_check_restores_missing_watchdog(
+        self, runner, mock_disabled_file, mock_audit_log_file
+    ):
         """Should restore missing watchdog cron."""
-        crontab_states = ["*/2 * * * * nextdns-blocker sync\n",
-                         "*/2 * * * * nextdns-blocker sync\n"]
+        crontab_states = [
+            "*/2 * * * * nextdns-blocker sync\n",
+            "*/2 * * * * nextdns-blocker sync\n",
+        ]
         call_count = [0]
 
         def get_crontab_side_effect():
-            result = crontab_states[min(call_count[0], len(crontab_states)-1)]
+            result = crontab_states[min(call_count[0], len(crontab_states) - 1)]
             call_count[0] += 1
             return result
 
-        with patch.object(watchdog, 'get_crontab', side_effect=get_crontab_side_effect):
-            with patch.object(watchdog, 'set_crontab', return_value=True):
-                with patch('subprocess.run'):
+        with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
+            with patch.object(watchdog, "set_crontab", return_value=True):
+                with patch("subprocess.run"):
                     result = runner.invoke(watchdog.cmd_check)
                     assert result.exit_code == 0
                     assert "watchdog cron restored" in result.output
@@ -526,16 +539,16 @@ class TestAuditLogWatchdog:
     def test_audit_log_creates_file(self, temp_log_dir):
         """Should create audit log file."""
         audit_file = temp_log_dir / "audit.log"
-        with patch('nextdns_blocker.common.get_audit_log_file', return_value=audit_file):
-            with patch('nextdns_blocker.common.get_log_dir', return_value=temp_log_dir):
+        with patch("nextdns_blocker.common.get_audit_log_file", return_value=audit_file):
+            with patch("nextdns_blocker.common.get_log_dir", return_value=temp_log_dir):
                 watchdog.audit_log("TEST", "detail")
                 assert audit_file.exists()
 
     def test_audit_log_writes_wd_prefix(self, temp_log_dir):
         """Should write WD prefix in log entries."""
         audit_file = temp_log_dir / "audit.log"
-        with patch('nextdns_blocker.common.get_audit_log_file', return_value=audit_file):
-            with patch('nextdns_blocker.common.get_log_dir', return_value=temp_log_dir):
+        with patch("nextdns_blocker.common.get_audit_log_file", return_value=audit_file):
+            with patch("nextdns_blocker.common.get_log_dir", return_value=temp_log_dir):
                 watchdog.audit_log("ACTION", "detail")
                 content = audit_file.read_text()
                 assert "WD" in content
@@ -549,6 +562,7 @@ class TestMain:
     def runner(self):
         """Create Click CLI test runner."""
         from click.testing import CliRunner
+
         return CliRunner()
 
     def test_main_no_args(self, runner):
@@ -560,62 +574,62 @@ class TestMain:
 
     def test_main_unknown_command(self, runner):
         """Should print error for unknown command."""
-        result = runner.invoke(watchdog.main, ['unknown'])
+        result = runner.invoke(watchdog.main, ["unknown"])
         assert result.exit_code != 0
 
     def test_main_status_command(self, runner, mock_disabled_file):
         """Should run status command."""
-        with patch.object(watchdog, 'get_crontab', return_value=""):
-            result = runner.invoke(watchdog.main, ['status'])
+        with patch.object(watchdog, "get_crontab", return_value=""):
+            result = runner.invoke(watchdog.main, ["status"])
             assert result.exit_code == 0
 
     def test_main_check_command(self, runner, mock_disabled_file):
         """Should run check command."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
-        with patch.object(watchdog, 'get_crontab', return_value=crontab):
-            result = runner.invoke(watchdog.main, ['check'])
+        with patch.object(watchdog, "get_crontab", return_value=crontab):
+            result = runner.invoke(watchdog.main, ["check"])
             assert result.exit_code == 0
 
     def test_main_install_command(self, runner, mock_audit_log_file):
         """Should run install command."""
-        with patch.object(watchdog, 'get_crontab', return_value=""):
-            with patch.object(watchdog, 'set_crontab', return_value=True):
-                result = runner.invoke(watchdog.main, ['install'])
+        with patch.object(watchdog, "get_crontab", return_value=""):
+            with patch.object(watchdog, "set_crontab", return_value=True):
+                result = runner.invoke(watchdog.main, ["install"])
                 assert result.exit_code == 0
 
     def test_main_uninstall_command(self, runner, mock_audit_log_file):
         """Should run uninstall command."""
-        with patch.object(watchdog, 'get_crontab', return_value=""):
-            with patch.object(watchdog, 'set_crontab', return_value=True):
-                result = runner.invoke(watchdog.main, ['uninstall'])
+        with patch.object(watchdog, "get_crontab", return_value=""):
+            with patch.object(watchdog, "set_crontab", return_value=True):
+                result = runner.invoke(watchdog.main, ["uninstall"])
                 assert result.exit_code == 0
 
     def test_main_disable_command(self, runner, mock_disabled_file, mock_audit_log_file):
         """Should run disable command."""
-        result = runner.invoke(watchdog.main, ['disable', '30'])
+        result = runner.invoke(watchdog.main, ["disable", "30"])
         assert result.exit_code == 0
 
     def test_main_disable_permanent(self, runner, mock_disabled_file, mock_audit_log_file):
         """Should run disable command without minutes (permanent)."""
-        result = runner.invoke(watchdog.main, ['disable'])
+        result = runner.invoke(watchdog.main, ["disable"])
         assert result.exit_code == 0
 
     def test_main_enable_command(self, runner, mock_disabled_file, mock_audit_log_file):
         """Should run enable command."""
         mock_disabled_file.write_text("permanent")
-        result = runner.invoke(watchdog.main, ['enable'])
+        result = runner.invoke(watchdog.main, ["enable"])
         assert result.exit_code == 0
 
     def test_main_disable_invalid_minutes(self, runner):
         """Should error on invalid disable minutes."""
-        result = runner.invoke(watchdog.main, ['disable', 'abc'])
+        result = runner.invoke(watchdog.main, ["disable", "abc"])
         assert result.exit_code != 0
         # Click shows its own error message for invalid arguments
         assert "Invalid value" in result.output or "not a valid" in result.output.lower()
 
     def test_main_disable_negative_minutes(self, runner):
         """Should error on negative disable minutes."""
-        result = runner.invoke(watchdog.main, ['disable', '-5'])
+        result = runner.invoke(watchdog.main, ["disable", "-5"])
         assert result.exit_code != 0
         # Click interprets -5 as an option flag, so it shows "No such option" error
         assert "No such option" in result.output or "Invalid" in result.output

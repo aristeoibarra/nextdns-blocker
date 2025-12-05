@@ -1,11 +1,9 @@
 """Tests for pause functionality and protected domains."""
 
-import pytest
 from datetime import datetime, timedelta
-from pathlib import Path
 from unittest.mock import patch
 
-from nextdns_blocker.cli import is_paused, get_pause_remaining
+from nextdns_blocker.cli import get_pause_remaining, is_paused
 from nextdns_blocker.config import get_protected_domains
 
 
@@ -15,7 +13,7 @@ class TestPauseFunctionality:
     def test_is_paused_no_file(self, tmp_path):
         """Should return False when no pause file exists."""
         pause_file = tmp_path / ".paused"
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
+        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
             assert is_paused() is False
 
     def test_is_paused_active(self, tmp_path):
@@ -24,7 +22,7 @@ class TestPauseFunctionality:
         future_time = datetime.now() + timedelta(minutes=30)
         pause_file.write_text(future_time.isoformat())
 
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
+        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
             assert is_paused() is True
 
     def test_is_paused_expired(self, tmp_path):
@@ -33,7 +31,7 @@ class TestPauseFunctionality:
         past_time = datetime.now() - timedelta(minutes=5)
         pause_file.write_text(past_time.isoformat())
 
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
+        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
             assert is_paused() is False
             assert not pause_file.exists()
 
@@ -42,13 +40,13 @@ class TestPauseFunctionality:
         pause_file = tmp_path / ".paused"
         pause_file.write_text("invalid_datetime")
 
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
+        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
             assert is_paused() is False
 
     def test_get_pause_remaining_no_file(self, tmp_path):
         """Should return None when no pause file exists."""
         pause_file = tmp_path / ".paused"
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
+        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
             assert get_pause_remaining() is None
 
     def test_get_pause_remaining_active(self, tmp_path):
@@ -57,7 +55,7 @@ class TestPauseFunctionality:
         future_time = datetime.now() + timedelta(minutes=45)
         pause_file.write_text(future_time.isoformat())
 
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
+        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
             remaining = get_pause_remaining()
             assert remaining is not None
             assert "min" in remaining
@@ -68,7 +66,7 @@ class TestPauseFunctionality:
         future_time = datetime.now() + timedelta(seconds=30)
         pause_file.write_text(future_time.isoformat())
 
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
+        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
             remaining = get_pause_remaining()
             assert remaining == "< 1 min"
 
@@ -78,7 +76,7 @@ class TestPauseFunctionality:
         past_time = datetime.now() - timedelta(minutes=5)
         pause_file.write_text(past_time.isoformat())
 
-        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
+        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
             remaining = get_pause_remaining()
             assert remaining is None
             assert not pause_file.exists()
@@ -95,7 +93,7 @@ class TestProtectedDomains:
         """Should return empty list when no domains are protected."""
         domains = [
             {"domain": "example.com", "schedule": None},
-            {"domain": "test.com", "protected": False}
+            {"domain": "test.com", "protected": False},
         ]
         assert get_protected_domains(domains) == []
 
@@ -115,10 +113,7 @@ class TestProtectedDomains:
 
     def test_get_protected_domains_missing_field(self):
         """Should not include domains without protected field."""
-        domains = [
-            {"domain": "no-field.com"},
-            {"domain": "explicit-true.com", "protected": True}
-        ]
+        domains = [{"domain": "no-field.com"}, {"domain": "explicit-true.com", "protected": True}]
         result = get_protected_domains(domains)
         assert result == ["explicit-true.com"]
 
@@ -126,7 +121,7 @@ class TestProtectedDomains:
         """Should not include domains with protected=False."""
         domains = [
             {"domain": "false-protected.com", "protected": False},
-            {"domain": "true-protected.com", "protected": True}
+            {"domain": "true-protected.com", "protected": True},
         ]
         result = get_protected_domains(domains)
         assert result == ["true-protected.com"]
@@ -137,7 +132,7 @@ class TestProtectedDomains:
             {"domain": "first.com", "protected": True},
             {"domain": "skip.com", "protected": False},
             {"domain": "second.com", "protected": True},
-            {"domain": "third.com", "protected": True}
+            {"domain": "third.com", "protected": True},
         ]
         result = get_protected_domains(domains)
         assert result == ["first.com", "second.com", "third.com"]

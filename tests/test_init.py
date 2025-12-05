@@ -1,24 +1,22 @@
 """Tests for init wizard functionality."""
 
 import os
-import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 import responses
 from click.testing import CliRunner
 
+from nextdns_blocker.cli import main
 from nextdns_blocker.init import (
-    validate_api_credentials,
-    validate_timezone,
+    NEXTDNS_API_URL,
     create_env_file,
     create_sample_domains,
     run_interactive_wizard,
     run_non_interactive,
-    NEXTDNS_API_URL,
+    validate_api_credentials,
+    validate_timezone,
 )
-from nextdns_blocker.cli import main
 
 
 class TestValidateApiCredentials:
@@ -31,7 +29,7 @@ class TestValidateApiCredentials:
             responses.GET,
             f"{NEXTDNS_API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
 
         valid, msg = validate_api_credentials("valid_key", "test_profile")
@@ -45,7 +43,7 @@ class TestValidateApiCredentials:
             responses.GET,
             f"{NEXTDNS_API_URL}/profiles/test_profile/denylist",
             json={"error": "unauthorized"},
-            status=401
+            status=401,
         )
 
         valid, msg = validate_api_credentials("invalid_key", "test_profile")
@@ -59,7 +57,7 @@ class TestValidateApiCredentials:
             responses.GET,
             f"{NEXTDNS_API_URL}/profiles/bad_profile/denylist",
             json={"error": "not found"},
-            status=404
+            status=404,
         )
 
         valid, msg = validate_api_credentials("valid_key", "bad_profile")
@@ -70,10 +68,11 @@ class TestValidateApiCredentials:
     def test_connection_timeout(self):
         """Should handle connection timeout."""
         import requests as req
+
         responses.add(
             responses.GET,
             f"{NEXTDNS_API_URL}/profiles/test_profile/denylist",
-            body=req.exceptions.Timeout("Connection timed out")
+            body=req.exceptions.Timeout("Connection timed out"),
         )
 
         valid, msg = validate_api_credentials("key", "test_profile")
@@ -111,12 +110,7 @@ class TestCreateEnvFile:
 
     def test_creates_env_file(self, tmp_path):
         """Should create .env file with correct content."""
-        env_file = create_env_file(
-            tmp_path,
-            "test_api_key",
-            "test_profile_id",
-            "America/New_York"
-        )
+        env_file = create_env_file(tmp_path, "test_api_key", "test_profile_id", "America/New_York")
 
         assert env_file.exists()
         content = env_file.read_text()
@@ -131,7 +125,7 @@ class TestCreateEnvFile:
             "test_key",
             "test_profile",
             "UTC",
-            domains_url="https://example.com/domains.json"
+            domains_url="https://example.com/domains.json",
         )
 
         content = env_file.read_text()
@@ -197,13 +191,13 @@ class TestRunNonInteractive:
             responses.GET,
             f"{NEXTDNS_API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
 
         env = {
             "NEXTDNS_API_KEY": "test_key",
             "NEXTDNS_PROFILE_ID": "test_profile",
-            "TIMEZONE": "UTC"
+            "TIMEZONE": "UTC",
         }
 
         with patch.dict(os.environ, env, clear=True):
@@ -214,9 +208,7 @@ class TestRunNonInteractive:
 
     def test_fails_without_api_key(self, tmp_path):
         """Should fail when API key is not set."""
-        env = {
-            "NEXTDNS_PROFILE_ID": "test_profile"
-        }
+        env = {"NEXTDNS_PROFILE_ID": "test_profile"}
 
         with patch.dict(os.environ, env, clear=True):
             result = run_non_interactive(tmp_path)
@@ -225,9 +217,7 @@ class TestRunNonInteractive:
 
     def test_fails_without_profile_id(self, tmp_path):
         """Should fail when profile ID is not set."""
-        env = {
-            "NEXTDNS_API_KEY": "test_key"
-        }
+        env = {"NEXTDNS_API_KEY": "test_key"}
 
         with patch.dict(os.environ, env, clear=True):
             result = run_non_interactive(tmp_path)
@@ -239,7 +229,7 @@ class TestRunNonInteractive:
         env = {
             "NEXTDNS_API_KEY": "test_key",
             "NEXTDNS_PROFILE_ID": "test_profile",
-            "TIMEZONE": "Invalid/Timezone"
+            "TIMEZONE": "Invalid/Timezone",
         }
 
         with patch.dict(os.environ, env, clear=True):
@@ -254,13 +244,10 @@ class TestRunNonInteractive:
             responses.GET,
             f"{NEXTDNS_API_URL}/profiles/test_profile/denylist",
             json={"error": "unauthorized"},
-            status=401
+            status=401,
         )
 
-        env = {
-            "NEXTDNS_API_KEY": "bad_key",
-            "NEXTDNS_PROFILE_ID": "test_profile"
-        }
+        env = {"NEXTDNS_API_KEY": "bad_key", "NEXTDNS_PROFILE_ID": "test_profile"}
 
         with patch.dict(os.environ, env, clear=True):
             result = run_non_interactive(tmp_path)
@@ -278,7 +265,7 @@ class TestInitCommand:
 
     def test_init_help(self, runner):
         """Should show help for init command."""
-        result = runner.invoke(main, ['init', '--help'])
+        result = runner.invoke(main, ["init", "--help"])
         assert result.exit_code == 0
         assert "Initialize" in result.output
         assert "--non-interactive" in result.output
@@ -290,20 +277,15 @@ class TestInitCommand:
             responses.GET,
             f"{NEXTDNS_API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
 
-        env = {
-            "NEXTDNS_API_KEY": "test_key",
-            "NEXTDNS_PROFILE_ID": "test_profile"
-        }
+        env = {"NEXTDNS_API_KEY": "test_key", "NEXTDNS_PROFILE_ID": "test_profile"}
 
         with patch.dict(os.environ, env, clear=False):
-            result = runner.invoke(main, [
-                'init',
-                '--non-interactive',
-                '--config-dir', str(tmp_path)
-            ])
+            result = runner.invoke(
+                main, ["init", "--non-interactive", "--config-dir", str(tmp_path)]
+            )
 
         assert result.exit_code == 0
         assert (tmp_path / ".env").exists()
@@ -311,11 +293,9 @@ class TestInitCommand:
     def test_init_non_interactive_missing_env(self, runner, tmp_path):
         """Should fail non-interactive mode without env vars."""
         with patch.dict(os.environ, {}, clear=True):
-            result = runner.invoke(main, [
-                'init',
-                '--non-interactive',
-                '--config-dir', str(tmp_path)
-            ])
+            result = runner.invoke(
+                main, ["init", "--non-interactive", "--config-dir", str(tmp_path)]
+            )
 
         assert result.exit_code == 1
 
@@ -326,21 +306,23 @@ class TestInitCommand:
             responses.GET,
             f"{NEXTDNS_API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
 
-        env = {
-            "NEXTDNS_API_KEY": "test_key",
-            "NEXTDNS_PROFILE_ID": "test_profile"
-        }
+        env = {"NEXTDNS_API_KEY": "test_key", "NEXTDNS_PROFILE_ID": "test_profile"}
 
         with patch.dict(os.environ, env, clear=False):
-            result = runner.invoke(main, [
-                'init',
-                '--non-interactive',
-                '--config-dir', str(tmp_path),
-                '--url', 'https://example.com/domains.json'
-            ])
+            result = runner.invoke(
+                main,
+                [
+                    "init",
+                    "--non-interactive",
+                    "--config-dir",
+                    str(tmp_path),
+                    "--url",
+                    "https://example.com/domains.json",
+                ],
+            )
 
         assert result.exit_code == 0
         content = (tmp_path / ".env").read_text()
@@ -357,17 +339,17 @@ class TestInteractiveWizard:
             responses.GET,
             f"{NEXTDNS_API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
 
         # Mock click prompts
-        with patch('nextdns_blocker.init.click.prompt') as mock_prompt:
-            with patch('nextdns_blocker.init.click.confirm', return_value=True):
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            with patch("nextdns_blocker.init.click.confirm", return_value=True):
                 # Set up prompt responses
                 mock_prompt.side_effect = [
-                    "test_api_key",      # API key
-                    "test_profile",      # Profile ID
-                    "UTC"                # Timezone
+                    "test_api_key",  # API key
+                    "test_profile",  # Profile ID
+                    "UTC",  # Timezone
                 ]
 
                 result = run_interactive_wizard(tmp_path)
@@ -383,15 +365,11 @@ class TestInteractiveWizard:
             responses.GET,
             f"{NEXTDNS_API_URL}/profiles/bad_profile/denylist",
             json={"error": "unauthorized"},
-            status=401
+            status=401,
         )
 
-        with patch('nextdns_blocker.init.click.prompt') as mock_prompt:
-            mock_prompt.side_effect = [
-                "bad_key",
-                "bad_profile",
-                "UTC"
-            ]
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            mock_prompt.side_effect = ["bad_key", "bad_profile", "UTC"]
 
             result = run_interactive_wizard(tmp_path)
 
@@ -399,12 +377,8 @@ class TestInteractiveWizard:
 
     def test_wizard_invalid_timezone(self, tmp_path):
         """Should fail with invalid timezone."""
-        with patch('nextdns_blocker.init.click.prompt') as mock_prompt:
-            mock_prompt.side_effect = [
-                "test_key",
-                "test_profile",
-                "Invalid/Timezone"
-            ]
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            mock_prompt.side_effect = ["test_key", "test_profile", "Invalid/Timezone"]
 
             result = run_interactive_wizard(tmp_path)
 
@@ -412,12 +386,8 @@ class TestInteractiveWizard:
 
     def test_wizard_empty_api_key(self, tmp_path):
         """Should fail with empty API key."""
-        with patch('nextdns_blocker.init.click.prompt') as mock_prompt:
-            mock_prompt.side_effect = [
-                "",  # Empty API key
-                "test_profile",
-                "UTC"
-            ]
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            mock_prompt.side_effect = ["", "test_profile", "UTC"]  # Empty API key
 
             result = run_interactive_wizard(tmp_path)
 
@@ -430,16 +400,12 @@ class TestInteractiveWizard:
             responses.GET,
             f"{NEXTDNS_API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
 
-        with patch('nextdns_blocker.init.click.prompt') as mock_prompt:
-            with patch('nextdns_blocker.init.click.confirm', return_value=False):
-                mock_prompt.side_effect = [
-                    "test_key",
-                    "test_profile",
-                    "UTC"
-                ]
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            with patch("nextdns_blocker.init.click.confirm", return_value=False):
+                mock_prompt.side_effect = ["test_key", "test_profile", "UTC"]
 
                 result = run_interactive_wizard(tmp_path)
 

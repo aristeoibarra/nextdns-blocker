@@ -2,20 +2,20 @@
 
 import os
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
+from zoneinfo import ZoneInfo
 
 import click
 import requests
-from zoneinfo import ZoneInfo
 
 from .common import SECURE_FILE_MODE
-from .config import APP_NAME, get_config_dir
+from .config import get_config_dir
 
 # NextDNS API base URL for validation
 NEXTDNS_API_URL = "https://api.nextdns.io"
 
 
-def validate_api_credentials(api_key: str, profile_id: str) -> Tuple[bool, str]:
+def validate_api_credentials(api_key: str, profile_id: str) -> tuple[bool, str]:
     """
     Validate API credentials against NextDNS API.
 
@@ -30,7 +30,7 @@ def validate_api_credentials(api_key: str, profile_id: str) -> Tuple[bool, str]:
         response = requests.get(
             f"{NEXTDNS_API_URL}/profiles/{profile_id}/denylist",
             headers={"X-Api-Key": api_key},
-            timeout=10
+            timeout=10,
         )
 
         if response.status_code == 200:
@@ -50,7 +50,7 @@ def validate_api_credentials(api_key: str, profile_id: str) -> Tuple[bool, str]:
         return False, f"Request error: {e}"
 
 
-def validate_timezone(tz_str: str) -> Tuple[bool, str]:
+def validate_timezone(tz_str: str) -> tuple[bool, str]:
     """
     Validate a timezone string.
 
@@ -72,7 +72,7 @@ def create_env_file(
     api_key: str,
     profile_id: str,
     timezone: str,
-    domains_url: Optional[str] = None
+    domains_url: Optional[str] = None,
 ) -> Path:
     """
     Create .env file with configuration.
@@ -111,7 +111,7 @@ DOMAINS_URL={domains_url}
     # Write with secure permissions
     fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECURE_FILE_MODE)
     try:
-        with os.fdopen(fd, 'w') as f:
+        with os.fdopen(fd, "w") as f:
             f.write(content)
     except Exception:
         os.close(fd)
@@ -165,8 +165,7 @@ def create_sample_domains(config_dir: Path) -> Path:
 
 
 def run_interactive_wizard(
-    config_dir_override: Optional[Path] = None,
-    domains_url: Optional[str] = None
+    config_dir_override: Optional[Path] = None, domains_url: Optional[str] = None
 ) -> bool:
     """
     Run the interactive setup wizard.
@@ -184,10 +183,7 @@ def run_interactive_wizard(
     click.echo()
 
     # Prompt for API key
-    api_key = click.prompt(
-        "  API Key (from https://my.nextdns.io/account)",
-        hide_input=True
-    )
+    api_key = click.prompt("  API Key (from https://my.nextdns.io/account)", hide_input=True)
 
     if not api_key or not api_key.strip():
         click.echo(click.style("\n  Error: API key is required\n", fg="red"))
@@ -196,9 +192,7 @@ def run_interactive_wizard(
     api_key = api_key.strip()
 
     # Prompt for Profile ID
-    profile_id = click.prompt(
-        "  Profile ID (from URL my.nextdns.io/<profile_id>)"
-    )
+    profile_id = click.prompt("  Profile ID (from URL my.nextdns.io/<profile_id>)")
 
     if not profile_id or not profile_id.strip():
         click.echo(click.style("\n  Error: Profile ID is required\n", fg="red"))
@@ -242,10 +236,7 @@ def run_interactive_wizard(
     # Offer to create sample domains.json
     if not domains_url:
         click.echo()
-        create_sample = click.confirm(
-            "  Create sample domains.json?",
-            default=True
-        )
+        create_sample = click.confirm("  Create sample domains.json?", default=True)
 
         if create_sample:
             domains_file = create_sample_domains(config_dir)
@@ -261,8 +252,7 @@ def run_interactive_wizard(
 
 
 def run_non_interactive(
-    config_dir_override: Optional[Path] = None,
-    domains_url: Optional[str] = None
+    config_dir_override: Optional[Path] = None, domains_url: Optional[str] = None
 ) -> bool:
     """
     Run non-interactive setup using environment variables.

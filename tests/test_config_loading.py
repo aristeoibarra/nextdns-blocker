@@ -2,25 +2,20 @@
 
 import json
 import os
-import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import responses
 
+from nextdns_blocker.common import (
+    parse_env_value,
+    safe_int,
+    validate_domain,
+    validate_url,
+)
 from nextdns_blocker.config import (
     load_config,
     load_domains,
-    DEFAULT_TIMEOUT,
-    DEFAULT_RETRIES,
-    DEFAULT_TIMEZONE,
-)
-from nextdns_blocker.common import (
-    validate_domain,
-    validate_url,
-    parse_env_value,
-    safe_int,
 )
 from nextdns_blocker.exceptions import ConfigurationError
 
@@ -79,25 +74,25 @@ class TestLoadConfig:
         """Test that config loads required environment variables."""
         # This test verifies that the function reads from environment
         # The actual function call happens in integration tests
-        assert os.environ.get('NEXTDNS_API_KEY') == mock_env_vars['NEXTDNS_API_KEY']
-        assert os.environ.get('NEXTDNS_PROFILE_ID') == mock_env_vars['NEXTDNS_PROFILE_ID']
+        assert os.environ.get("NEXTDNS_API_KEY") == mock_env_vars["NEXTDNS_API_KEY"]
+        assert os.environ.get("NEXTDNS_PROFILE_ID") == mock_env_vars["NEXTDNS_PROFILE_ID"]
 
     def test_load_config_missing_api_key(self, temp_dir):
         """Test that missing API key raises ConfigurationError."""
-        with patch.dict(os.environ, {'NEXTDNS_PROFILE_ID': 'test'}, clear=True):
-            with patch('nextdns_blocker.config.Path') as mock_path:
+        with patch.dict(os.environ, {"NEXTDNS_PROFILE_ID": "test"}, clear=True):
+            with patch("nextdns_blocker.config.Path") as mock_path:
                 mock_script_dir = MagicMock()
                 mock_script_dir.__truediv__ = lambda self, x: temp_dir / x
                 mock_script_dir.absolute.return_value = temp_dir
                 mock_path.return_value.parent.absolute.return_value = temp_dir
 
                 # Create empty .env file
-                env_file = temp_dir / '.env'
+                env_file = temp_dir / ".env"
                 env_file.touch()
 
                 # Unset API key if present
-                os.environ.pop('NEXTDNS_API_KEY', None)
-                os.environ.pop('NEXTDNS_PROFILE_ID', None)
+                os.environ.pop("NEXTDNS_API_KEY", None)
+                os.environ.pop("NEXTDNS_PROFILE_ID", None)
 
                 with pytest.raises(ConfigurationError) as exc_info:
                     load_config()
@@ -106,8 +101,8 @@ class TestLoadConfig:
 
     def test_load_config_missing_profile_id(self, temp_dir):
         """Test that missing profile ID raises ConfigurationError."""
-        with patch.dict(os.environ, {'NEXTDNS_API_KEY': 'test_key'}, clear=True):
-            os.environ.pop('NEXTDNS_PROFILE_ID', None)
+        with patch.dict(os.environ, {"NEXTDNS_API_KEY": "test_key"}, clear=True):
+            os.environ.pop("NEXTDNS_PROFILE_ID", None)
 
             with pytest.raises(ConfigurationError) as exc_info:
                 load_config()
@@ -120,15 +115,15 @@ class TestLoadDomains:
 
     def test_load_domains_from_file(self, temp_dir, domains_json_content):
         """Test loading domains from local JSON file."""
-        json_file = temp_dir / 'domains.json'
-        with open(json_file, 'w') as f:
+        json_file = temp_dir / "domains.json"
+        with open(json_file, "w") as f:
             json.dump(domains_json_content, f)
 
         domains, allowlist = load_domains(str(temp_dir))
 
         assert len(domains) == 2
-        assert domains[0]['domain'] == 'example.com'
-        assert domains[1]['domain'] == 'blocked.com'
+        assert domains[0]["domain"] == "example.com"
+        assert domains[1]["domain"] == "blocked.com"
         assert allowlist == []  # No allowlist in default fixture
 
     def test_load_domains_file_not_found(self, temp_dir):
@@ -140,8 +135,8 @@ class TestLoadDomains:
 
     def test_load_domains_invalid_json(self, temp_dir):
         """Test that invalid JSON raises ConfigurationError."""
-        json_file = temp_dir / 'domains.json'
-        with open(json_file, 'w') as f:
+        json_file = temp_dir / "domains.json"
+        with open(json_file, "w") as f:
             f.write("{ invalid json }")
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -151,8 +146,8 @@ class TestLoadDomains:
 
     def test_load_domains_empty_domains_list(self, temp_dir):
         """Test that empty domains list raises ConfigurationError."""
-        json_file = temp_dir / 'domains.json'
-        with open(json_file, 'w') as f:
+        json_file = temp_dir / "domains.json"
+        with open(json_file, "w") as f:
             json.dump({"domains": []}, f)
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -162,8 +157,8 @@ class TestLoadDomains:
 
     def test_load_domains_validation_errors(self, temp_dir, invalid_domains_json):
         """Test that validation errors raise ConfigurationError."""
-        json_file = temp_dir / 'domains.json'
-        with open(json_file, 'w') as f:
+        json_file = temp_dir / "domains.json"
+        with open(json_file, "w") as f:
             json.dump(invalid_domains_json, f)
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -173,8 +168,8 @@ class TestLoadDomains:
 
     def test_load_domains_not_dict(self, temp_dir):
         """Test that non-dict config raises ConfigurationError."""
-        json_file = temp_dir / 'domains.json'
-        with open(json_file, 'w') as f:
+        json_file = temp_dir / "domains.json"
+        with open(json_file, "w") as f:
             json.dump(["just", "a", "list"], f)
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -186,28 +181,19 @@ class TestLoadDomains:
     def test_load_domains_from_url(self, domains_json_content):
         """Test loading domains from URL."""
         test_url = "https://example.com/domains.json"
-        responses.add(
-            responses.GET,
-            test_url,
-            json=domains_json_content,
-            status=200
-        )
+        responses.add(responses.GET, test_url, json=domains_json_content, status=200)
 
         domains, allowlist = load_domains("/tmp", domains_url=test_url)
 
         assert len(domains) == 2
-        assert domains[0]['domain'] == 'example.com'
+        assert domains[0]["domain"] == "example.com"
         assert allowlist == []
 
     @responses.activate
     def test_load_domains_url_error(self):
         """Test that URL errors raise ConfigurationError when cache disabled."""
         test_url = "https://example.com/domains.json"
-        responses.add(
-            responses.GET,
-            test_url,
-            status=500
-        )
+        responses.add(responses.GET, test_url, status=500)
 
         with pytest.raises(ConfigurationError) as exc_info:
             load_domains("/tmp", domains_url=test_url, use_cache=False)
@@ -219,11 +205,7 @@ class TestLoadDomains:
         """Test that invalid JSON from URL raises ConfigurationError."""
         test_url = "https://example.com/domains.json"
         responses.add(
-            responses.GET,
-            test_url,
-            body="{ invalid }",
-            status=200,
-            content_type="application/json"
+            responses.GET, test_url, body="{ invalid }", status=200, content_type="application/json"
         )
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -238,13 +220,9 @@ class TestDomainConfigValidation:
 
     def test_invalid_domain_format_detected(self, temp_dir):
         """Test that invalid domain format is detected during loading."""
-        invalid_config = {
-            "domains": [
-                {"domain": "invalid_domain!@#"}
-            ]
-        }
-        json_file = temp_dir / 'domains.json'
-        with open(json_file, 'w') as f:
+        invalid_config = {"domains": [{"domain": "invalid_domain!@#"}]}
+        json_file = temp_dir / "domains.json"
+        with open(json_file, "w") as f:
             json.dump(invalid_config, f)
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -256,13 +234,10 @@ class TestDomainConfigValidation:
     def test_valid_domain_passes_validation(self, temp_dir):
         """Test that valid domains pass validation."""
         valid_config = {
-            "domains": [
-                {"domain": "valid-domain.com"},
-                {"domain": "sub.domain.example.org"}
-            ]
+            "domains": [{"domain": "valid-domain.com"}, {"domain": "sub.domain.example.org"}]
         }
-        json_file = temp_dir / 'domains.json'
-        with open(json_file, 'w') as f:
+        json_file = temp_dir / "domains.json"
+        with open(json_file, "w") as f:
             json.dump(valid_config, f)
 
         domains, allowlist = load_domains(str(temp_dir))
@@ -345,18 +320,18 @@ TIMEZONE=America/New_York
 API_TIMEOUT=30
 API_RETRIES=5
 """
-        env_file = temp_dir / '.env'
+        env_file = temp_dir / ".env"
         env_file.write_text(env_content)
 
         # Clear existing env vars
         with patch.dict(os.environ, {}, clear=True):
             config = load_config(config_dir=temp_dir)
 
-            assert config['api_key'] == 'test_api_key'
-            assert config['profile_id'] == 'test_profile'
-            assert config['timezone'] == 'America/New_York'
-            assert config['timeout'] == 30
-            assert config['retries'] == 5
+            assert config["api_key"] == "test_api_key"
+            assert config["profile_id"] == "test_profile"
+            assert config["timezone"] == "America/New_York"
+            assert config["timeout"] == 30
+            assert config["retries"] == 5
 
     def test_load_config_invalid_timezone_raises(self, temp_dir):
         """Test that invalid timezone raises ConfigurationError."""
@@ -365,7 +340,7 @@ NEXTDNS_API_KEY=test_key
 NEXTDNS_PROFILE_ID=test_profile
 TIMEZONE=Invalid/Timezone
 """
-        env_file = temp_dir / '.env'
+        env_file = temp_dir / ".env"
         env_file.write_text(env_content)
 
         with patch.dict(os.environ, {}, clear=True):
@@ -382,39 +357,41 @@ invalid_line_no_equals
 =empty_key
 TIMEZONE=UTC
 """
-        env_file = temp_dir / '.env'
+        env_file = temp_dir / ".env"
         env_file.write_text(env_content)
 
         with patch.dict(os.environ, {}, clear=True):
             # Should not raise, just skip invalid lines
             config = load_config(config_dir=temp_dir)
-            assert config['api_key'] == 'test_key'
+            assert config["api_key"] == "test_key"
 
     def test_load_config_quoted_values(self, temp_dir):
         """Test that quoted values in .env are parsed correctly."""
-        env_content = '''
+        env_content = """
 NEXTDNS_API_KEY="quoted_key"
 NEXTDNS_PROFILE_ID='single_quoted'
 TIMEZONE=UTC
-'''
-        env_file = temp_dir / '.env'
+"""
+        env_file = temp_dir / ".env"
         env_file.write_text(env_content)
 
         with patch.dict(os.environ, {}, clear=True):
             config = load_config(config_dir=temp_dir)
-            assert config['api_key'] == 'quoted_key'
-            assert config['profile_id'] == 'single_quoted'
+            assert config["api_key"] == "quoted_key"
+            assert config["profile_id"] == "single_quoted"
 
     def test_load_config_handles_bom(self, temp_dir):
         """Test that .env file with BOM is parsed correctly."""
-        env_content = '\ufeffNEXTDNS_API_KEY=bom_key\nNEXTDNS_PROFILE_ID=bom_profile\nTIMEZONE=UTC\n'
-        env_file = temp_dir / '.env'
-        env_file.write_text(env_content, encoding='utf-8')
+        env_content = (
+            "\ufeffNEXTDNS_API_KEY=bom_key\nNEXTDNS_PROFILE_ID=bom_profile\nTIMEZONE=UTC\n"
+        )
+        env_file = temp_dir / ".env"
+        env_file.write_text(env_content, encoding="utf-8")
 
         with patch.dict(os.environ, {}, clear=True):
             config = load_config(config_dir=temp_dir)
-            assert config['api_key'] == 'bom_key'
-            assert config['profile_id'] == 'bom_profile'
+            assert config["api_key"] == "bom_key"
+            assert config["profile_id"] == "bom_profile"
 
     def test_load_config_invalid_domains_url(self, temp_dir):
         """Test that invalid DOMAINS_URL raises ConfigurationError."""
@@ -424,7 +401,7 @@ NEXTDNS_PROFILE_ID=test_profile
 TIMEZONE=UTC
 DOMAINS_URL=not_a_valid_url
 """
-        env_file = temp_dir / '.env'
+        env_file = temp_dir / ".env"
         env_file.write_text(env_content)
 
         with patch.dict(os.environ, {}, clear=True):
@@ -440,12 +417,12 @@ NEXTDNS_PROFILE_ID=test_profile
 TIMEZONE=UTC
 DOMAINS_URL=https://example.com/domains.json
 """
-        env_file = temp_dir / '.env'
+        env_file = temp_dir / ".env"
         env_file.write_text(env_content)
 
         with patch.dict(os.environ, {}, clear=True):
             config = load_config(config_dir=temp_dir)
-            assert config['domains_url'] == 'https://example.com/domains.json'
+            assert config["domains_url"] == "https://example.com/domains.json"
 
 
 class TestValidateUrl:

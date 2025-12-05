@@ -4,15 +4,15 @@ from datetime import datetime
 from unittest.mock import patch
 
 import pytest
-import responses
 import requests
+import responses
 
 from nextdns_blocker.client import (
-    NextDNSClient,
     API_URL,
-    RateLimiter,
     RATE_LIMIT_REQUESTS,
     RATE_LIMIT_WINDOW,
+    NextDNSClient,
+    RateLimiter,
 )
 
 
@@ -25,12 +25,7 @@ def client():
 @pytest.fixture
 def mock_denylist():
     """Sample denylist response."""
-    return {
-        "data": [
-            {"id": "example.com", "active": True},
-            {"id": "blocked.com", "active": True}
-        ]
-    }
+    return {"data": [{"id": "example.com", "active": True}, {"id": "blocked.com", "active": True}]}
 
 
 class TestGetDenylist:
@@ -42,7 +37,7 @@ class TestGetDenylist:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         result = client.get_denylist()
         assert result == mock_denylist["data"]
@@ -53,7 +48,7 @@ class TestGetDenylist:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
         result = client.get_denylist()
         assert result == []
@@ -63,18 +58,14 @@ class TestGetDenylist:
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
-            body=requests.exceptions.Timeout()
+            body=requests.exceptions.Timeout(),
         )
         result = client.get_denylist()
         assert result is None
 
     @responses.activate
     def test_get_denylist_server_error(self, client):
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/test_profile/denylist",
-            status=500
-        )
+        responses.add(responses.GET, f"{API_URL}/profiles/test_profile/denylist", status=500)
         result = client.get_denylist()
         assert result is None
 
@@ -88,7 +79,7 @@ class TestFindDomain:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         result = client.find_domain("example.com")
         assert result == "example.com"
@@ -99,18 +90,14 @@ class TestFindDomain:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         result = client.find_domain("notfound.com")
         assert result is None
 
     @responses.activate
     def test_find_domain_api_error(self, client):
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/test_profile/denylist",
-            status=500
-        )
+        responses.add(responses.GET, f"{API_URL}/profiles/test_profile/denylist", status=500)
         result = client.find_domain("example.com")
         assert result is None
 
@@ -125,14 +112,14 @@ class TestBlock:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
         # Second call: add to denylist
         responses.add(
             responses.POST,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"success": True},
-            status=200
+            status=200,
         )
         result = client.block("newdomain.com")
         assert result is True
@@ -143,7 +130,7 @@ class TestBlock:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         # Domain already exists, no POST should be made
         result = client.block("example.com")
@@ -156,13 +143,9 @@ class TestBlock:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
-        responses.add(
-            responses.POST,
-            f"{API_URL}/profiles/test_profile/denylist",
-            status=500
-        )
+        responses.add(responses.POST, f"{API_URL}/profiles/test_profile/denylist", status=500)
         result = client.block("newdomain.com")
         assert result is False
 
@@ -176,13 +159,13 @@ class TestUnblock:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         responses.add(
             responses.DELETE,
             f"{API_URL}/profiles/test_profile/denylist/example.com",
             json={"success": True},
-            status=200
+            status=200,
         )
         result = client.unblock("example.com")
         assert result is True
@@ -193,7 +176,7 @@ class TestUnblock:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
         # Domain not in denylist, should return True (already unblocked)
         result = client.unblock("notfound.com")
@@ -206,12 +189,10 @@ class TestUnblock:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         responses.add(
-            responses.DELETE,
-            f"{API_URL}/profiles/test_profile/denylist/example.com",
-            status=500
+            responses.DELETE, f"{API_URL}/profiles/test_profile/denylist/example.com", status=500
         )
         result = client.unblock("example.com")
         assert result is False
@@ -226,18 +207,18 @@ class TestRequestRetry:
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
-            body=requests.exceptions.Timeout()
+            body=requests.exceptions.Timeout(),
         )
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
-            body=requests.exceptions.Timeout()
+            body=requests.exceptions.Timeout(),
         )
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
         result = client.get_denylist()
         assert result == []
@@ -250,7 +231,7 @@ class TestRequestRetry:
             responses.add(
                 responses.GET,
                 f"{API_URL}/profiles/test_profile/denylist",
-                body=requests.exceptions.Timeout()
+                body=requests.exceptions.Timeout(),
             )
         result = client.get_denylist()
         assert result is None
@@ -266,7 +247,7 @@ class TestHeaders:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
         client.get_denylist()
         assert responses.calls[0].request.headers["X-Api-Key"] == "test_api_key"
@@ -277,7 +258,7 @@ class TestHeaders:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
         client.get_denylist()
         assert responses.calls[0].request.headers["Content-Type"] == "application/json"
@@ -293,7 +274,7 @@ class TestDenylistCache:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         # First call populates cache
         result1 = client.get_denylist()
@@ -312,13 +293,13 @@ class TestDenylistCache:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         # First call populates cache
         client.get_denylist()
@@ -335,7 +316,7 @@ class TestDenylistCache:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         # First call populates cache
         result1 = client.find_domain("example.com")
@@ -354,13 +335,13 @@ class TestDenylistCache:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         responses.add(
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
         # First call
         client.get_denylist()
@@ -380,7 +361,7 @@ class TestIsBlocked:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         assert client.is_blocked("example.com") is True
 
@@ -390,7 +371,7 @@ class TestIsBlocked:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         assert client.is_blocked("notblocked.com") is False
 
@@ -406,14 +387,14 @@ class TestOptimisticCacheUpdates:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"data": []},
-            status=200
+            status=200,
         )
         # Block request
         responses.add(
             responses.POST,
             f"{API_URL}/profiles/test_profile/denylist",
             json={"id": "newdomain.com"},
-            status=200
+            status=200,
         )
 
         # Verify not blocked initially
@@ -434,14 +415,14 @@ class TestOptimisticCacheUpdates:
             responses.GET,
             f"{API_URL}/profiles/test_profile/denylist",
             json=mock_denylist,
-            status=200
+            status=200,
         )
         # Unblock request
         responses.add(
             responses.DELETE,
             f"{API_URL}/profiles/test_profile/denylist/example.com",
             json={},
-            status=200
+            status=200,
         )
 
         # Verify blocked initially
@@ -488,7 +469,7 @@ class TestRateLimiter:
 
         # Next acquire should wait
         with patch("nextdns_blocker.client.sleep") as mock_sleep:
-            waited = limiter.acquire()
+            limiter.acquire()
             # Should have called sleep
             assert mock_sleep.called
 

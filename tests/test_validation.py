@@ -1,9 +1,7 @@
 """Tests for configuration validation."""
 
-import pytest
-
-from nextdns_blocker.config import validate_domain_config
 from nextdns_blocker.common import validate_domain, validate_time_format
+from nextdns_blocker.config import validate_domain_config
 
 
 class TestValidateDomainConfig:
@@ -47,10 +45,7 @@ class TestValidateDomainConfig:
         assert "schedule must be" in errors[0]
 
     def test_invalid_available_hours_type(self):
-        config = {
-            "domain": "example.com",
-            "schedule": {"available_hours": "invalid"}
-        }
+        config = {"domain": "example.com", "schedule": {"available_hours": "invalid"}}
         errors = validate_domain_config(config, 0)
         assert len(errors) == 1
         assert "available_hours must be" in errors[0]
@@ -58,11 +53,7 @@ class TestValidateDomainConfig:
     def test_invalid_day_name(self):
         config = {
             "domain": "example.com",
-            "schedule": {
-                "available_hours": [
-                    {"days": ["invalid_day"], "time_ranges": []}
-                ]
-            }
+            "schedule": {"available_hours": [{"days": ["invalid_day"], "time_ranges": []}]},
         }
         errors = validate_domain_config(config, 0)
         assert len(errors) == 1
@@ -72,13 +63,8 @@ class TestValidateDomainConfig:
         config = {
             "domain": "example.com",
             "schedule": {
-                "available_hours": [
-                    {
-                        "days": ["monday"],
-                        "time_ranges": [{"end": "17:00"}]
-                    }
-                ]
-            }
+                "available_hours": [{"days": ["monday"], "time_ranges": [{"end": "17:00"}]}]
+            },
         }
         errors = validate_domain_config(config, 0)
         assert len(errors) == 1
@@ -88,13 +74,8 @@ class TestValidateDomainConfig:
         config = {
             "domain": "example.com",
             "schedule": {
-                "available_hours": [
-                    {
-                        "days": ["monday"],
-                        "time_ranges": [{"start": "09:00"}]
-                    }
-                ]
-            }
+                "available_hours": [{"days": ["monday"], "time_ranges": [{"start": "09:00"}]}]
+            },
         }
         errors = validate_domain_config(config, 0)
         assert len(errors) == 1
@@ -107,10 +88,10 @@ class TestValidateDomainConfig:
                 "available_hours": [
                     {
                         "days": ["invalid_day", "another_bad"],
-                        "time_ranges": [{"start": "09:00"}]  # missing end
+                        "time_ranges": [{"start": "09:00"}],  # missing end
                     }
                 ]
-            }
+            },
         }
         errors = validate_domain_config(config, 0)
         assert len(errors) == 3  # 2 invalid days + 1 missing end
@@ -122,10 +103,10 @@ class TestValidateDomainConfig:
                 "available_hours": [
                     {
                         "days": ["Monday", "TUESDAY"],
-                        "time_ranges": [{"start": "09:00", "end": "17:00"}]
+                        "time_ranges": [{"start": "09:00", "end": "17:00"}],
                     }
                 ]
-            }
+            },
         }
         errors = validate_domain_config(config, 0)
         assert errors == []
@@ -141,12 +122,9 @@ class TestValidateDomainConfig:
             "domain": "example.com",
             "schedule": {
                 "available_hours": [
-                    {
-                        "days": ["monday"],
-                        "time_ranges": [{"start": "9am", "end": "17:00"}]
-                    }
+                    {"days": ["monday"], "time_ranges": [{"start": "9am", "end": "17:00"}]}
                 ]
-            }
+            },
         }
         errors = validate_domain_config(config, 0)
         assert len(errors) == 1
@@ -159,12 +137,9 @@ class TestValidateDomainConfig:
             "domain": "example.com",
             "schedule": {
                 "available_hours": [
-                    {
-                        "days": ["monday"],
-                        "time_ranges": [{"start": "09:00", "end": "5pm"}]
-                    }
+                    {"days": ["monday"], "time_ranges": [{"start": "09:00", "end": "5pm"}]}
                 ]
-            }
+            },
         }
         errors = validate_domain_config(config, 0)
         assert len(errors) == 1
@@ -177,12 +152,9 @@ class TestValidateDomainConfig:
             "domain": "example.com",
             "schedule": {
                 "available_hours": [
-                    {
-                        "days": ["monday"],
-                        "time_ranges": [{"start": "9am", "end": "5pm"}]
-                    }
+                    {"days": ["monday"], "time_ranges": [{"start": "9am", "end": "5pm"}]}
                 ]
-            }
+            },
         }
         errors = validate_domain_config(config, 0)
         assert len(errors) == 2

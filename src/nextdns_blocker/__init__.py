@@ -12,10 +12,10 @@ from .config import (
     load_domains,
 )
 from .exceptions import (
-    NextDNSBlockerError,
+    APIError,
     ConfigurationError,
     DomainValidationError,
-    APIError,
+    NextDNSBlockerError,
 )
 from .scheduler import ScheduleEvaluator
 

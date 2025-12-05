@@ -4,14 +4,13 @@ import json
 import logging
 from datetime import datetime
 from time import sleep
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 
 import requests
 
 from .common import validate_domain
 from .config import DEFAULT_RETRIES, DEFAULT_TIMEOUT
 from .exceptions import DomainValidationError
-
 
 # =============================================================================
 # CONSTANTS
@@ -33,13 +32,12 @@ logger = logging.getLogger(__name__)
 # RATE LIMITER
 # =============================================================================
 
+
 class RateLimiter:
     """Simple rate limiter using sliding window algorithm."""
 
     def __init__(
-        self,
-        max_requests: int = RATE_LIMIT_REQUESTS,
-        window_seconds: int = RATE_LIMIT_WINDOW
+        self, max_requests: int = RATE_LIMIT_REQUESTS, window_seconds: int = RATE_LIMIT_WINDOW
     ) -> None:
         """
         Initialize the rate limiter.
@@ -50,7 +48,7 @@ class RateLimiter:
         """
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self.requests: List[float] = []
+        self.requests: list[float] = []
 
     def acquire(self) -> float:
         """
@@ -84,6 +82,7 @@ class RateLimiter:
 # CACHES
 # =============================================================================
 
+
 class DomainCache:
     """Base cache class for domain lists to reduce API calls."""
 
@@ -95,24 +94,21 @@ class DomainCache:
             ttl: Time to live in seconds
         """
         self.ttl = ttl
-        self._data: Optional[List[Dict[str, Any]]] = None
-        self._domains: Set[str] = set()
+        self._data: Optional[list[dict[str, Any]]] = None
+        self._domains: set[str] = set()
         self._timestamp: float = 0
 
     def is_valid(self) -> bool:
         """Check if cache is still valid."""
-        return (
-            self._data is not None and
-            (datetime.now().timestamp() - self._timestamp) < self.ttl
-        )
+        return self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl
 
-    def get(self) -> Optional[List[Dict[str, Any]]]:
+    def get(self) -> Optional[list[dict[str, Any]]]:
         """Get cached data if valid."""
         if self.is_valid():
             return self._data
         return None
 
-    def set(self, data: List[Dict[str, Any]]) -> None:
+    def set(self, data: list[dict[str, Any]]) -> None:
         """Update cache with new data."""
         self._data = data
         self._domains = {entry.get("id", "") for entry in data}
@@ -147,17 +143,20 @@ class DomainCache:
 
 class DenylistCache(DomainCache):
     """Cache for denylist to reduce API calls."""
+
     pass
 
 
 class AllowlistCache(DomainCache):
     """Cache for allowlist to reduce API calls."""
+
     pass
 
 
 # =============================================================================
 # NEXTDNS CLIENT
 # =============================================================================
+
 
 class NextDNSClient:
     """Client for interacting with the NextDNS API with caching and rate limiting."""
@@ -167,7 +166,7 @@ class NextDNSClient:
         api_key: str,
         profile_id: str,
         timeout: int = DEFAULT_TIMEOUT,
-        retries: int = DEFAULT_RETRIES
+        retries: int = DEFAULT_RETRIES,
     ) -> None:
         """
         Initialize the NextDNS client.
@@ -181,10 +180,7 @@ class NextDNSClient:
         self.profile_id = profile_id
         self.timeout = timeout
         self.retries = retries
-        self.headers: Dict[str, str] = {
-            "X-Api-Key": api_key,
-            "Content-Type": "application/json"
-        }
+        self.headers: dict[str, str] = {"X-Api-Key": api_key, "Content-Type": "application/json"}
         self._rate_limiter = RateLimiter()
         self._cache = DenylistCache()
         self._allowlist_cache = AllowlistCache()
@@ -199,15 +195,12 @@ class NextDNSClient:
         Returns:
             Delay in seconds
         """
-        delay = BACKOFF_BASE * (2 ** attempt)
+        delay = BACKOFF_BASE * (2**attempt)
         return min(delay, BACKOFF_MAX)
 
     def request(
-        self,
-        method: str,
-        endpoint: str,
-        data: Optional[Dict[str, Any]] = None
-    ) -> Optional[Dict[str, Any]]:
+        self, method: str, endpoint: str, data: Optional[dict[str, Any]] = None
+    ) -> Optional[dict[str, Any]]:
         """
         Make an HTTP request to the NextDNS API with retry logic and exponential backoff.
 
@@ -227,17 +220,13 @@ class NextDNSClient:
 
             try:
                 if method == "GET":
-                    response = requests.get(
-                        url, headers=self.headers, timeout=self.timeout
-                    )
+                    response = requests.get(url, headers=self.headers, timeout=self.timeout)
                 elif method == "POST":
                     response = requests.post(
                         url, headers=self.headers, json=data, timeout=self.timeout
                     )
                 elif method == "DELETE":
-                    response = requests.delete(
-                        url, headers=self.headers, timeout=self.timeout
-                    )
+                    response = requests.delete(url, headers=self.headers, timeout=self.timeout)
                 else:
                     logger.error(f"Unsupported HTTP method: {method}")
                     return None
@@ -264,9 +253,7 @@ class NextDNSClient:
                     )
                     sleep(backoff)
                     continue
-                logger.error(
-                    f"API timeout after {self.retries} retries: {method} {endpoint}"
-                )
+                logger.error(f"API timeout after {self.retries} retries: {method} {endpoint}")
                 return None
             except requests.exceptions.HTTPError as e:
                 # Retry on 429 (rate limit) and 5xx errors
@@ -300,7 +287,7 @@ class NextDNSClient:
     # DENYLIST METHODS
     # -------------------------------------------------------------------------
 
-    def get_denylist(self, use_cache: bool = True) -> Optional[List[Dict[str, Any]]]:
+    def get_denylist(self, use_cache: bool = True) -> Optional[list[dict[str, Any]]]:
         """
         Fetch the current denylist from NextDNS.
 
@@ -386,9 +373,7 @@ class NextDNSClient:
             return True
 
         result = self.request(
-            "POST",
-            f"/profiles/{self.profile_id}/denylist",
-            {"id": domain, "active": True}
+            "POST", f"/profiles/{self.profile_id}/denylist", {"id": domain, "active": True}
         )
 
         if result is not None:
@@ -420,10 +405,7 @@ class NextDNSClient:
             logger.debug(f"Domain not in denylist: {domain}")
             return True
 
-        result = self.request(
-            "DELETE",
-            f"/profiles/{self.profile_id}/denylist/{domain}"
-        )
+        result = self.request("DELETE", f"/profiles/{self.profile_id}/denylist/{domain}")
 
         if result is not None:
             # Optimistic cache update
@@ -448,7 +430,7 @@ class NextDNSClient:
     # ALLOWLIST METHODS
     # -------------------------------------------------------------------------
 
-    def get_allowlist(self, use_cache: bool = True) -> Optional[List[Dict[str, Any]]]:
+    def get_allowlist(self, use_cache: bool = True) -> Optional[list[dict[str, Any]]]:
         """
         Fetch the current allowlist from NextDNS.
 
@@ -473,9 +455,7 @@ class NextDNSClient:
         self._allowlist_cache.set(data)
         return data
 
-    def find_in_allowlist(
-        self, domain: str, use_cache: bool = True
-    ) -> Optional[str]:
+    def find_in_allowlist(self, domain: str, use_cache: bool = True) -> Optional[str]:
         """
         Find a domain in the allowlist.
 
@@ -533,9 +513,7 @@ class NextDNSClient:
             return True
 
         result = self.request(
-            "POST",
-            f"/profiles/{self.profile_id}/allowlist",
-            {"id": domain, "active": True}
+            "POST", f"/profiles/{self.profile_id}/allowlist", {"id": domain, "active": True}
         )
 
         if result is not None:
@@ -566,10 +544,7 @@ class NextDNSClient:
             logger.debug(f"Domain not in allowlist: {domain}")
             return True
 
-        result = self.request(
-            "DELETE",
-            f"/profiles/{self.profile_id}/allowlist/{domain}"
-        )
+        result = self.request("DELETE", f"/profiles/{self.profile_id}/allowlist/{domain}")
 
         if result is not None:
             self._allowlist_cache.remove_domain(domain)

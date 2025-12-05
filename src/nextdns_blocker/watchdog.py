@@ -10,16 +10,10 @@ from typing import Optional
 
 import click
 
+from .common import audit_log as _base_audit_log
+from .common import get_log_dir, read_secure_file, write_secure_file
+
 logger = logging.getLogger(__name__)
-
-from .common import (
-    SECURE_FILE_MODE,
-    audit_log as _base_audit_log,
-    get_log_dir,
-    read_secure_file,
-    write_secure_file,
-)
-
 
 # =============================================================================
 # CONFIGURATION & CONSTANTS
@@ -64,6 +58,7 @@ def audit_log(action: str, detail: str = "") -> None:
 # =============================================================================
 # DISABLED STATE MANAGEMENT
 # =============================================================================
+
 
 def is_disabled() -> bool:
     """Check if watchdog is temporarily or permanently disabled."""
@@ -141,14 +136,12 @@ def clear_disabled() -> bool:
 # CRON MANAGEMENT
 # =============================================================================
 
+
 def get_crontab() -> str:
     """Get the current user's crontab contents."""
     try:
         result = subprocess.run(
-            ['crontab', '-l'],
-            capture_output=True,
-            text=True,
-            timeout=SUBPROCESS_TIMEOUT
+            ["crontab", "-l"], capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT
         )
         return result.stdout if result.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
@@ -158,11 +151,7 @@ def get_crontab() -> str:
 def set_crontab(content: str) -> bool:
     """Set the user's crontab contents."""
     try:
-        process = subprocess.Popen(
-            ['crontab', '-'],
-            stdin=subprocess.PIPE,
-            text=True
-        )
+        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
         process.communicate(input=content, timeout=SUBPROCESS_TIMEOUT)
         return process.returncode == 0
     except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
@@ -181,16 +170,13 @@ def has_watchdog_cron(crontab: str) -> bool:
 
 def filter_our_cron_jobs(crontab: str) -> list:
     """Remove our cron jobs from crontab, keeping other entries."""
-    return [
-        line for line in crontab.split('\n')
-        if 'nextdns-blocker' not in line
-        and line.strip()
-    ]
+    return [line for line in crontab.split("\n") if "nextdns-blocker" not in line and line.strip()]
 
 
 # =============================================================================
 # CLICK CLI
 # =============================================================================
+
 
 @click.group()
 def watchdog_cli() -> None:
@@ -198,7 +184,7 @@ def watchdog_cli() -> None:
     pass
 
 
-@watchdog_cli.command('check')
+@watchdog_cli.command("check")
 def cmd_check() -> None:
     """Check and restore cron jobs if missing."""
     if is_disabled():
@@ -231,22 +217,19 @@ def cmd_check() -> None:
     # Run sync if cron was restored
     if restored:
         try:
-            subprocess.run(
-                ['nextdns-blocker', 'sync'],
-                timeout=SUBPROCESS_TIMEOUT
-            )
+            subprocess.run(["nextdns-blocker", "sync"], timeout=SUBPROCESS_TIMEOUT)
         except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
             logger.warning(f"Failed to run sync after cron restore: {e}")
 
 
-@watchdog_cli.command('install')
+@watchdog_cli.command("install")
 def cmd_install() -> None:
     """Install sync and watchdog cron jobs."""
     crontab = get_crontab()
     lines = filter_our_cron_jobs(crontab)
     lines.extend([CRON_SYNC, CRON_WATCHDOG])
 
-    if set_crontab('\n'.join(lines) + '\n'):
+    if set_crontab("\n".join(lines) + "\n"):
         audit_log("CRON_INSTALLED", "Manual install")
         click.echo("\n  cron installed")
         click.echo("    sync       every 2 min")
@@ -256,12 +239,12 @@ def cmd_install() -> None:
         sys.exit(1)
 
 
-@watchdog_cli.command('uninstall')
+@watchdog_cli.command("uninstall")
 def cmd_uninstall() -> None:
     """Remove cron jobs."""
     crontab = get_crontab()
     lines = filter_our_cron_jobs(crontab)
-    new_content = '\n'.join(lines) + '\n' if lines else ''
+    new_content = "\n".join(lines) + "\n" if lines else ""
 
     if set_crontab(new_content):
         audit_log("CRON_UNINSTALLED", "Manual uninstall")
@@ -271,7 +254,7 @@ def cmd_uninstall() -> None:
         sys.exit(1)
 
 
-@watchdog_cli.command('status')
+@watchdog_cli.command("status")
 def cmd_status() -> None:
     """Display current cron job status."""
     crontab = get_crontab()
@@ -287,13 +270,13 @@ def cmd_status() -> None:
     if disabled_remaining:
         click.echo(f"\n  watchdog: DISABLED ({disabled_remaining})")
     else:
-        status = 'active' if (has_sync and has_wd) else 'compromised'
+        status = "active" if (has_sync and has_wd) else "compromised"
         click.echo(f"\n  status: {status}")
     click.echo()
 
 
-@watchdog_cli.command('disable')
-@click.argument('minutes', required=False, type=click.IntRange(min=1))
+@watchdog_cli.command("disable")
+@click.argument("minutes", required=False, type=click.IntRange(min=1))
 def cmd_disable(minutes: Optional[int]) -> None:
     """Disable watchdog temporarily or permanently."""
     set_disabled(minutes)
@@ -308,7 +291,7 @@ def cmd_disable(minutes: Optional[int]) -> None:
     click.echo()
 
 
-@watchdog_cli.command('enable')
+@watchdog_cli.command("enable")
 def cmd_enable() -> None:
     """Re-enable watchdog."""
     if clear_disabled():
@@ -320,7 +303,7 @@ def cmd_enable() -> None:
 # Make watchdog available as subcommand of main CLI
 def register_watchdog(main_group: click.Group) -> None:
     """Register watchdog commands as subcommand of main CLI."""
-    main_group.add_command(watchdog_cli, name='watchdog')
+    main_group.add_command(watchdog_cli, name="watchdog")
 
 
 # Alias for backward compatibility with tests

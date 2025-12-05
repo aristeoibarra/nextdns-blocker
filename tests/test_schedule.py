@@ -1,8 +1,9 @@
 """Tests for ScheduleEvaluator class."""
 
-import pytest
-from datetime import time, datetime
+from datetime import datetime, time
 from unittest.mock import patch
+
+import pytest
 
 from nextdns_blocker.scheduler import ScheduleEvaluator
 
@@ -113,14 +114,14 @@ class TestShouldBlock:
             from zoneinfo import ZoneInfo
         except ImportError:
             from backports.zoneinfo import ZoneInfo
-        tz = ZoneInfo('America/Mexico_City')
+        tz = ZoneInfo("America/Mexico_City")
         return datetime(year, month, day, hour, minute, tzinfo=tz)
 
     def test_should_not_block_during_available_hours(self, sample_domain_config):
         evaluator = ScheduleEvaluator()
         # Wednesday at 10:00 (within 09:00-17:00)
         mock_now = self._mock_datetime(2025, 11, 26, 10, 0)
-        with patch('nextdns_blocker.scheduler.datetime') as mock_dt:
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = mock_now
             assert evaluator.should_block(sample_domain_config["schedule"]) is False
 
@@ -128,7 +129,7 @@ class TestShouldBlock:
         evaluator = ScheduleEvaluator()
         # Wednesday at 08:00 (before 09:00)
         mock_now = self._mock_datetime(2025, 11, 26, 8, 0)
-        with patch('nextdns_blocker.scheduler.datetime') as mock_dt:
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = mock_now
             assert evaluator.should_block(sample_domain_config["schedule"]) is True
 
@@ -136,7 +137,7 @@ class TestShouldBlock:
         evaluator = ScheduleEvaluator()
         # Wednesday at 18:00 (after 17:00)
         mock_now = self._mock_datetime(2025, 11, 26, 18, 0)
-        with patch('nextdns_blocker.scheduler.datetime') as mock_dt:
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = mock_now
             assert evaluator.should_block(sample_domain_config["schedule"]) is True
 
@@ -144,7 +145,7 @@ class TestShouldBlock:
         evaluator = ScheduleEvaluator()
         # Saturday at 15:00 (within 10:00-22:00)
         mock_now = self._mock_datetime(2025, 11, 29, 15, 0)
-        with patch('nextdns_blocker.scheduler.datetime') as mock_dt:
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = mock_now
             assert evaluator.should_block(sample_domain_config["schedule"]) is False
 
@@ -164,7 +165,7 @@ class TestShouldBlock:
         evaluator = ScheduleEvaluator()
         # Friday at 23:00 (within 22:00-02:00)
         mock_now = self._mock_datetime(2025, 11, 28, 23, 0)
-        with patch('nextdns_blocker.scheduler.datetime') as mock_dt:
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = mock_now
             assert evaluator.should_block(overnight_schedule_config["schedule"]) is False
 
@@ -172,7 +173,7 @@ class TestShouldBlock:
         evaluator = ScheduleEvaluator()
         # Saturday at 01:00 (still within Saturday's 22:00-02:00 window from previous night)
         mock_now = self._mock_datetime(2025, 11, 29, 1, 0)
-        with patch('nextdns_blocker.scheduler.datetime') as mock_dt:
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = mock_now
             # Saturday is in the days list, so 01:00 should be within the 22:00-02:00 range
             assert evaluator.should_block(overnight_schedule_config["schedule"]) is False

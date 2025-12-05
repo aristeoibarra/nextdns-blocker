@@ -10,7 +10,7 @@ import pytest
 
 # Add src directory to path for imports
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(_project_root, 'src'))
+sys.path.insert(0, os.path.join(_project_root, "src"))
 
 
 @pytest.fixture
@@ -23,29 +23,21 @@ def sample_domain_config():
             "available_hours": [
                 {
                     "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
-                    "time_ranges": [
-                        {"start": "09:00", "end": "17:00"}
-                    ]
+                    "time_ranges": [{"start": "09:00", "end": "17:00"}],
                 },
                 {
                     "days": ["saturday", "sunday"],
-                    "time_ranges": [
-                        {"start": "10:00", "end": "22:00"}
-                    ]
-                }
+                    "time_ranges": [{"start": "10:00", "end": "22:00"}],
+                },
             ]
-        }
+        },
     }
 
 
 @pytest.fixture
 def always_blocked_config():
     """Domain config that should always be blocked (no schedule)."""
-    return {
-        "domain": "blocked.com",
-        "description": "Always blocked",
-        "schedule": None
-    }
+    return {"domain": "blocked.com", "description": "Always blocked", "schedule": None}
 
 
 @pytest.fixture
@@ -57,12 +49,10 @@ def overnight_schedule_config():
             "available_hours": [
                 {
                     "days": ["friday", "saturday"],
-                    "time_ranges": [
-                        {"start": "22:00", "end": "02:00"}
-                    ]
+                    "time_ranges": [{"start": "22:00", "end": "02:00"}],
                 }
             ]
-        }
+        },
     }
 
 
@@ -73,7 +63,7 @@ def protected_domain_config():
         "domain": "protected.example.com",
         "description": "Protected domain",
         "protected": True,
-        "schedule": None
+        "schedule": None,
     }
 
 
@@ -83,23 +73,15 @@ def mixed_domains_config():
     return [
         {
             "domain": "normal.com",
-            "schedule": {"available_hours": [{"days": ["monday"], "time_ranges": [{"start": "09:00", "end": "17:00"}]}]}
+            "schedule": {
+                "available_hours": [
+                    {"days": ["monday"], "time_ranges": [{"start": "09:00", "end": "17:00"}]}
+                ]
+            },
         },
-        {
-            "domain": "protected1.com",
-            "protected": True,
-            "schedule": None
-        },
-        {
-            "domain": "another.com",
-            "protected": False,
-            "schedule": None
-        },
-        {
-            "domain": "protected2.com",
-            "protected": True,
-            "schedule": None
-        }
+        {"domain": "protected1.com", "protected": True, "schedule": None},
+        {"domain": "another.com", "protected": False, "schedule": None},
+        {"domain": "protected2.com", "protected": True, "schedule": None},
     ]
 
 
@@ -114,9 +96,9 @@ def temp_dir():
 def mock_env_vars():
     """Mock environment variables for configuration."""
     env_vars = {
-        'NEXTDNS_API_KEY': 'test_api_key_12345',
-        'NEXTDNS_PROFILE_ID': 'test_profile_id',
-        'TIMEZONE': 'UTC'
+        "NEXTDNS_API_KEY": "test_api_key_12345",
+        "NEXTDNS_PROFILE_ID": "test_profile_id",
+        "TIMEZONE": "UTC",
     }
     with patch.dict(os.environ, env_vars, clear=False):
         yield env_vars
@@ -135,16 +117,12 @@ def domains_json_content():
                     "available_hours": [
                         {
                             "days": ["monday", "tuesday"],
-                            "time_ranges": [{"start": "09:00", "end": "17:00"}]
+                            "time_ranges": [{"start": "09:00", "end": "17:00"}],
                         }
                     ]
-                }
+                },
             },
-            {
-                "domain": "blocked.com",
-                "protected": True,
-                "schedule": None
-            }
+            {"domain": "blocked.com", "protected": True, "schedule": None},
         ]
     }
 
@@ -156,9 +134,6 @@ def invalid_domains_json():
         "domains": [
             {"domain": ""},  # Empty domain
             {"description": "Missing domain"},  # No domain field
-            {
-                "domain": "bad-schedule.com",
-                "schedule": "not a dict"  # Invalid schedule type
-            }
+            {"domain": "bad-schedule.com", "schedule": "not a dict"},  # Invalid schedule type
         ]
     }
