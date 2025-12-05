@@ -12,6 +12,18 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is on prod branch
+        run: |
+          TAG_COMMIT=$(git rev-list -n 1 ${{ github.ref }})
+          if ! git branch -r --contains $TAG_COMMIT | grep -q 'origin/prod'; then
+            echo "::error::Tag must be created from the prod branch!"
+            echo "This tag is on commits: $(git branch -r --contains $TAG_COMMIT)"
+            exit 1
+          fi
+          echo "✅ Tag verified on prod branch"
 
       - name: Set up Python
         uses: actions/setup-python@v5
