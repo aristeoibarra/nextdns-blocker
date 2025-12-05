@@ -1,5 +1,9 @@
 # NextDNS Blocker
 
+[![PyPI version](https://badge.fury.io/py/nextdns-blocker.svg)](https://badge.fury.io/py/nextdns-blocker)
+[![Python versions](https://img.shields.io/pypi/pyversions/nextdns-blocker.svg)](https://pypi.org/project/nextdns-blocker/)
+[![CI](https://github.com/aristeoibarra/nextdns-blocker/actions/workflows/ci.yml/badge.svg)](https://github.com/aristeoibarra/nextdns-blocker/actions/workflows/ci.yml)
+
 Automated system to control domain access with per-domain schedule configuration using the NextDNS API.
 
 ## Features
@@ -19,10 +23,32 @@ Automated system to control domain access with per-domain schedule configuration
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.9+
 - NextDNS account with API key
-- Linux/macOS server
-- Dependencies: `requests`, `tzdata` (auto-installed)
+- Linux/macOS/Windows
+
+## Installation
+
+### Option 1: Install from PyPI (Recommended)
+
+```bash
+pip install nextdns-blocker
+```
+
+Then run the setup wizard:
+
+```bash
+nextdns-blocker init
+```
+
+### Option 2: Install from Source
+
+```bash
+git clone https://github.com/aristeoibarra/nextdns-blocker.git
+cd nextdns-blocker
+pip install -e .
+nextdns-blocker init
+```
 
 ## Quick Setup
 
@@ -31,37 +57,33 @@ Automated system to control domain access with per-domain schedule configuration
 - **API Key**: https://my.nextdns.io/account
 - **Profile ID**: From URL (e.g., `https://my.nextdns.io/abc123` -> `abc123`)
 
-### 2. Clone Repository
+### 2. Run Setup Wizard
 
 ```bash
-git clone https://github.com/aristeoibarra/nextdns-blocker.git
-cd nextdns-blocker
+nextdns-blocker init
 ```
 
-### 3. Configure Environment
+The wizard will prompt for:
+- API Key
+- Profile ID
+- Timezone
+- Option to create sample domains.json
 
-```bash
-cp .env.example .env
-nano .env  # Add your API key, profile ID, and timezone
-```
+### 3. Configure Domains and Schedules
 
-### 4. Configure Domains and Schedules
-
-```bash
-cp domains.json.example domains.json
-nano domains.json  # Configure your domains and their availability schedules
-```
+Edit `domains.json` in your config directory to configure your domains and their availability schedules.
 
 See [SCHEDULE_GUIDE.md](SCHEDULE_GUIDE.md) for detailed schedule configuration examples.
 
-### 5. Install
+### 4. Install Watchdog (Optional)
+
+For automatic syncing every 2 minutes with cron:
 
 ```bash
-chmod +x install.sh
-./install.sh
+nextdns-blocker watchdog install
 ```
 
-Done! The system will now automatically sync every 2 minutes based on your configured schedules.
+Done! The system will now automatically sync based on your configured schedules.
 
 ## Docker Setup
 
