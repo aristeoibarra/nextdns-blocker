@@ -211,10 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
-<<<<<<< HEAD
 [5.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v4.0.0...v5.0.0
-=======
->>>>>>> origin/main
 [4.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v2.1.0...v3.0.0
