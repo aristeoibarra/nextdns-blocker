@@ -201,7 +201,7 @@ class TestLoadDomains:
 
     @responses.activate
     def test_load_domains_url_error(self):
-        """Test that URL errors raise ConfigurationError."""
+        """Test that URL errors raise ConfigurationError when cache disabled."""
         test_url = "https://example.com/domains.json"
         responses.add(
             responses.GET,
@@ -210,7 +210,7 @@ class TestLoadDomains:
         )
 
         with pytest.raises(ConfigurationError) as exc_info:
-            load_domains("/tmp", domains_url=test_url)
+            load_domains("/tmp", domains_url=test_url, use_cache=False)
 
         assert "Failed to load" in str(exc_info.value)
 
