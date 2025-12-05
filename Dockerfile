@@ -6,19 +6,20 @@ FROM python:3.11-alpine
 # Labels
 LABEL maintainer="aristeoibarra"
 LABEL description="NextDNS Domain Blocker with scheduling support"
-LABEL version="4.0.0"
+LABEL version="5.0.0"
 
 # Set working directory
 WORKDIR /app
 
-# Install dependencies first (for better caching)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application files
+# Copy package files for installation
+COPY pyproject.toml .
+COPY README.md .
 COPY nextdns_blocker.py .
 COPY common.py .
 COPY watchdog.py .
+
+# Install package (uses pyproject.toml)
+RUN pip install --no-cache-dir .
 
 # Create non-root user for security
 RUN adduser -D -u 1000 blocker && \

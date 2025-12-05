@@ -4,7 +4,7 @@ import pytest
 import responses
 import requests
 
-from nextdns_blocker import NextDNSClient, API_URL
+from nextdns_blocker.client import NextDNSClient, API_URL
 
 
 @pytest.fixture

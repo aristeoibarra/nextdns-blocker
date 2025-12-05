@@ -9,18 +9,20 @@ from unittest.mock import patch, MagicMock
 import pytest
 import responses
 
-from nextdns_blocker import (
+from nextdns_blocker.config import (
     load_config,
     load_domains,
-    validate_domain,
-    validate_url,
-    ConfigurationError,
     DEFAULT_TIMEOUT,
     DEFAULT_RETRIES,
     DEFAULT_TIMEZONE,
+)
+from nextdns_blocker.common import (
+    validate_domain,
+    validate_url,
     parse_env_value,
     safe_int,
 )
+from nextdns_blocker.exceptions import ConfigurationError
 
 
 class TestValidateDomain:
@@ -83,7 +85,7 @@ class TestLoadConfig:
     def test_load_config_missing_api_key(self, temp_dir):
         """Test that missing API key raises ConfigurationError."""
         with patch.dict(os.environ, {'NEXTDNS_PROFILE_ID': 'test'}, clear=True):
-            with patch('nextdns_blocker.Path') as mock_path:
+            with patch('nextdns_blocker.config.Path') as mock_path:
                 mock_script_dir = MagicMock()
                 mock_script_dir.__truediv__ = lambda self, x: temp_dir / x
                 mock_script_dir.absolute.return_value = temp_dir
@@ -348,22 +350,13 @@ API_RETRIES=5
 
         # Clear existing env vars
         with patch.dict(os.environ, {}, clear=True):
-            with patch('nextdns_blocker.Path') as mock_path:
-                mock_path.return_value.parent.absolute.return_value = temp_dir
-                # Mock __file__ to point to temp_dir
-                import nextdns_blocker
-                original_file = nextdns_blocker.__file__
-                try:
-                    nextdns_blocker.__file__ = str(temp_dir / 'nextdns_blocker.py')
-                    config = load_config()
+            config = load_config(config_dir=temp_dir)
 
-                    assert config['api_key'] == 'test_api_key'
-                    assert config['profile_id'] == 'test_profile'
-                    assert config['timezone'] == 'America/New_York'
-                    assert config['timeout'] == 30
-                    assert config['retries'] == 5
-                finally:
-                    nextdns_blocker.__file__ = original_file
+            assert config['api_key'] == 'test_api_key'
+            assert config['profile_id'] == 'test_profile'
+            assert config['timezone'] == 'America/New_York'
+            assert config['timeout'] == 30
+            assert config['retries'] == 5
 
     def test_load_config_invalid_timezone_raises(self, temp_dir):
         """Test that invalid timezone raises ConfigurationError."""
@@ -376,15 +369,9 @@ TIMEZONE=Invalid/Timezone
         env_file.write_text(env_content)
 
         with patch.dict(os.environ, {}, clear=True):
-            import nextdns_blocker
-            original_file = nextdns_blocker.__file__
-            try:
-                nextdns_blocker.__file__ = str(temp_dir / 'nextdns_blocker.py')
-                with pytest.raises(ConfigurationError) as exc_info:
-                    load_config()
-                assert "Invalid TIMEZONE" in str(exc_info.value)
-            finally:
-                nextdns_blocker.__file__ = original_file
+            with pytest.raises(ConfigurationError) as exc_info:
+                load_config(config_dir=temp_dir)
+            assert "Invalid TIMEZONE" in str(exc_info.value)
 
     def test_load_config_skips_invalid_lines(self, temp_dir):
         """Test that invalid lines in .env are skipped."""
@@ -399,15 +386,9 @@ TIMEZONE=UTC
         env_file.write_text(env_content)
 
         with patch.dict(os.environ, {}, clear=True):
-            import nextdns_blocker
-            original_file = nextdns_blocker.__file__
-            try:
-                nextdns_blocker.__file__ = str(temp_dir / 'nextdns_blocker.py')
-                # Should not raise, just skip invalid lines
-                config = load_config()
-                assert config['api_key'] == 'test_key'
-            finally:
-                nextdns_blocker.__file__ = original_file
+            # Should not raise, just skip invalid lines
+            config = load_config(config_dir=temp_dir)
+            assert config['api_key'] == 'test_key'
 
     def test_load_config_quoted_values(self, temp_dir):
         """Test that quoted values in .env are parsed correctly."""
@@ -420,15 +401,9 @@ TIMEZONE=UTC
         env_file.write_text(env_content)
 
         with patch.dict(os.environ, {}, clear=True):
-            import nextdns_blocker
-            original_file = nextdns_blocker.__file__
-            try:
-                nextdns_blocker.__file__ = str(temp_dir / 'nextdns_blocker.py')
-                config = load_config()
-                assert config['api_key'] == 'quoted_key'
-                assert config['profile_id'] == 'single_quoted'
-            finally:
-                nextdns_blocker.__file__ = original_file
+            config = load_config(config_dir=temp_dir)
+            assert config['api_key'] == 'quoted_key'
+            assert config['profile_id'] == 'single_quoted'
 
     def test_load_config_handles_bom(self, temp_dir):
         """Test that .env file with BOM is parsed correctly."""
@@ -437,15 +412,9 @@ TIMEZONE=UTC
         env_file.write_text(env_content, encoding='utf-8')
 
         with patch.dict(os.environ, {}, clear=True):
-            import nextdns_blocker
-            original_file = nextdns_blocker.__file__
-            try:
-                nextdns_blocker.__file__ = str(temp_dir / 'nextdns_blocker.py')
-                config = load_config()
-                assert config['api_key'] == 'bom_key'
-                assert config['profile_id'] == 'bom_profile'
-            finally:
-                nextdns_blocker.__file__ = original_file
+            config = load_config(config_dir=temp_dir)
+            assert config['api_key'] == 'bom_key'
+            assert config['profile_id'] == 'bom_profile'
 
     def test_load_config_invalid_domains_url(self, temp_dir):
         """Test that invalid DOMAINS_URL raises ConfigurationError."""
@@ -459,15 +428,9 @@ DOMAINS_URL=not_a_valid_url
         env_file.write_text(env_content)
 
         with patch.dict(os.environ, {}, clear=True):
-            import nextdns_blocker
-            original_file = nextdns_blocker.__file__
-            try:
-                nextdns_blocker.__file__ = str(temp_dir / 'nextdns_blocker.py')
-                with pytest.raises(ConfigurationError) as exc_info:
-                    load_config()
-                assert "Invalid DOMAINS_URL" in str(exc_info.value)
-            finally:
-                nextdns_blocker.__file__ = original_file
+            with pytest.raises(ConfigurationError) as exc_info:
+                load_config(config_dir=temp_dir)
+            assert "Invalid DOMAINS_URL" in str(exc_info.value)
 
     def test_load_config_valid_domains_url(self, temp_dir):
         """Test that valid DOMAINS_URL is accepted."""
@@ -481,14 +444,8 @@ DOMAINS_URL=https://example.com/domains.json
         env_file.write_text(env_content)
 
         with patch.dict(os.environ, {}, clear=True):
-            import nextdns_blocker
-            original_file = nextdns_blocker.__file__
-            try:
-                nextdns_blocker.__file__ = str(temp_dir / 'nextdns_blocker.py')
-                config = load_config()
-                assert config['domains_url'] == 'https://example.com/domains.json'
-            finally:
-                nextdns_blocker.__file__ = original_file
+            config = load_config(config_dir=temp_dir)
+            assert config['domains_url'] == 'https://example.com/domains.json'
 
 
 class TestValidateUrl:

@@ -2,7 +2,8 @@
 
 import pytest
 
-from nextdns_blocker import validate_domain_config, validate_domain, validate_time_format
+from nextdns_blocker.config import validate_domain_config
+from nextdns_blocker.common import validate_domain, validate_time_format
 
 
 class TestValidateDomainConfig:
