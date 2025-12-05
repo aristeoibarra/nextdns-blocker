@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -32,6 +33,10 @@ DEFAULT_TIMEOUT = 10
 DEFAULT_RETRIES = 3
 DEFAULT_TIMEZONE = "UTC"
 DEFAULT_PAUSE_MINUTES = 30
+
+# Remote domains caching
+DOMAINS_CACHE_FILE = "domains_cache.json"
+DOMAINS_CACHE_TTL = 3600  # 1 hour in seconds
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +91,194 @@ def get_log_dir() -> Path:
         Path to the log directory (data_dir/logs)
     """
     return get_data_dir() / "logs"
+
+
+def get_cache_dir() -> Path:
+    """
+    Get the cache directory path.
+
+    Returns:
+        Path to the cache directory (data_dir/cache)
+    """
+    return get_data_dir() / "cache"
+
+
+# =============================================================================
+# REMOTE DOMAINS CACHING
+# =============================================================================
+
+def get_domains_cache_file() -> Path:
+    """
+    Get the path to the domains cache file.
+
+    Returns:
+        Path to domains_cache.json in the cache directory
+    """
+    return get_cache_dir() / DOMAINS_CACHE_FILE
+
+
+def get_cached_domains(max_age: int = DOMAINS_CACHE_TTL) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve cached domains data if valid.
+
+    Args:
+        max_age: Maximum age of cache in seconds (default: 1 hour)
+
+    Returns:
+        Cached domains data if valid, None otherwise
+    """
+    cache_file = get_domains_cache_file()
+
+    if not cache_file.exists():
+        return None
+
+    try:
+        with open(cache_file, 'r') as f:
+            cache = json.load(f)
+
+        timestamp = cache.get('timestamp', 0)
+        age = time.time() - timestamp
+
+        if age > max_age:
+            logger.debug(f"Cache expired ({age:.0f}s > {max_age}s)")
+            return None
+
+        logger.debug(f"Using cached domains (age: {age:.0f}s)")
+        return cache.get('data')
+
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Failed to read cache: {e}")
+        return None
+
+
+def save_domains_cache(data: Dict[str, Any]) -> bool:
+    """
+    Save domains data to cache.
+
+    Args:
+        data: Domains data to cache
+
+    Returns:
+        True if cache was saved successfully
+    """
+    cache_file = get_domains_cache_file()
+    cache_dir = cache_file.parent
+
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        cache = {
+            'timestamp': time.time(),
+            'data': data
+        }
+
+        with open(cache_file, 'w') as f:
+            json.dump(cache, f)
+
+        logger.debug(f"Saved domains to cache: {cache_file}")
+        return True
+
+    except OSError as e:
+        logger.warning(f"Failed to save cache: {e}")
+        return False
+
+
+def fetch_remote_domains(
+    url: str,
+    use_cache: bool = True
+) -> Dict[str, Any]:
+    """
+    Fetch domains from remote URL with caching support.
+
+    Attempts to fetch from URL. On success, caches the response.
+    On failure, falls back to cached data if available.
+
+    Args:
+        url: URL to fetch domains from
+        use_cache: Whether to use caching (default: True)
+
+    Returns:
+        Domains data dictionary
+
+    Raises:
+        ConfigurationError: If fetch fails and no cache is available
+    """
+    from .exceptions import ConfigurationError
+
+    try:
+        response = requests.get(url, timeout=DEFAULT_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+
+        # Validate basic structure
+        if not isinstance(data, dict):
+            raise ConfigurationError("Remote domains must be a JSON object")
+
+        # Cache the response
+        if use_cache:
+            save_domains_cache(data)
+
+        logger.info(f"Loaded domains from URL: {url}")
+        return data
+
+    except json.JSONDecodeError as e:
+        # Catch JSONDecodeError first (requests.exceptions.JSONDecodeError
+        # is a subclass of both json.JSONDecodeError and RequestException)
+        raise ConfigurationError(f"Invalid JSON from URL: {e}")
+
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Failed to fetch remote domains: {e}")
+
+        # Try to use cache as fallback
+        if use_cache:
+            cached = get_cached_domains(max_age=float('inf'))  # Accept any age on failure
+            if cached:
+                logger.info("Using cached domains as fallback")
+                return cached
+
+        raise ConfigurationError(
+            f"Failed to load domains from URL: {e}. "
+            f"No cached data available."
+        )
+
+
+def get_cache_status() -> Dict[str, Any]:
+    """
+    Get information about the domains cache status.
+
+    Returns:
+        Dictionary with cache status information
+    """
+    cache_file = get_domains_cache_file()
+
+    if not cache_file.exists():
+        return {
+            'exists': False,
+            'path': str(cache_file)
+        }
+
+    try:
+        with open(cache_file, 'r') as f:
+            cache = json.load(f)
+
+        timestamp = cache.get('timestamp', 0)
+        age = time.time() - timestamp
+        expired = age > DOMAINS_CACHE_TTL
+
+        return {
+            'exists': True,
+            'path': str(cache_file),
+            'age_seconds': int(age),
+            'expired': expired,
+            'ttl_seconds': DOMAINS_CACHE_TTL
+        }
+
+    except (json.JSONDecodeError, OSError):
+        return {
+            'exists': True,
+            'path': str(cache_file),
+            'corrupted': True
+        }
 
 
 # =============================================================================
@@ -239,7 +432,8 @@ def validate_no_overlap(
 
 def load_domains(
     script_dir: str,
-    domains_url: Optional[str] = None
+    domains_url: Optional[str] = None,
+    use_cache: bool = True
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Load domain configurations from URL or local file.
@@ -247,6 +441,7 @@ def load_domains(
     Args:
         script_dir: Directory containing the script (for local domains.json)
         domains_url: Optional URL to fetch domains from
+        use_cache: Whether to use caching for remote URLs (default: True)
 
     Returns:
         Tuple of (denylist domains, allowlist domains)
@@ -257,15 +452,8 @@ def load_domains(
     config = None
 
     if domains_url:
-        try:
-            response = requests.get(domains_url, timeout=DEFAULT_TIMEOUT)
-            response.raise_for_status()
-            config = response.json()
-            logger.info(f"Loaded domains from URL: {domains_url}")
-        except requests.exceptions.RequestException as e:
-            raise ConfigurationError(f"Failed to load domains from URL: {e}")
-        except json.JSONDecodeError as e:
-            raise ConfigurationError(f"Invalid JSON from URL: {e}")
+        # Use fetch_remote_domains with caching and fallback support
+        config = fetch_remote_domains(domains_url, use_cache=use_cache)
     else:
         json_file = Path(script_dir) / 'domains.json'
         if not json_file.exists():

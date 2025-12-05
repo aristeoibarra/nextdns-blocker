@@ -21,6 +21,7 @@ from .common import (
 )
 from .config import (
     DEFAULT_PAUSE_MINUTES,
+    get_cache_status,
     get_config_dir,
     get_protected_domains,
     load_config,
@@ -227,7 +228,10 @@ def unblock(domain: str, config_dir: Optional[Path]) -> None:
 @click.option('-v', '--verbose', is_flag=True, help='Verbose output')
 @click.option('--config-dir', type=click.Path(exists=True, file_okay=False, path_type=Path),
               help='Config directory (default: auto-detect)')
-def sync(dry_run: bool, verbose: bool, config_dir: Optional[Path]) -> None:
+@click.option('--domains-url', 'domains_url_override',
+              help='URL for remote domains.json (overrides DOMAINS_URL from config)')
+def sync(dry_run: bool, verbose: bool, config_dir: Optional[Path],
+         domains_url_override: Optional[str]) -> None:
     """Synchronize domain blocking with schedules."""
     setup_logging(verbose)
 
@@ -239,7 +243,9 @@ def sync(dry_run: bool, verbose: bool, config_dir: Optional[Path]) -> None:
 
     try:
         config = load_config(config_dir)
-        domains, allowlist = load_domains(config['script_dir'], config.get('domains_url'))
+        # CLI flag overrides config file
+        domains_url = domains_url_override or config.get('domains_url')
+        domains, allowlist = load_domains(config['script_dir'], domains_url)
         protected = get_protected_domains(domains)
 
         client = NextDNSClient(
@@ -467,6 +473,19 @@ def health(config_dir: Optional[Path]) -> None:
     except ConfigurationError as e:
         click.echo(f"  [✗] Domains: {e}")
         sys.exit(1)
+
+    # Check remote domains cache (informational only, doesn't affect pass/fail)
+    if config.get('domains_url'):
+        cache_status = get_cache_status()
+        if cache_status.get('exists'):
+            if cache_status.get('corrupted'):
+                click.echo("  [!] Remote domains cache: corrupted")
+            else:
+                age_mins = cache_status.get('age_seconds', 0) // 60
+                expired = "expired" if cache_status.get('expired') else "valid"
+                click.echo(f"  [i] Remote domains cache: {expired} (age: {age_mins}m)")
+        else:
+            click.echo("  [i] Remote domains cache: not present")
 
     # Check API connectivity
     checks_total += 1
