@@ -1,12 +1,12 @@
 # NextDNS Blocker - Docker Image
 # Lightweight Python Alpine image for minimal footprint
 
-FROM python:3.11-alpine
+FROM python:3.12-alpine
 
 # Labels
 LABEL maintainer="aristeoibarra"
 LABEL description="NextDNS Domain Blocker with scheduling support"
-LABEL version="5.0.0"
+LABEL version="5.0.1"
 
 # Set working directory
 WORKDIR /app

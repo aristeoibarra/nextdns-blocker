@@ -17,7 +17,7 @@ repos:
 
   # Python code formatting with Black
   - repo: https://github.com/psf/black
-    rev: 24.3.0
+    rev: 24.10.0
     hooks:
       - id: black
         language_version: python3
@@ -25,14 +25,14 @@ repos:
 
   # Python linting with Ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.4
+    rev: v0.8.2
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
 
   # Type checking with mypy
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.9.0
+    rev: v1.13.0
     hooks:
       - id: mypy
         additional_dependencies:
@@ -42,10 +42,10 @@ repos:
 
   # Security scanning with bandit
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.8
+    rev: 1.8.0
     hooks:
       - id: bandit
-        args: [-r, src/, -ll, --skip, B101]
+        args: [-r, src/, -ll, -c, pyproject.toml]
         files: ^src/
 
 # Configuration

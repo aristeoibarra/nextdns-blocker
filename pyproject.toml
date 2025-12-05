@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
-    { name = "Aristeo Ibarra" }
+    { name = "Aristeo Ibarra", email = "aristeo.dev@gmail.com" }
 ]
 keywords = [
     "nextdns",
@@ -21,7 +21,7 @@ keywords = [
     "automation"
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
     "Intended Audience :: System Administrators",
@@ -172,4 +172,9 @@ ignore_missing_imports = true
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "build", "dist"]
-skips = ["B101"]  # Skip assert warnings in tests
+skips = [
+    "B101",  # Skip assert warnings in tests
+    "B404",  # import subprocess - required for cron management
+    "B603",  # subprocess call - commands are hardcoded, not user input
+    "B607",  # partial path - using system commands (crontab, nextdns-blocker)
+]
