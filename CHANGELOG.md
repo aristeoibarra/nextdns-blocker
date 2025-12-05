@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2025-12-05
+
+### Added
+- **PyPI Distribution**: Package available via `pip install nextdns-blocker`
+  - Modern `pyproject.toml` configuration with hatchling build backend
+  - Support for Python 3.9, 3.10, 3.11, 3.12, and 3.13
+  - Proper package metadata, classifiers, and entry points
+- **Interactive Setup Wizard**: `nextdns-blocker init` command
+  - Guided configuration for API key, profile ID, and timezone
+  - Option to create sample domains.json
+  - Validates credentials before saving
+- **XDG Config Directory Support**: Configuration now follows XDG Base Directory Specification
+  - Config files in `~/.config/nextdns-blocker/`
+  - Data files in `~/.local/share/nextdns-blocker/`
+  - Cache files in `~/.cache/nextdns-blocker/`
+  - Automatic migration from legacy paths
+- **Remote Domains Caching**: Smart caching for remote domains.json
+  - 1-hour TTL cache with automatic refresh
+  - Fallback to cached data when network fails
+  - Cache status displayed in health check
+  - `--no-cache` flag to force fresh fetch
+- **CI/CD Pipeline**: Automated testing and publishing
+  - GitHub Actions workflow for linting (ruff, black)
+  - Type checking with mypy (strict mode)
+  - Security scanning with bandit
+  - Matrix testing across Python 3.9-3.13
+  - Automatic PyPI publishing on tagged releases
+  - TestPyPI publishing for pre-release validation
+- **Code Quality Tooling**: Industry-standard development tools
+  - ruff for fast linting
+  - black for code formatting
+  - mypy for type checking
+  - bandit for security analysis
+  - pytest-cov for coverage reporting
+
+### Changed
+- **BREAKING**: Project restructured to `src/` layout
+  - Package now at `src/nextdns_blocker/`
+  - All imports updated to use package structure
+- **BREAKING**: CLI commands changed from `./blocker` to `nextdns-blocker`
+  - `./blocker sync` → `nextdns-blocker sync`
+  - `./watchdog` → `nextdns-blocker watchdog`
+- **BREAKING**: Click-based CLI replaces argparse
+  - Improved help messages and command structure
+  - Better error handling and user feedback
+- Test count increased from 329 to 379 (50 new tests)
+- Code coverage maintained at 85%
+- Removed legacy `cmd_*` functions in favor of Click commands
+- Consolidated DenylistCache and AllowlistCache into base class
+
+### Fixed
+- Silent error suppression replaced with proper logging
+- Security: Paths in cron job strings now escaped with `shlex.quote`
+- Various type annotation improvements for strict mypy compliance
+
+### Security
+- All dependencies pinned with version ranges
+- Bandit security scanning in CI pipeline
+- Safety dependency vulnerability checking
+
+### Removed
+- Legacy `requirements.txt` and `requirements-dev.txt` (use `pip install -e ".[dev]"`)
+- Old `install.sh` script (replaced by `pip install` + `nextdns-blocker init`)
+- Direct script execution (now requires package installation)
+
 ## [4.0.0] - 2024-12-04
 
 ### Added
@@ -146,6 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[5.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v2.1.0...v3.0.0
