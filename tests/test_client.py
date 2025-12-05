@@ -1,10 +1,19 @@
 """Tests for NextDNSClient class."""
 
+from datetime import datetime
+from unittest.mock import patch
+
 import pytest
 import responses
 import requests
 
-from nextdns_blocker.client import NextDNSClient, API_URL
+from nextdns_blocker.client import (
+    NextDNSClient,
+    API_URL,
+    RateLimiter,
+    RATE_LIMIT_REQUESTS,
+    RATE_LIMIT_WINDOW,
+)
 
 
 @pytest.fixture
@@ -443,3 +452,79 @@ class TestOptimisticCacheUpdates:
 
         # Cache should no longer contain the domain
         assert client._cache.contains("example.com") is False
+
+
+class TestRateLimiter:
+    """Tests for RateLimiter class."""
+
+    def test_init_default_values(self):
+        """RateLimiter initializes with default values."""
+        limiter = RateLimiter()
+        assert limiter.max_requests == RATE_LIMIT_REQUESTS
+        assert limiter.window_seconds == RATE_LIMIT_WINDOW
+        assert limiter.requests == []
+
+    def test_init_custom_values(self):
+        """RateLimiter initializes with custom values."""
+        limiter = RateLimiter(max_requests=10, window_seconds=30)
+        assert limiter.max_requests == 10
+        assert limiter.window_seconds == 30
+
+    def test_acquire_under_limit(self):
+        """acquire() returns 0 when under the rate limit."""
+        limiter = RateLimiter(max_requests=5, window_seconds=60)
+        for _ in range(5):
+            waited = limiter.acquire()
+            assert waited == 0
+        assert len(limiter.requests) == 5
+
+    def test_acquire_at_limit_waits(self):
+        """acquire() waits when rate limit is reached."""
+        limiter = RateLimiter(max_requests=2, window_seconds=1)
+
+        # Fill up the rate limit
+        limiter.acquire()
+        limiter.acquire()
+
+        # Next acquire should wait
+        with patch("nextdns_blocker.client.sleep") as mock_sleep:
+            waited = limiter.acquire()
+            # Should have called sleep
+            assert mock_sleep.called
+
+    def test_expired_requests_cleaned(self):
+        """Expired requests are removed from the window."""
+        limiter = RateLimiter(max_requests=2, window_seconds=60)
+
+        # Add old timestamp (expired)
+        old_time = datetime.now().timestamp() - 120  # 2 minutes ago
+        limiter.requests = [old_time]
+
+        # acquire() should clean up expired and allow request
+        waited = limiter.acquire()
+        assert waited == 0
+        assert len(limiter.requests) == 1
+        # The old expired request should be gone, only new one remains
+        assert limiter.requests[0] > old_time
+
+    def test_sliding_window_behavior(self):
+        """Rate limiter uses sliding window correctly."""
+        limiter = RateLimiter(max_requests=3, window_seconds=60)
+
+        now = datetime.now().timestamp()
+
+        # Simulate 2 requests from 30 seconds ago (still valid)
+        limiter.requests = [now - 30, now - 25]
+
+        # Should allow 1 more request without waiting
+        waited = limiter.acquire()
+        assert waited == 0
+        assert len(limiter.requests) == 3
+
+    def test_multiple_acquires_track_timestamps(self):
+        """Each acquire adds a timestamp to the list."""
+        limiter = RateLimiter(max_requests=10, window_seconds=60)
+
+        for i in range(5):
+            limiter.acquire()
+            assert len(limiter.requests) == i + 1
