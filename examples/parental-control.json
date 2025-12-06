@@ -1,0 +1,16 @@
+{
+    "domains": [
+        {
+            "domain": "pornhub.com",
+            "description": "Blocks access to adult content",
+            "protected": true,
+            "schedule": null
+        },
+        {
+            "domain": "stake.com",
+            "description": "Blocks access to gambling sites",
+            "protected": true,
+            "schedule": null
+        }
+    ]
+}

@@ -1,0 +1,151 @@
+{
+    "domains": [
+        {
+            "domain": "www.epicgames.com",
+            "description": "Blocks Epic Games Store for the major part of weekdays",
+            "protected": false,
+            "schedule": {
+                "available_hours": [
+                    {
+                        "days": ["saturday", "sunday"],
+                        "time_ranges": [
+                            {"start": "00:00", "end": "23:59"}
+                        ]
+                    },
+                    {
+                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+                        "time_ranges": [
+                            {"start": "20:00", "end": "23:59"}
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "domain": "store.steampowered.com",
+            "description": "Blocks Steam Store for the major part of weekdays",
+            "protected": false,
+            "schedule": {
+                "available_hours": [
+                    {
+                        "days": ["saturday", "sunday"],
+                        "time_ranges": [
+                            {"start": "00:00", "end": "23:59"}
+                        ]
+                    },
+                    {
+                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+                        "time_ranges": [
+                            {"start": "20:00", "end": "23:59"}
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "domain": "gog.com",
+            "description": "Blocks GOG.com for the major part of weekdays",
+            "protected": false,
+            "schedule": {
+                "available_hours": [
+                    {
+                        "days": ["saturday", "sunday"],
+                        "time_ranges": [
+                            {"start": "00:00", "end": "23:59"}
+                        ]
+                    },
+                    {
+                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+                        "time_ranges": [
+                            {"start": "20:00", "end": "23:59"}
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "domain": "www.xbox.com",
+            "description": "Blocks Xbox Store for the major part of weekdays",
+            "protected": false,
+            "schedule": {
+                "available_hours": [
+                    {
+                        "days": ["saturday", "sunday"],
+                        "time_ranges": [
+                            {"start": "00:00", "end": "23:59"}
+                        ]
+                    },
+                    {
+                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+                        "time_ranges": [
+                            {"start": "20:00", "end": "23:59"}
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "domain": "store.playstation.com",
+            "description": "Blocks PlayStation Store for the major part of weekdays",
+            "protected": false,
+            "schedule": {
+                "available_hours": [
+                    {
+                        "days": ["saturday", "sunday"],
+                        "time_ranges": [
+                            {"start": "00:00", "end": "23:59"}
+                        ]
+                    },
+                    {
+                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+                        "time_ranges": [
+                            {"start": "20:00", "end": "23:59"}
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "domain": "play.google.com",
+            "description": "Blocks Google Play Games for the major part of weekdays",
+            "protected": false,
+            "schedule": {
+                "available_hours": [
+                    {
+                        "days": ["saturday", "sunday"],
+                        "time_ranges": [
+                            {"start": "00:00", "end": "23:59"}
+                        ]
+                    },
+                    {
+                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+                        "time_ranges": [
+                            {"start": "20:00", "end": "23:59"}
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "domain": "www.nintendo.com",
+            "description": "Blocks Nintendo eShop for the major part of weekdays",
+            "protected": false,
+            "schedule": {
+                "available_hours": [
+                    {
+                        "days": ["saturday", "sunday"],
+                        "time_ranges": [
+                            {"start": "00:00", "end": "23:59"}
+                        ]
+                    },
+                    {
+                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+                        "time_ranges": [
+                            {"start": "20:00", "end": "23:59"}
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}
