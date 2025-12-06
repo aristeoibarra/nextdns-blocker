@@ -84,9 +84,7 @@ def send_discord_notification(domain: str, event_type: str) -> None:
     }
 
     try:
-        response = requests.post(
-            webhook_url, json=payload, timeout=NOTIFICATION_TIMEOUT
-        )
+        response = requests.post(webhook_url, json=payload, timeout=NOTIFICATION_TIMEOUT)
         response.raise_for_status()
         logger.debug(f"Discord notification sent for {event_type}: {domain}")
     except requests.exceptions.Timeout:
@@ -99,4 +97,3 @@ def send_discord_notification(domain: str, event_type: str) -> None:
     except Exception as e:
         # Catch any other unexpected errors to ensure silent failure
         logger.warning(f"Unexpected error sending Discord notification: {e}")
-

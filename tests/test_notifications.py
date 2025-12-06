@@ -5,7 +5,6 @@ import os
 from datetime import datetime
 from unittest.mock import patch
 
-import pytest
 import requests
 import responses
 
@@ -246,4 +245,3 @@ class TestDiscordNotifications:
             mock_post.assert_called_once()
             call_kwargs = mock_post.call_args[1]
             assert call_kwargs["timeout"] == NOTIFICATION_TIMEOUT
-
