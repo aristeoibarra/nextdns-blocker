@@ -28,6 +28,7 @@ from .config import (
 )
 from .exceptions import ConfigurationError, DomainValidationError
 from .init import run_interactive_wizard, run_non_interactive
+from .notifications import send_discord_notification
 from .scheduler import ScheduleEvaluator
 
 # =============================================================================
@@ -242,6 +243,7 @@ def unblock(domain: str, config_dir: Optional[Path]) -> None:
 
         if client.unblock(domain):
             audit_log("UNBLOCK", domain)
+            send_discord_notification(domain, "unblock")
             click.echo(f"\n  Unblocked: {domain}\n")
         else:
             click.echo(f"\n  Error: Failed to unblock '{domain}'\n", err=True)
@@ -310,6 +312,7 @@ def sync(
                 else:
                     if client.block(domain):
                         audit_log("BLOCK", domain)
+                        send_discord_notification(domain, "block")
                         blocked_count += 1
             elif not should_block and is_blocked:
                 # Don't unblock protected domains
@@ -323,6 +326,7 @@ def sync(
                 else:
                     if client.unblock(domain):
                         audit_log("UNBLOCK", domain)
+                        send_discord_notification(domain, "unblock")
                         unblocked_count += 1
 
         # Sync allowlist
