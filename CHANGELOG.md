@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.1] - 2025-12-05
+
+### Fixed
+- `load_config()` now correctly uses `get_config_dir()` for XDG support
+  - Config files in `~/.config/nextdns-blocker/` are now properly detected
+  - Previously fell back to package directory instead of XDG paths
+
+### Added
+- Interactive wizard now prompts for optional `DOMAINS_URL`
+  - Users can configure remote domains.json URL during `nextdns-blocker init`
+  - No longer requires `--url` flag for interactive setup
+
 ## [5.0.0] - 2025-12-05
 
 ### Added
