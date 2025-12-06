@@ -664,13 +664,7 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
         ConfigurationError: If required configuration is missing
     """
     if config_dir is None:
-        # Default to looking in current working directory first,
-        # then fall back to package directory
-        cwd = Path.cwd()
-        if (cwd / ".env").exists():
-            config_dir = cwd
-        else:
-            config_dir = Path(__file__).parent.parent.parent.absolute()
+        config_dir = get_config_dir()
 
     env_file = config_dir / ".env"
 

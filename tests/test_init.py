@@ -338,6 +338,7 @@ class TestInteractiveWizard:
                     "testapikey123",  # API key (must be at least 8 chars)
                     "testprofile",  # Profile ID
                     "UTC",  # Timezone
+                    "",  # Domains URL (skip)
                 ]
 
                 result = run_interactive_wizard(tmp_path)
@@ -354,7 +355,7 @@ class TestInteractiveWizard:
         mock_get.return_value = mock_response
 
         with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            mock_prompt.side_effect = ["badkey12345", "badprofile", "UTC"]
+            mock_prompt.side_effect = ["badkey12345", "badprofile", "UTC", ""]
 
             result = run_interactive_wizard(tmp_path)
 
@@ -387,10 +388,46 @@ class TestInteractiveWizard:
 
         with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
             with patch("nextdns_blocker.init.click.confirm", return_value=False):
-                mock_prompt.side_effect = ["testapikey123", "testprofile", "UTC"]
+                mock_prompt.side_effect = ["testapikey123", "testprofile", "UTC", ""]
 
                 result = run_interactive_wizard(tmp_path)
 
         assert result is True
         assert (tmp_path / ".env").exists()
         assert not (tmp_path / "domains.json").exists()
+
+    @patch("nextdns_blocker.init.requests.get")
+    def test_wizard_with_domains_url(self, mock_get, tmp_path):
+        """Should save DOMAINS_URL when provided interactively."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_get.return_value = mock_response
+
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            with patch("nextdns_blocker.init.click.confirm", return_value=False):
+                mock_prompt.side_effect = [
+                    "testapikey123",
+                    "testprofile",
+                    "UTC",
+                    "https://example.com/domains.json",  # Valid URL
+                ]
+
+                result = run_interactive_wizard(tmp_path)
+
+        assert result is True
+        env_content = (tmp_path / ".env").read_text()
+        assert "DOMAINS_URL=https://example.com/domains.json" in env_content
+
+    def test_wizard_invalid_url(self, tmp_path):
+        """Should fail with invalid URL format."""
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            mock_prompt.side_effect = [
+                "testapikey123",
+                "testprofile",
+                "UTC",
+                "not-a-valid-url",  # Invalid URL
+            ]
+
+            result = run_interactive_wizard(tmp_path)
+
+        assert result is False

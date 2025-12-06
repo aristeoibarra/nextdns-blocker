@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import click
 import requests
 
-from .common import SECURE_FILE_MODE
+from .common import SECURE_FILE_MODE, validate_url
 from .config import get_config_dir
 
 # NextDNS API base URL for validation
@@ -211,6 +211,22 @@ def run_interactive_wizard(
         click.echo(click.style(f"\n  Error: {tz_msg}", fg="red"))
         click.echo("  See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones\n")
         return False
+
+    # Prompt for optional DOMAINS_URL (only if not provided via --url)
+    if not domains_url:
+        click.echo()
+        click.echo("  Domains URL (optional, press Enter to skip)")
+        url_input = click.prompt("  URL", default="", show_default=False)
+        url_input = url_input.strip()
+
+        if url_input:
+            if validate_url(url_input):
+                domains_url = url_input
+            else:
+                click.echo(
+                    click.style("\n  Error: Invalid URL format (must be http/https)", fg="red")
+                )
+                return False
 
     # Validate credentials
     click.echo()
