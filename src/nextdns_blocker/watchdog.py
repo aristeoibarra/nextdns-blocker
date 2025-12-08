@@ -1,5 +1,6 @@
 """Watchdog - Monitors and restores scheduled jobs (cron/launchd) if deleted."""
 
+import contextlib
 import logging
 import plistlib
 import shutil
@@ -462,14 +463,12 @@ def _install_launchd_jobs() -> None:
     success_wd = load_launchd_job(watchdog_plist)
     if not success_wd:
         # Watchdog failed, unload sync and clean up
-        try:
+        with contextlib.suppress(OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
             subprocess.run(
                 ["launchctl", "unload", str(sync_plist)],
                 capture_output=True,
                 timeout=SUBPROCESS_TIMEOUT,
             )
-        except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
-            pass  # Best effort cleanup, ignore errors
         _safe_unlink(sync_plist)
         _safe_unlink(watchdog_plist)
         click.echo("  error: failed to load watchdog launchd job", err=True)
