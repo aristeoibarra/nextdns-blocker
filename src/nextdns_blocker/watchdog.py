@@ -1,12 +1,13 @@
-"""Cron Watchdog - Monitors and restores cron jobs if deleted."""
+"""Watchdog - Monitors and restores scheduled jobs (cron/launchd) if deleted."""
 
 import logging
+import plistlib
 import shutil
 import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import click
 
@@ -21,6 +22,30 @@ logger = logging.getLogger(__name__)
 
 SUBPROCESS_TIMEOUT = 60
 
+# launchd constants for macOS
+LAUNCHD_SYNC_LABEL = "com.nextdns-blocker.sync"
+LAUNCHD_WATCHDOG_LABEL = "com.nextdns-blocker.watchdog"
+
+
+def is_macos() -> bool:
+    """Check if running on macOS."""
+    return sys.platform == "darwin"
+
+
+def get_launch_agents_dir() -> Path:
+    """Get the LaunchAgents directory for the current user."""
+    return Path.home() / "Library" / "LaunchAgents"
+
+
+def get_sync_plist_path() -> Path:
+    """Get the path to the sync plist file."""
+    return get_launch_agents_dir() / f"{LAUNCHD_SYNC_LABEL}.plist"
+
+
+def get_watchdog_plist_path() -> Path:
+    """Get the path to the watchdog plist file."""
+    return get_launch_agents_dir() / f"{LAUNCHD_WATCHDOG_LABEL}.plist"
+
 
 def get_disabled_file() -> Path:
     """Get the watchdog disabled state file path."""
@@ -28,12 +53,28 @@ def get_disabled_file() -> Path:
 
 
 def get_executable_path() -> str:
-    """Get the full path to the nextdns-blocker executable."""
+    """Get the full path to the nextdns-blocker executable.
+
+    Returns a string suitable for shell commands (cron).
+    For launchd, use get_executable_args() instead.
+    """
     exe_path = shutil.which("nextdns-blocker")
     if exe_path:
         return exe_path
     # Fallback to sys.executable module invocation
     return f"{sys.executable} -m nextdns_blocker"
+
+
+def get_executable_args() -> list[str]:
+    """Get the executable as a list of arguments for launchd/subprocess.
+
+    Returns a list suitable for subprocess.run() and launchd ProgramArguments.
+    """
+    exe_path = shutil.which("nextdns-blocker")
+    if exe_path:
+        return [exe_path]
+    # Fallback to sys.executable module invocation
+    return [sys.executable, "-m", "nextdns_blocker"]
 
 
 def get_cron_sync() -> str:
@@ -186,57 +227,93 @@ def filter_our_cron_jobs(crontab: str) -> list[str]:
 
 
 # =============================================================================
-# CLICK CLI
+# LAUNCHD MANAGEMENT (macOS)
 # =============================================================================
 
 
-@click.group()
-def watchdog_cli() -> None:
-    """Watchdog commands for cron job management."""
-    pass
+def generate_plist(
+    label: str,
+    program_args: list[str],
+    start_interval: int,
+    log_file: Path,
+) -> bytes:
+    """Generate plist content for a launchd job."""
+    plist_dict: dict[str, Any] = {
+        "Label": label,
+        "ProgramArguments": program_args,
+        "StartInterval": start_interval,
+        "RunAtLoad": True,
+        "KeepAlive": {"SuccessfulExit": False},  # Restart if process crashes
+        "StandardOutPath": str(log_file),
+        "StandardErrorPath": str(log_file),
+        "EnvironmentVariables": {
+            "PATH": "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
+        },
+    }
+    return plistlib.dumps(plist_dict)
 
 
-@watchdog_cli.command("check")
-def cmd_check() -> None:
-    """Check and restore cron jobs if missing."""
-    if is_disabled():
-        remaining = get_disabled_remaining()
-        click.echo(f"  watchdog disabled ({remaining})")
-        return
-
-    crontab = get_crontab()
-    restored = False
-
-    # Check and restore sync cron
-    if not has_sync_cron(crontab):
-        audit_log("CRON_DELETED", "Sync cron missing")
-        new_crontab = crontab.strip()
-        new_crontab = (new_crontab + "\n" if new_crontab else "") + get_cron_sync() + "\n"
-        if set_crontab(new_crontab):
-            click.echo("  sync cron restored")
-            restored = True
-
-    # Check and restore watchdog cron
-    if not has_watchdog_cron(crontab):
-        audit_log("WD_CRON_DELETED", "Watchdog cron missing")
-        crontab = get_crontab()
-        new_crontab = crontab.strip()
-        new_crontab = (new_crontab + "\n" if new_crontab else "") + get_cron_watchdog() + "\n"
-        if set_crontab(new_crontab):
-            click.echo("  watchdog cron restored")
-            restored = True
-
-    # Run sync if cron was restored
-    if restored:
-        try:
-            subprocess.run(["nextdns-blocker", "sync"], timeout=SUBPROCESS_TIMEOUT)
-        except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
-            logger.warning(f"Failed to run sync after cron restore: {e}")
+def load_launchd_job(plist_path: Path) -> bool:
+    """Load a launchd job from a plist file."""
+    try:
+        # First unload if exists (ignore errors)
+        subprocess.run(
+            ["launchctl", "unload", str(plist_path)],
+            capture_output=True,
+            timeout=SUBPROCESS_TIMEOUT,
+        )
+        # Then load
+        result = subprocess.run(
+            ["launchctl", "load", str(plist_path)],
+            capture_output=True,
+            text=True,
+            timeout=SUBPROCESS_TIMEOUT,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+        logger.warning(f"Failed to load launchd job: {e}")
+        return False
 
 
-@watchdog_cli.command("install")
-def cmd_install() -> None:
-    """Install sync and watchdog cron jobs."""
+def unload_launchd_job(plist_path: Path, label: str) -> bool:
+    """Unload a launchd job and remove the plist file."""
+    try:
+        # Unload the job
+        subprocess.run(
+            ["launchctl", "unload", str(plist_path)],
+            capture_output=True,
+            timeout=SUBPROCESS_TIMEOUT,
+        )
+        # Remove plist file
+        if plist_path.exists():
+            plist_path.unlink()
+        return True
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+        logger.warning(f"Failed to unload launchd job {label}: {e}")
+        return False
+
+
+def is_launchd_job_loaded(label: str) -> bool:
+    """Check if a launchd job is currently loaded."""
+    try:
+        result = subprocess.run(
+            ["launchctl", "list", label],
+            capture_output=True,
+            text=True,
+            timeout=SUBPROCESS_TIMEOUT,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        return False
+
+
+# =============================================================================
+# PLATFORM-SPECIFIC HELPERS
+# =============================================================================
+
+
+def _install_cron_jobs() -> None:
+    """Install cron jobs (Linux)."""
     crontab = get_crontab()
     lines = filter_our_cron_jobs(crontab)
     lines.extend([get_cron_sync(), get_cron_watchdog()])
@@ -251,9 +328,8 @@ def cmd_install() -> None:
         sys.exit(1)
 
 
-@watchdog_cli.command("uninstall")
-def cmd_uninstall() -> None:
-    """Remove cron jobs."""
+def _uninstall_cron_jobs() -> None:
+    """Uninstall cron jobs (Linux)."""
     crontab = get_crontab()
     lines = filter_our_cron_jobs(crontab)
     new_content = "\n".join(lines) + "\n" if lines else ""
@@ -266,9 +342,8 @@ def cmd_uninstall() -> None:
         sys.exit(1)
 
 
-@watchdog_cli.command("status")
-def cmd_status() -> None:
-    """Display current cron job status."""
+def _status_cron_jobs() -> None:
+    """Display cron job status (Linux)."""
     crontab = get_crontab()
     has_sync = has_sync_cron(crontab)
     has_wd = has_watchdog_cron(crontab)
@@ -285,6 +360,314 @@ def cmd_status() -> None:
         status = "active" if (has_sync and has_wd) else "compromised"
         click.echo(f"\n  status: {status}")
     click.echo()
+
+
+def _check_cron_jobs() -> None:
+    """Check and restore cron jobs if missing (Linux)."""
+    crontab = get_crontab()
+    restored = False
+
+    # Check and restore sync cron
+    if not has_sync_cron(crontab):
+        audit_log("CRON_DELETED", "Sync cron missing")
+        new_crontab = crontab.strip()
+        new_crontab = (new_crontab + "\n" if new_crontab else "") + get_cron_sync() + "\n"
+        if set_crontab(new_crontab):
+            click.echo("  sync cron restored")
+            restored = True
+        else:
+            click.echo("  warning: failed to restore sync cron", err=True)
+
+    # Check and restore watchdog cron
+    if not has_watchdog_cron(crontab):
+        audit_log("WD_CRON_DELETED", "Watchdog cron missing")
+        crontab = get_crontab()
+        new_crontab = crontab.strip()
+        new_crontab = (new_crontab + "\n" if new_crontab else "") + get_cron_watchdog() + "\n"
+        if set_crontab(new_crontab):
+            click.echo("  watchdog cron restored")
+            restored = True
+        else:
+            click.echo("  warning: failed to restore watchdog cron", err=True)
+
+    # Run sync if cron was restored
+    if restored:
+        _run_sync_after_restore()
+
+
+def _write_plist_file(plist_path: Path, content: bytes) -> bool:
+    """Write plist file with correct permissions (0o644)."""
+    try:
+        plist_path.write_bytes(content)
+        plist_path.chmod(0o644)
+        return True
+    except OSError as e:
+        logger.warning(f"Failed to write plist file {plist_path}: {e}")
+        return False
+
+
+def _safe_unlink(path: Path) -> None:
+    """Safely remove a file, ignoring errors."""
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError as e:
+        logger.debug(f"Failed to remove file {path}: {e}")
+
+
+def _install_launchd_jobs() -> None:
+    """Install launchd jobs (macOS)."""
+    launch_agents_dir = get_launch_agents_dir()
+    launch_agents_dir.mkdir(parents=True, exist_ok=True)
+
+    exe_args = get_executable_args()
+    log_dir = get_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate and write sync plist
+    sync_plist = get_sync_plist_path()
+    sync_content = generate_plist(
+        label=LAUNCHD_SYNC_LABEL,
+        program_args=exe_args + ["sync"],
+        start_interval=120,  # 2 minutes
+        log_file=log_dir / "launchd_sync.log",
+    )
+    if not _write_plist_file(sync_plist, sync_content):
+        click.echo("  error: failed to write sync plist", err=True)
+        sys.exit(1)
+
+    # Generate and write watchdog plist
+    watchdog_plist = get_watchdog_plist_path()
+    watchdog_content = generate_plist(
+        label=LAUNCHD_WATCHDOG_LABEL,
+        program_args=exe_args + ["watchdog", "check"],
+        start_interval=60,  # 1 minute
+        log_file=log_dir / "launchd_wd.log",
+    )
+    if not _write_plist_file(watchdog_plist, watchdog_content):
+        # Clean up sync plist that was already written
+        _safe_unlink(sync_plist)
+        click.echo("  error: failed to write watchdog plist", err=True)
+        sys.exit(1)
+
+    # Load the jobs
+    success_sync = load_launchd_job(sync_plist)
+    if not success_sync:
+        # Sync failed, clean up and exit early
+        _safe_unlink(sync_plist)
+        _safe_unlink(watchdog_plist)
+        click.echo("  error: failed to load sync launchd job", err=True)
+        sys.exit(1)
+
+    success_wd = load_launchd_job(watchdog_plist)
+    if not success_wd:
+        # Watchdog failed, unload sync and clean up
+        try:
+            subprocess.run(
+                ["launchctl", "unload", str(sync_plist)],
+                capture_output=True,
+                timeout=SUBPROCESS_TIMEOUT,
+            )
+        except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+            pass  # Best effort cleanup, ignore errors
+        _safe_unlink(sync_plist)
+        _safe_unlink(watchdog_plist)
+        click.echo("  error: failed to load watchdog launchd job", err=True)
+        sys.exit(1)
+
+    audit_log("LAUNCHD_INSTALLED", "Manual install")
+    click.echo("\n  launchd jobs installed")
+    click.echo("    sync       every 2 min")
+    click.echo("    watchdog   every 1 min\n")
+
+
+def _uninstall_launchd_jobs() -> None:
+    """Uninstall launchd jobs (macOS)."""
+    sync_plist = get_sync_plist_path()
+    watchdog_plist = get_watchdog_plist_path()
+
+    success_sync = unload_launchd_job(sync_plist, LAUNCHD_SYNC_LABEL)
+    success_wd = unload_launchd_job(watchdog_plist, LAUNCHD_WATCHDOG_LABEL)
+
+    audit_log("LAUNCHD_UNINSTALLED", "Manual uninstall")
+
+    if success_sync and success_wd:
+        click.echo("\n  launchd jobs removed\n")
+    elif not success_sync and not success_wd:
+        click.echo("\n  warning: failed to unload both launchd jobs\n", err=True)
+    elif not success_sync:
+        click.echo("\n  watchdog removed, warning: failed to unload sync job\n", err=True)
+    else:
+        click.echo("\n  sync removed, warning: failed to unload watchdog job\n", err=True)
+
+
+def _status_launchd_jobs() -> None:
+    """Display launchd job status (macOS)."""
+    has_sync = is_launchd_job_loaded(LAUNCHD_SYNC_LABEL)
+    has_wd = is_launchd_job_loaded(LAUNCHD_WATCHDOG_LABEL)
+    disabled_remaining = get_disabled_remaining()
+
+    click.echo("\n  launchd")
+    click.echo("  -------")
+    click.echo(f"    sync       {'ok' if has_sync else 'missing'}")
+    click.echo(f"    watchdog   {'ok' if has_wd else 'missing'}")
+
+    if disabled_remaining:
+        click.echo(f"\n  watchdog: DISABLED ({disabled_remaining})")
+    else:
+        status = "active" if (has_sync and has_wd) else "compromised"
+        click.echo(f"\n  status: {status}")
+    click.echo()
+
+
+def _check_launchd_jobs() -> None:
+    """Check and restore launchd jobs if missing (macOS)."""
+    restored = False
+
+    # Check sync job
+    if not is_launchd_job_loaded(LAUNCHD_SYNC_LABEL):
+        audit_log("LAUNCHD_DELETED", "Sync job missing")
+        sync_plist = get_sync_plist_path()
+        if sync_plist.exists():
+            if load_launchd_job(sync_plist):
+                click.echo("  sync launchd job restored")
+                restored = True
+            else:
+                click.echo("  warning: failed to restore sync launchd job", err=True)
+        else:
+            # Recreate plist
+            if _create_sync_plist():
+                if load_launchd_job(sync_plist):
+                    click.echo("  sync launchd job recreated")
+                    restored = True
+                else:
+                    # Clean up orphaned plist
+                    _safe_unlink(sync_plist)
+                    click.echo("  warning: failed to load sync launchd job", err=True)
+            else:
+                click.echo("  warning: failed to create sync plist", err=True)
+
+    # Check watchdog job
+    if not is_launchd_job_loaded(LAUNCHD_WATCHDOG_LABEL):
+        audit_log("LAUNCHD_WD_DELETED", "Watchdog job missing")
+        watchdog_plist = get_watchdog_plist_path()
+        if watchdog_plist.exists():
+            if load_launchd_job(watchdog_plist):
+                click.echo("  watchdog launchd job restored")
+                restored = True
+            else:
+                click.echo("  warning: failed to restore watchdog launchd job", err=True)
+        else:
+            # Recreate plist
+            if _create_watchdog_plist():
+                if load_launchd_job(watchdog_plist):
+                    click.echo("  watchdog launchd job recreated")
+                    restored = True
+                else:
+                    # Clean up orphaned plist
+                    _safe_unlink(watchdog_plist)
+                    click.echo("  warning: failed to load watchdog launchd job", err=True)
+            else:
+                click.echo("  warning: failed to create watchdog plist", err=True)
+
+    # Run sync if jobs were restored
+    if restored:
+        _run_sync_after_restore()
+
+
+def _create_sync_plist() -> bool:
+    """Create sync plist file. Returns True on success."""
+    exe_args = get_executable_args()
+    log_dir = get_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    sync_plist = get_sync_plist_path()
+    sync_plist.parent.mkdir(parents=True, exist_ok=True)
+    sync_content = generate_plist(
+        label=LAUNCHD_SYNC_LABEL,
+        program_args=exe_args + ["sync"],
+        start_interval=120,
+        log_file=log_dir / "launchd_sync.log",
+    )
+    return _write_plist_file(sync_plist, sync_content)
+
+
+def _create_watchdog_plist() -> bool:
+    """Create watchdog plist file. Returns True on success."""
+    exe_args = get_executable_args()
+    log_dir = get_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    watchdog_plist = get_watchdog_plist_path()
+    watchdog_plist.parent.mkdir(parents=True, exist_ok=True)
+    watchdog_content = generate_plist(
+        label=LAUNCHD_WATCHDOG_LABEL,
+        program_args=exe_args + ["watchdog", "check"],
+        start_interval=60,
+        log_file=log_dir / "launchd_wd.log",
+    )
+    return _write_plist_file(watchdog_plist, watchdog_content)
+
+
+def _run_sync_after_restore() -> None:
+    """Run sync command after restoring scheduled jobs."""
+    try:
+        exe_args = get_executable_args()
+        subprocess.run(exe_args + ["sync"], timeout=SUBPROCESS_TIMEOUT)
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+        logger.warning(f"Failed to run sync after restore: {e}")
+
+
+# =============================================================================
+# CLICK CLI
+# =============================================================================
+
+
+@click.group()
+def watchdog_cli() -> None:
+    """Watchdog commands for scheduled job management (cron/launchd)."""
+    pass
+
+
+@watchdog_cli.command("check")
+def cmd_check() -> None:
+    """Check and restore scheduled jobs if missing."""
+    if is_disabled():
+        remaining = get_disabled_remaining()
+        click.echo(f"  watchdog disabled ({remaining})")
+        return
+
+    if is_macos():
+        _check_launchd_jobs()
+    else:
+        _check_cron_jobs()
+
+
+@watchdog_cli.command("install")
+def cmd_install() -> None:
+    """Install sync and watchdog scheduled jobs."""
+    if is_macos():
+        _install_launchd_jobs()
+    else:
+        _install_cron_jobs()
+
+
+@watchdog_cli.command("uninstall")
+def cmd_uninstall() -> None:
+    """Remove scheduled jobs."""
+    if is_macos():
+        _uninstall_launchd_jobs()
+    else:
+        _uninstall_cron_jobs()
+
+
+@watchdog_cli.command("status")
+def cmd_status() -> None:
+    """Display current scheduled job status."""
+    if is_macos():
+        _status_launchd_jobs()
+    else:
+        _status_cron_jobs()
 
 
 @watchdog_cli.command("disable")

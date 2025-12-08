@@ -1,4 +1,4 @@
-"""Tests for watchdog.py - Cron watchdog functionality."""
+"""Tests for watchdog.py - Scheduled job watchdog functionality (cron/launchd)."""
 
 import os
 import sys
@@ -269,9 +269,10 @@ class TestCmdCheck:
         """Should do nothing when all cron jobs present."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
 
-        with patch.object(watchdog, "get_crontab", return_value=crontab):
-            result = runner.invoke(watchdog.cmd_check)
-            assert result.exit_code == 0
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=crontab):
+                result = runner.invoke(watchdog.cmd_check)
+                assert result.exit_code == 0
 
 
 class TestCmdStatus:
@@ -288,29 +289,32 @@ class TestCmdStatus:
         """Should show OK status when all cron jobs present."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
 
-        with patch.object(watchdog, "get_crontab", return_value=crontab):
-            result = runner.invoke(watchdog.cmd_status)
-            assert result.exit_code == 0
-            assert "ok" in result.output
-            assert "active" in result.output
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=crontab):
+                result = runner.invoke(watchdog.cmd_status)
+                assert result.exit_code == 0
+                assert "ok" in result.output
+                assert "active" in result.output
 
     def test_cmd_status_missing_crons(self, runner, mock_disabled_file):
         """Should show missing status when cron jobs absent."""
-        with patch.object(watchdog, "get_crontab", return_value=""):
-            result = runner.invoke(watchdog.cmd_status)
-            assert result.exit_code == 0
-            assert "missing" in result.output
-            assert "compromised" in result.output
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=""):
+                result = runner.invoke(watchdog.cmd_status)
+                assert result.exit_code == 0
+                assert "missing" in result.output
+                assert "compromised" in result.output
 
     def test_cmd_status_disabled(self, runner, mock_disabled_file):
         """Should show disabled status when watchdog disabled."""
         mock_disabled_file.write_text("permanent")
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
 
-        with patch.object(watchdog, "get_crontab", return_value=crontab):
-            result = runner.invoke(watchdog.cmd_status)
-            assert result.exit_code == 0
-            assert "DISABLED" in result.output
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=crontab):
+                result = runner.invoke(watchdog.cmd_status)
+                assert result.exit_code == 0
+                assert "DISABLED" in result.output
 
 
 class TestCmdDisable:
@@ -414,29 +418,32 @@ class TestCmdInstall:
 
     def test_cmd_install_success(self, runner, mock_audit_log_file):
         """Should install cron jobs successfully."""
-        with patch.object(watchdog, "get_crontab", return_value=""):
-            with patch.object(watchdog, "set_crontab", return_value=True):
-                result = runner.invoke(watchdog.cmd_install)
-                assert result.exit_code == 0
-                assert "cron installed" in result.output
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=""):
+                with patch.object(watchdog, "set_crontab", return_value=True):
+                    result = runner.invoke(watchdog.cmd_install)
+                    assert result.exit_code == 0
+                    assert "cron installed" in result.output
 
     def test_cmd_install_failure(self, runner):
         """Should return error when cron install fails."""
-        with patch.object(watchdog, "get_crontab", return_value=""):
-            with patch.object(watchdog, "set_crontab", return_value=False):
-                result = runner.invoke(watchdog.cmd_install)
-                assert result.exit_code == 1
-                assert "failed" in result.output
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=""):
+                with patch.object(watchdog, "set_crontab", return_value=False):
+                    result = runner.invoke(watchdog.cmd_install)
+                    assert result.exit_code == 1
+                    assert "failed" in result.output
 
     def test_cmd_install_preserves_existing(self, runner, mock_audit_log_file):
         """Should preserve existing cron jobs."""
         existing_cron = "0 * * * * other_job\n"
-        with patch.object(watchdog, "get_crontab", return_value=existing_cron):
-            with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
-                runner.invoke(watchdog.cmd_install)
-                # Verify existing job is preserved
-                call_arg = mock_set.call_args[0][0]
-                assert "other_job" in call_arg
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=existing_cron):
+                with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
+                    runner.invoke(watchdog.cmd_install)
+                    # Verify existing job is preserved
+                    call_arg = mock_set.call_args[0][0]
+                    assert "other_job" in call_arg
 
 
 class TestCmdUninstall:
@@ -452,28 +459,31 @@ class TestCmdUninstall:
     def test_cmd_uninstall_success(self, runner, mock_audit_log_file):
         """Should uninstall cron jobs successfully."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
-        with patch.object(watchdog, "get_crontab", return_value=crontab):
-            with patch.object(watchdog, "set_crontab", return_value=True):
-                result = runner.invoke(watchdog.cmd_uninstall)
-                assert result.exit_code == 0
-                assert "removed" in result.output
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=crontab):
+                with patch.object(watchdog, "set_crontab", return_value=True):
+                    result = runner.invoke(watchdog.cmd_uninstall)
+                    assert result.exit_code == 0
+                    assert "removed" in result.output
 
     def test_cmd_uninstall_failure(self, runner):
         """Should return error when uninstall fails."""
-        with patch.object(watchdog, "get_crontab", return_value=""):
-            with patch.object(watchdog, "set_crontab", return_value=False):
-                result = runner.invoke(watchdog.cmd_uninstall)
-                assert result.exit_code == 1
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=""):
+                with patch.object(watchdog, "set_crontab", return_value=False):
+                    result = runner.invoke(watchdog.cmd_uninstall)
+                    assert result.exit_code == 1
 
     def test_cmd_uninstall_preserves_other_jobs(self, runner, mock_audit_log_file):
         """Should preserve non-blocker cron jobs."""
         crontab = "0 * * * * other_job\n*/2 * * * * nextdns-blocker sync\n"
-        with patch.object(watchdog, "get_crontab", return_value=crontab):
-            with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
-                runner.invoke(watchdog.cmd_uninstall)
-                call_arg = mock_set.call_args[0][0]
-                assert "other_job" in call_arg
-                assert "nextdns-blocker" not in call_arg
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=crontab):
+                with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
+                    runner.invoke(watchdog.cmd_uninstall)
+                    call_arg = mock_set.call_args[0][0]
+                    assert "other_job" in call_arg
+                    assert "nextdns-blocker" not in call_arg
 
 
 class TestCmdCheckRestoration:
@@ -500,12 +510,13 @@ class TestCmdCheckRestoration:
             call_count[0] += 1
             return result
 
-        with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
-            with patch.object(watchdog, "set_crontab", return_value=True):
-                with patch("subprocess.run"):
-                    result = runner.invoke(watchdog.cmd_check)
-                    assert result.exit_code == 0
-                    assert "sync cron restored" in result.output
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
+                with patch.object(watchdog, "set_crontab", return_value=True):
+                    with patch("subprocess.run"):
+                        result = runner.invoke(watchdog.cmd_check)
+                        assert result.exit_code == 0
+                        assert "sync cron restored" in result.output
 
     def test_cmd_check_restores_missing_watchdog(
         self, runner, mock_disabled_file, mock_audit_log_file
@@ -522,12 +533,13 @@ class TestCmdCheckRestoration:
             call_count[0] += 1
             return result
 
-        with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
-            with patch.object(watchdog, "set_crontab", return_value=True):
-                with patch("subprocess.run"):
-                    result = runner.invoke(watchdog.cmd_check)
-                    assert result.exit_code == 0
-                    assert "watchdog cron restored" in result.output
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
+                with patch.object(watchdog, "set_crontab", return_value=True):
+                    with patch("subprocess.run"):
+                        result = runner.invoke(watchdog.cmd_check)
+                        assert result.exit_code == 0
+                        assert "watchdog cron restored" in result.output
 
 
 class TestAuditLogWatchdog:
@@ -576,30 +588,34 @@ class TestMain:
 
     def test_main_status_command(self, runner, mock_disabled_file):
         """Should run status command."""
-        with patch.object(watchdog, "get_crontab", return_value=""):
-            result = runner.invoke(watchdog.main, ["status"])
-            assert result.exit_code == 0
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=""):
+                result = runner.invoke(watchdog.main, ["status"])
+                assert result.exit_code == 0
 
     def test_main_check_command(self, runner, mock_disabled_file):
         """Should run check command."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
-        with patch.object(watchdog, "get_crontab", return_value=crontab):
-            result = runner.invoke(watchdog.main, ["check"])
-            assert result.exit_code == 0
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=crontab):
+                result = runner.invoke(watchdog.main, ["check"])
+                assert result.exit_code == 0
 
     def test_main_install_command(self, runner, mock_audit_log_file):
         """Should run install command."""
-        with patch.object(watchdog, "get_crontab", return_value=""):
-            with patch.object(watchdog, "set_crontab", return_value=True):
-                result = runner.invoke(watchdog.main, ["install"])
-                assert result.exit_code == 0
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=""):
+                with patch.object(watchdog, "set_crontab", return_value=True):
+                    result = runner.invoke(watchdog.main, ["install"])
+                    assert result.exit_code == 0
 
     def test_main_uninstall_command(self, runner, mock_audit_log_file):
         """Should run uninstall command."""
-        with patch.object(watchdog, "get_crontab", return_value=""):
-            with patch.object(watchdog, "set_crontab", return_value=True):
-                result = runner.invoke(watchdog.main, ["uninstall"])
-                assert result.exit_code == 0
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=""):
+                with patch.object(watchdog, "set_crontab", return_value=True):
+                    result = runner.invoke(watchdog.main, ["uninstall"])
+                    assert result.exit_code == 0
 
     def test_main_disable_command(self, runner, mock_disabled_file, mock_audit_log_file):
         """Should run disable command."""
@@ -630,3 +646,571 @@ class TestMain:
         assert result.exit_code != 0
         # Click interprets -5 as an option flag, so it shows "No such option" error
         assert "No such option" in result.output or "Invalid" in result.output
+
+
+# =============================================================================
+# LAUNCHD TESTS (macOS)
+# =============================================================================
+
+
+class TestPlatformDetection:
+    """Tests for platform detection functions."""
+
+    def test_is_macos_on_darwin(self):
+        """Should return True on macOS."""
+        with patch("sys.platform", "darwin"):
+            assert watchdog.is_macos() is True
+
+    def test_is_macos_on_linux(self):
+        """Should return False on Linux."""
+        with patch("sys.platform", "linux"):
+            assert watchdog.is_macos() is False
+
+    def test_is_macos_on_windows(self):
+        """Should return False on Windows."""
+        with patch("sys.platform", "win32"):
+            assert watchdog.is_macos() is False
+
+
+class TestLaunchdPaths:
+    """Tests for launchd path functions."""
+
+    def test_get_launch_agents_dir(self):
+        """Should return ~/Library/LaunchAgents."""
+        result = watchdog.get_launch_agents_dir()
+        assert result == Path.home() / "Library" / "LaunchAgents"
+
+    def test_get_sync_plist_path(self):
+        """Should return correct sync plist path."""
+        result = watchdog.get_sync_plist_path()
+        expected = Path.home() / "Library" / "LaunchAgents" / "com.nextdns-blocker.sync.plist"
+        assert result == expected
+
+    def test_get_watchdog_plist_path(self):
+        """Should return correct watchdog plist path."""
+        result = watchdog.get_watchdog_plist_path()
+        expected = (
+            Path.home() / "Library" / "LaunchAgents" / "com.nextdns-blocker.watchdog.plist"
+        )
+        assert result == expected
+
+
+class TestGeneratePlist:
+    """Tests for plist generation."""
+
+    def test_generate_plist_valid_content(self):
+        """Should generate valid plist content."""
+        import plistlib
+
+        content = watchdog.generate_plist(
+            label="com.test.label",
+            program_args=["/usr/bin/test", "arg"],
+            start_interval=60,
+            log_file=Path("/tmp/test.log"),
+        )
+        # Should be parseable
+        parsed = plistlib.loads(content)
+        assert parsed["Label"] == "com.test.label"
+        assert parsed["ProgramArguments"] == ["/usr/bin/test", "arg"]
+        assert parsed["StartInterval"] == 60
+        assert parsed["RunAtLoad"] is True
+
+    def test_generate_plist_includes_path(self):
+        """Should include PATH environment variable."""
+        import plistlib
+
+        content = watchdog.generate_plist(
+            label="test",
+            program_args=["test"],
+            start_interval=60,
+            log_file=Path("/tmp/test.log"),
+        )
+        parsed = plistlib.loads(content)
+        assert "PATH" in parsed["EnvironmentVariables"]
+        assert "/opt/homebrew/bin" in parsed["EnvironmentVariables"]["PATH"]
+
+    def test_generate_plist_log_paths(self):
+        """Should set stdout and stderr to log file."""
+        import plistlib
+
+        content = watchdog.generate_plist(
+            label="test",
+            program_args=["test"],
+            start_interval=60,
+            log_file=Path("/tmp/test.log"),
+        )
+        parsed = plistlib.loads(content)
+        assert parsed["StandardOutPath"] == "/tmp/test.log"
+        assert parsed["StandardErrorPath"] == "/tmp/test.log"
+
+
+class TestLaunchctlCommands:
+    """Tests for launchctl command functions."""
+
+    def test_is_launchd_job_loaded_true(self):
+        """Should return True when job is loaded."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result):
+            assert watchdog.is_launchd_job_loaded("com.test.label") is True
+
+    def test_is_launchd_job_loaded_false(self):
+        """Should return False when job is not loaded."""
+        mock_result = MagicMock()
+        mock_result.returncode = 3  # Job not found
+
+        with patch("subprocess.run", return_value=mock_result):
+            assert watchdog.is_launchd_job_loaded("com.test.label") is False
+
+    def test_is_launchd_job_loaded_error(self):
+        """Should return False on error."""
+        with patch("subprocess.run", side_effect=OSError("error")):
+            assert watchdog.is_launchd_job_loaded("com.test.label") is False
+
+    def test_load_launchd_job_success(self):
+        """Should return True on successful load."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = watchdog.load_launchd_job(Path("/tmp/test.plist"))
+            assert result is True
+
+    def test_load_launchd_job_failure(self):
+        """Should return False on load failure."""
+        mock_unload = MagicMock()
+        mock_unload.returncode = 0
+        mock_load = MagicMock()
+        mock_load.returncode = 1
+
+        with patch("subprocess.run", side_effect=[mock_unload, mock_load]):
+            result = watchdog.load_launchd_job(Path("/tmp/test.plist"))
+            assert result is False
+
+    def test_load_launchd_job_error(self):
+        """Should return False on error."""
+        with patch("subprocess.run", side_effect=OSError("error")):
+            result = watchdog.load_launchd_job(Path("/tmp/test.plist"))
+            assert result is False
+
+    def test_unload_launchd_job_success(self, temp_log_dir):
+        """Should unload job and remove plist file."""
+        plist_file = temp_log_dir / "test.plist"
+        plist_file.write_text("<plist></plist>")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = watchdog.unload_launchd_job(plist_file, "com.test.label")
+            assert result is True
+            assert not plist_file.exists()
+
+    def test_unload_launchd_job_error(self):
+        """Should return False on error."""
+        with patch("subprocess.run", side_effect=OSError("error")):
+            result = watchdog.unload_launchd_job(Path("/tmp/test.plist"), "com.test.label")
+            assert result is False
+
+
+class TestCmdInstallMultiplatform:
+    """Tests for cmd_install with platform dispatch."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+
+        return CliRunner()
+
+    def test_cmd_install_macos(self, runner, mock_audit_log_file, temp_log_dir):
+        """Should use launchd on macOS."""
+        with patch.object(watchdog, "is_macos", return_value=True):
+            with patch.object(watchdog, "get_launch_agents_dir", return_value=temp_log_dir):
+                with patch.object(watchdog, "get_log_dir", return_value=temp_log_dir):
+                    with patch.object(watchdog, "load_launchd_job", return_value=True):
+                        with patch.object(
+                            watchdog, "get_executable_path", return_value="/usr/bin/nextdns-blocker"
+                        ):
+                            result = runner.invoke(watchdog.cmd_install)
+                            assert result.exit_code == 0
+                            assert "launchd" in result.output
+
+    def test_cmd_install_linux(self, runner, mock_audit_log_file):
+        """Should use cron on Linux."""
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=""):
+                with patch.object(watchdog, "set_crontab", return_value=True):
+                    result = runner.invoke(watchdog.cmd_install)
+                    assert result.exit_code == 0
+                    assert "cron" in result.output
+
+
+class TestCmdUninstallMultiplatform:
+    """Tests for cmd_uninstall with platform dispatch."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+
+        return CliRunner()
+
+    def test_cmd_uninstall_macos(self, runner, mock_audit_log_file, temp_log_dir):
+        """Should use launchd on macOS."""
+        # Create plist files
+        sync_plist = temp_log_dir / "com.nextdns-blocker.sync.plist"
+        watchdog_plist = temp_log_dir / "com.nextdns-blocker.watchdog.plist"
+        sync_plist.write_text("<plist></plist>")
+        watchdog_plist.write_text("<plist></plist>")
+
+        with patch.object(watchdog, "is_macos", return_value=True):
+            with patch.object(watchdog, "get_sync_plist_path", return_value=sync_plist):
+                with patch.object(watchdog, "get_watchdog_plist_path", return_value=watchdog_plist):
+                    with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+                        result = runner.invoke(watchdog.cmd_uninstall)
+                        assert result.exit_code == 0
+                        assert "launchd" in result.output
+
+    def test_cmd_uninstall_linux(self, runner, mock_audit_log_file):
+        """Should use cron on Linux."""
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=""):
+                with patch.object(watchdog, "set_crontab", return_value=True):
+                    result = runner.invoke(watchdog.cmd_uninstall)
+                    assert result.exit_code == 0
+                    assert "Cron" in result.output
+
+
+class TestCmdStatusMultiplatform:
+    """Tests for cmd_status with platform dispatch."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+
+        return CliRunner()
+
+    def test_cmd_status_macos(self, runner, mock_disabled_file):
+        """Should show launchd status on macOS."""
+        with patch.object(watchdog, "is_macos", return_value=True):
+            with patch.object(watchdog, "is_launchd_job_loaded", return_value=True):
+                result = runner.invoke(watchdog.cmd_status)
+                assert result.exit_code == 0
+                assert "launchd" in result.output
+
+    def test_cmd_status_linux(self, runner, mock_disabled_file):
+        """Should show cron status on Linux."""
+        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=crontab):
+                result = runner.invoke(watchdog.cmd_status)
+                assert result.exit_code == 0
+                assert "cron" in result.output
+
+
+class TestCmdCheckMultiplatform:
+    """Tests for cmd_check with platform dispatch."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+
+        return CliRunner()
+
+    def test_cmd_check_macos_all_loaded(self, runner, mock_disabled_file):
+        """Should do nothing when launchd jobs are loaded."""
+        with patch.object(watchdog, "is_macos", return_value=True):
+            with patch.object(watchdog, "is_launchd_job_loaded", return_value=True):
+                result = runner.invoke(watchdog.cmd_check)
+                assert result.exit_code == 0
+
+    def test_cmd_check_linux_all_present(self, runner, mock_disabled_file):
+        """Should do nothing when cron jobs are present."""
+        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "get_crontab", return_value=crontab):
+                result = runner.invoke(watchdog.cmd_check)
+                assert result.exit_code == 0
+
+
+class TestGetExecutableArgs:
+    """Tests for get_executable_args function."""
+
+    def test_get_executable_args_with_installed_binary(self):
+        """Should return single-element list when binary is found."""
+        with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
+            result = watchdog.get_executable_args()
+            assert result == ["/usr/local/bin/nextdns-blocker"]
+
+    def test_get_executable_args_fallback_to_module(self):
+        """Should return python module invocation when binary not found."""
+        with patch("shutil.which", return_value=None):
+            result = watchdog.get_executable_args()
+            assert len(result) == 3
+            assert result[0] == sys.executable
+            assert result[1] == "-m"
+            assert result[2] == "nextdns_blocker"
+
+    def test_get_executable_args_returns_list(self):
+        """Should always return a list."""
+        with patch("shutil.which", return_value="/some/path"):
+            result = watchdog.get_executable_args()
+            assert isinstance(result, list)
+
+
+class TestWritePlistFile:
+    """Tests for _write_plist_file function."""
+
+    def test_write_plist_file_creates_file(self, temp_log_dir):
+        """Should create file with content."""
+        plist_file = temp_log_dir / "test.plist"
+        content = b"<plist></plist>"
+
+        result = watchdog._write_plist_file(plist_file, content)
+
+        assert result is True
+        assert plist_file.exists()
+        assert plist_file.read_bytes() == content
+
+    def test_write_plist_file_sets_permissions(self, temp_log_dir):
+        """Should set file permissions to 0o644."""
+        plist_file = temp_log_dir / "test.plist"
+        content = b"<plist></plist>"
+
+        watchdog._write_plist_file(plist_file, content)
+
+        mode = plist_file.stat().st_mode & 0o777
+        assert mode == 0o644
+
+    def test_write_plist_file_returns_false_on_error(self, temp_log_dir):
+        """Should return False when write fails."""
+        # Try to write to a non-existent directory
+        plist_file = temp_log_dir / "nonexistent" / "test.plist"
+
+        result = watchdog._write_plist_file(plist_file, b"content")
+
+        assert result is False
+
+
+class TestGeneratePlistKeepAlive:
+    """Tests for KeepAlive in generated plist."""
+
+    def test_generate_plist_includes_keepalive(self):
+        """Should include KeepAlive configuration."""
+        import plistlib
+
+        content = watchdog.generate_plist(
+            label="test",
+            program_args=["test"],
+            start_interval=60,
+            log_file=Path("/tmp/test.log"),
+        )
+        parsed = plistlib.loads(content)
+
+        assert "KeepAlive" in parsed
+        assert parsed["KeepAlive"] == {"SuccessfulExit": False}
+
+
+class TestSafeUnlink:
+    """Tests for _safe_unlink function."""
+
+    def test_safe_unlink_removes_existing_file(self, temp_log_dir):
+        """Should remove file when it exists."""
+        test_file = temp_log_dir / "test.txt"
+        test_file.write_text("content")
+
+        watchdog._safe_unlink(test_file)
+
+        assert not test_file.exists()
+
+    def test_safe_unlink_handles_nonexistent_file(self, temp_log_dir):
+        """Should not raise error for non-existent file."""
+        test_file = temp_log_dir / "nonexistent.txt"
+
+        # Should not raise
+        watchdog._safe_unlink(test_file)
+
+    def test_safe_unlink_handles_permission_error(self, temp_log_dir):
+        """Should handle errors gracefully."""
+        test_file = temp_log_dir / "test.txt"
+
+        with patch.object(Path, "exists", return_value=True):
+            with patch.object(Path, "unlink", side_effect=OSError("Permission denied")):
+                # Should not raise
+                watchdog._safe_unlink(test_file)
+
+
+class TestCreateSyncPlist:
+    """Tests for _create_sync_plist function."""
+
+    def test_create_sync_plist_success(self, temp_log_dir):
+        """Should create sync plist file."""
+        sync_plist = temp_log_dir / "com.nextdns-blocker.sync.plist"
+
+        with patch.object(watchdog, "get_sync_plist_path", return_value=sync_plist):
+            with patch.object(watchdog, "get_log_dir", return_value=temp_log_dir):
+                result = watchdog._create_sync_plist()
+
+        assert result is True
+        assert sync_plist.exists()
+
+    def test_create_sync_plist_correct_content(self, temp_log_dir):
+        """Should create plist with correct label and args."""
+        import plistlib
+
+        sync_plist = temp_log_dir / "com.nextdns-blocker.sync.plist"
+
+        with patch.object(watchdog, "get_sync_plist_path", return_value=sync_plist):
+            with patch.object(watchdog, "get_log_dir", return_value=temp_log_dir):
+                with patch.object(watchdog, "get_executable_args", return_value=["/usr/bin/test"]):
+                    watchdog._create_sync_plist()
+
+        parsed = plistlib.loads(sync_plist.read_bytes())
+        assert parsed["Label"] == watchdog.LAUNCHD_SYNC_LABEL
+        assert parsed["ProgramArguments"] == ["/usr/bin/test", "sync"]
+        assert parsed["StartInterval"] == 120
+
+    def test_create_sync_plist_failure(self, temp_log_dir):
+        """Should return False when write fails."""
+        sync_plist = temp_log_dir / "test.plist"
+
+        with patch.object(watchdog, "get_sync_plist_path", return_value=sync_plist):
+            with patch.object(watchdog, "get_log_dir", return_value=temp_log_dir):
+                with patch.object(watchdog, "_write_plist_file", return_value=False):
+                    result = watchdog._create_sync_plist()
+
+        assert result is False
+
+
+class TestCreateWatchdogPlist:
+    """Tests for _create_watchdog_plist function."""
+
+    def test_create_watchdog_plist_success(self, temp_log_dir):
+        """Should create watchdog plist file."""
+        watchdog_plist = temp_log_dir / "com.nextdns-blocker.watchdog.plist"
+
+        with patch.object(watchdog, "get_watchdog_plist_path", return_value=watchdog_plist):
+            with patch.object(watchdog, "get_log_dir", return_value=temp_log_dir):
+                result = watchdog._create_watchdog_plist()
+
+        assert result is True
+        assert watchdog_plist.exists()
+
+    def test_create_watchdog_plist_correct_content(self, temp_log_dir):
+        """Should create plist with correct label and args."""
+        import plistlib
+
+        watchdog_plist = temp_log_dir / "com.nextdns-blocker.watchdog.plist"
+
+        with patch.object(watchdog, "get_watchdog_plist_path", return_value=watchdog_plist):
+            with patch.object(watchdog, "get_log_dir", return_value=temp_log_dir):
+                with patch.object(watchdog, "get_executable_args", return_value=["/usr/bin/test"]):
+                    watchdog._create_watchdog_plist()
+
+        parsed = plistlib.loads(watchdog_plist.read_bytes())
+        assert parsed["Label"] == watchdog.LAUNCHD_WATCHDOG_LABEL
+        assert parsed["ProgramArguments"] == ["/usr/bin/test", "watchdog", "check"]
+        assert parsed["StartInterval"] == 60
+
+    def test_create_watchdog_plist_failure(self, temp_log_dir):
+        """Should return False when write fails."""
+        watchdog_plist = temp_log_dir / "test.plist"
+
+        with patch.object(watchdog, "get_watchdog_plist_path", return_value=watchdog_plist):
+            with patch.object(watchdog, "get_log_dir", return_value=temp_log_dir):
+                with patch.object(watchdog, "_write_plist_file", return_value=False):
+                    result = watchdog._create_watchdog_plist()
+
+        assert result is False
+
+
+class TestInstallLaunchdCleanup:
+    """Tests for cleanup behavior in _install_launchd_jobs."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+
+        return CliRunner()
+
+    def test_install_unloads_sync_when_watchdog_fails(
+        self, runner, mock_audit_log_file, temp_log_dir
+    ):
+        """Should unload sync job when watchdog load fails."""
+        load_results = [True, False]  # sync succeeds, watchdog fails
+        load_call_count = [0]
+
+        def mock_load(plist_path):
+            result = load_results[load_call_count[0]]
+            load_call_count[0] += 1
+            return result
+
+        with patch.object(watchdog, "is_macos", return_value=True):
+            with patch.object(watchdog, "get_launch_agents_dir", return_value=temp_log_dir):
+                with patch.object(watchdog, "get_log_dir", return_value=temp_log_dir):
+                    with patch.object(watchdog, "load_launchd_job", side_effect=mock_load):
+                        with patch("subprocess.run") as mock_run:
+                            result = runner.invoke(watchdog.cmd_install)
+
+                            # Should have called unload for sync
+                            unload_calls = [
+                                c for c in mock_run.call_args_list
+                                if "unload" in str(c)
+                            ]
+                            assert len(unload_calls) >= 1
+                            assert result.exit_code == 1
+                            assert "watchdog" in result.output
+
+
+class TestUninstallLaunchdFeedback:
+    """Tests for feedback in _uninstall_launchd_jobs."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+
+        return CliRunner()
+
+    def test_uninstall_shows_warning_on_sync_failure(
+        self, runner, mock_audit_log_file, temp_log_dir
+    ):
+        """Should show warning when sync unload fails."""
+        sync_plist = temp_log_dir / "sync.plist"
+        watchdog_plist = temp_log_dir / "watchdog.plist"
+        sync_plist.write_text("<plist></plist>")
+        watchdog_plist.write_text("<plist></plist>")
+
+        with patch.object(watchdog, "is_macos", return_value=True):
+            with patch.object(watchdog, "get_sync_plist_path", return_value=sync_plist):
+                with patch.object(watchdog, "get_watchdog_plist_path", return_value=watchdog_plist):
+                    with patch.object(
+                        watchdog, "unload_launchd_job", side_effect=[False, True]
+                    ):
+                        result = runner.invoke(watchdog.cmd_uninstall)
+
+                        assert "warning" in result.output
+                        assert "sync" in result.output
+
+    def test_uninstall_shows_warning_on_both_failure(
+        self, runner, mock_audit_log_file, temp_log_dir
+    ):
+        """Should show warning when both unloads fail."""
+        sync_plist = temp_log_dir / "sync.plist"
+        watchdog_plist = temp_log_dir / "watchdog.plist"
+
+        with patch.object(watchdog, "is_macos", return_value=True):
+            with patch.object(watchdog, "get_sync_plist_path", return_value=sync_plist):
+                with patch.object(watchdog, "get_watchdog_plist_path", return_value=watchdog_plist):
+                    with patch.object(
+                        watchdog, "unload_launchd_job", return_value=False
+                    ):
+                        result = runner.invoke(watchdog.cmd_uninstall)
+
+                        assert "warning" in result.output
+                        assert "both" in result.output
