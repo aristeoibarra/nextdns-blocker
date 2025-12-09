@@ -54,12 +54,15 @@ class TestGetDenylist:
         assert result == []
 
     @responses.activate
-    def test_get_denylist_timeout(self, client):
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/testprofile/denylist",
-            body=requests.exceptions.Timeout(),
-        )
+    @patch("nextdns_blocker.client.sleep")
+    def test_get_denylist_timeout(self, mock_sleep, client):
+        # All retry attempts timeout
+        for _ in range(4):
+            responses.add(
+                responses.GET,
+                f"{API_URL}/profiles/testprofile/denylist",
+                body=requests.exceptions.Timeout(),
+            )
         result = client.get_denylist()
         assert result is None
 
@@ -202,7 +205,8 @@ class TestRequestRetry:
     """Tests for retry logic in request method."""
 
     @responses.activate
-    def test_retry_on_timeout(self, client):
+    @patch("nextdns_blocker.client.sleep")
+    def test_retry_on_timeout(self, mock_sleep, client):
         # First two calls timeout, third succeeds
         responses.add(
             responses.GET,
@@ -223,9 +227,12 @@ class TestRequestRetry:
         result = client.get_denylist()
         assert result == []
         assert len(responses.calls) == 3
+        # Verify backoff was called (not actual sleep)
+        assert mock_sleep.call_count == 2
 
     @responses.activate
-    def test_max_retries_exceeded(self, client):
+    @patch("nextdns_blocker.client.sleep")
+    def test_max_retries_exceeded(self, mock_sleep, client):
         # All calls timeout (1 original + 3 retries = 4 total)
         for _ in range(4):
             responses.add(
@@ -236,6 +243,8 @@ class TestRequestRetry:
         result = client.get_denylist()
         assert result is None
         assert len(responses.calls) == 4
+        # Verify backoff was called for all retries
+        assert mock_sleep.call_count == 3
 
 
 class TestHeaders:

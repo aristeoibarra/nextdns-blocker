@@ -267,7 +267,8 @@ class TestInitCommand:
         assert "--non-interactive" in result.output
 
     @responses.activate
-    def test_init_non_interactive_success(self, runner, tmp_path):
+    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
+    def test_init_non_interactive_success(self, mock_sync, runner, tmp_path):
         """Should succeed with non-interactive mode."""
         responses.add(
             responses.GET,
@@ -296,7 +297,8 @@ class TestInitCommand:
         assert result.exit_code == 1
 
     @responses.activate
-    def test_init_with_domains_url(self, runner, tmp_path):
+    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
+    def test_init_with_domains_url(self, mock_sync, runner, tmp_path):
         """Should accept domains URL option."""
         responses.add(
             responses.GET,
@@ -328,8 +330,9 @@ class TestInitCommand:
 class TestInteractiveWizard:
     """Tests for interactive wizard flow."""
 
+    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
     @patch("nextdns_blocker.init.requests.get")
-    def test_wizard_creates_files(self, mock_get, tmp_path):
+    def test_wizard_creates_files(self, mock_get, mock_sync, tmp_path):
         """Should create .env and optionally domains.json."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -384,8 +387,9 @@ class TestInteractiveWizard:
 
         assert result is False
 
+    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
     @patch("nextdns_blocker.init.requests.get")
-    def test_wizard_skips_domains_creation(self, mock_get, tmp_path):
+    def test_wizard_skips_domains_creation(self, mock_get, mock_sync, tmp_path):
         """Should skip domains.json when user declines."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -401,8 +405,9 @@ class TestInteractiveWizard:
         assert (tmp_path / ".env").exists()
         assert not (tmp_path / "domains.json").exists()
 
+    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
     @patch("nextdns_blocker.init.requests.get")
-    def test_wizard_with_domains_url(self, mock_get, tmp_path):
+    def test_wizard_with_domains_url(self, mock_get, mock_sync, tmp_path):
         """Should save DOMAINS_URL when provided interactively."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -1069,8 +1074,9 @@ class TestInteractiveWizardEdgeCases:
 
         assert result is False
 
+    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
     @patch("nextdns_blocker.init.requests.get")
-    def test_wizard_with_url_flag_deletes_local(self, mock_get, tmp_path):
+    def test_wizard_with_url_flag_deletes_local(self, mock_get, mock_sync, tmp_path):
         """Should delete local file when URL provided via flag."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -1091,8 +1097,9 @@ class TestInteractiveWizardEdgeCases:
         # Local file should be deleted
         assert not (tmp_path / "domains.json").exists()
 
+    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
     @patch("nextdns_blocker.init.requests.get")
-    def test_wizard_with_url_flag_keep_local(self, mock_get, tmp_path):
+    def test_wizard_with_url_flag_keep_local(self, mock_get, mock_sync, tmp_path):
         """Should keep local file when user declines deletion."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -1113,8 +1120,9 @@ class TestInteractiveWizardEdgeCases:
         # Local file should still exist
         assert (tmp_path / "domains.json").exists()
 
+    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
     @patch("nextdns_blocker.init.requests.get")
-    def test_wizard_existing_config_migration(self, mock_get, tmp_path):
+    def test_wizard_existing_config_migration(self, mock_get, mock_sync, tmp_path):
         """Should handle existing config migration."""
         mock_response = MagicMock()
         mock_response.status_code = 200

@@ -504,7 +504,8 @@ class TestSyncWithAllowlist:
         return CliRunner()
 
     @responses.activate
-    def test_sync_adds_to_allowlist(self, runner, tmp_path):
+    @patch("nextdns_blocker.client.sleep")
+    def test_sync_adds_to_allowlist(self, mock_sleep, runner, tmp_path):
         """Test sync adds domains to allowlist."""
         responses.add(
             responses.GET,
@@ -516,6 +517,12 @@ class TestSyncWithAllowlist:
             responses.GET,
             f"{API_URL}/profiles/testprofile/allowlist",
             json={"data": []},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json={"success": True},
             status=200,
         )
         responses.add(
