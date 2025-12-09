@@ -12,6 +12,11 @@ from nextdns_blocker.init import (
     NEXTDNS_API_URL,
     create_env_file,
     create_sample_domains,
+    detect_existing_config,
+    handle_domains_migration,
+    is_macos,
+    prompt_domains_migration,
+    run_initial_sync,
     run_interactive_wizard,
     run_non_interactive,
     validate_api_credentials,
@@ -431,3 +436,746 @@ class TestInteractiveWizard:
             result = run_interactive_wizard(tmp_path)
 
         assert result is False
+
+
+class TestDetectExistingConfig:
+    """Tests for detect_existing_config function."""
+
+    def test_no_existing_config(self, tmp_path):
+        """Should detect no existing configuration."""
+        result = detect_existing_config(tmp_path)
+
+        assert result["has_local"] is False
+        assert result["has_url"] is False
+        assert result["url"] is None
+        assert result["local_path"] == tmp_path / "domains.json"
+
+    def test_local_domains_only(self, tmp_path):
+        """Should detect local domains.json only."""
+        (tmp_path / "domains.json").write_text('{"domains": []}')
+
+        result = detect_existing_config(tmp_path)
+
+        assert result["has_local"] is True
+        assert result["has_url"] is False
+
+    def test_url_only(self, tmp_path):
+        """Should detect DOMAINS_URL from .env."""
+        env_content = """NEXTDNS_API_KEY=testkey
+DOMAINS_URL=https://example.com/domains.json
+"""
+        (tmp_path / ".env").write_text(env_content)
+
+        result = detect_existing_config(tmp_path)
+
+        assert result["has_local"] is False
+        assert result["has_url"] is True
+        assert result["url"] == "https://example.com/domains.json"
+
+    def test_url_with_double_quotes(self, tmp_path):
+        """Should handle DOMAINS_URL with double quotes."""
+        env_content = 'DOMAINS_URL="https://example.com/domains.json"\n'
+        (tmp_path / ".env").write_text(env_content)
+
+        result = detect_existing_config(tmp_path)
+
+        assert result["has_url"] is True
+        assert result["url"] == "https://example.com/domains.json"
+
+    def test_url_with_single_quotes(self, tmp_path):
+        """Should handle DOMAINS_URL with single quotes."""
+        env_content = "DOMAINS_URL='https://example.com/domains.json'\n"
+        (tmp_path / ".env").write_text(env_content)
+
+        result = detect_existing_config(tmp_path)
+
+        assert result["has_url"] is True
+        assert result["url"] == "https://example.com/domains.json"
+
+    def test_both_local_and_url(self, tmp_path):
+        """Should detect both local and URL config."""
+        (tmp_path / "domains.json").write_text('{"domains": []}')
+        env_content = "DOMAINS_URL=https://example.com/domains.json\n"
+        (tmp_path / ".env").write_text(env_content)
+
+        result = detect_existing_config(tmp_path)
+
+        assert result["has_local"] is True
+        assert result["has_url"] is True
+
+    def test_empty_url_value(self, tmp_path):
+        """Should handle empty DOMAINS_URL."""
+        env_content = "DOMAINS_URL=\n"
+        (tmp_path / ".env").write_text(env_content)
+
+        result = detect_existing_config(tmp_path)
+
+        assert result["has_url"] is False
+        assert result["url"] is None
+
+    def test_commented_url(self, tmp_path):
+        """Should ignore commented DOMAINS_URL."""
+        env_content = "#DOMAINS_URL=https://example.com/domains.json\n"
+        (tmp_path / ".env").write_text(env_content)
+
+        result = detect_existing_config(tmp_path)
+
+        assert result["has_url"] is False
+
+
+class TestHandleDomainsMigration:
+    """Tests for handle_domains_migration function."""
+
+    def test_url_choice_deletes_local(self, tmp_path):
+        """Should delete local file when switching to URL."""
+        (tmp_path / "domains.json").write_text('{"domains": []}')
+
+        url, should_create = handle_domains_migration(
+            tmp_path, "url", "https://example.com/domains.json"
+        )
+
+        assert url == "https://example.com/domains.json"
+        assert should_create is False
+        assert not (tmp_path / "domains.json").exists()
+
+    def test_local_choice(self, tmp_path):
+        """Should keep local file and no URL."""
+        url, should_create = handle_domains_migration(tmp_path, "local", None)
+
+        assert url is None
+        assert should_create is True  # Should create if doesn't exist
+
+    def test_local_choice_exists(self, tmp_path):
+        """Should not create local if already exists."""
+        (tmp_path / "domains.json").write_text('{"domains": []}')
+
+        url, should_create = handle_domains_migration(tmp_path, "local", None)
+
+        assert should_create is False
+
+    def test_keep_url_choice(self, tmp_path):
+        """Should keep existing URL."""
+        url, should_create = handle_domains_migration(
+            tmp_path, "keep_url", "https://example.com/domains.json"
+        )
+
+        assert url == "https://example.com/domains.json"
+        assert should_create is False
+
+    def test_both_choice(self, tmp_path):
+        """Should keep both URL and local."""
+        url, should_create = handle_domains_migration(
+            tmp_path, "both", "https://example.com/domains.json"
+        )
+
+        assert url == "https://example.com/domains.json"
+        assert should_create is False
+
+    def test_none_choice(self, tmp_path):
+        """Should return None for no existing config."""
+        url, should_create = handle_domains_migration(tmp_path, "none", None)
+
+        assert url is None
+        assert should_create is False
+
+
+class TestPromptDomainsMigration:
+    """Tests for prompt_domains_migration function."""
+
+    def test_both_local_and_url_keep(self, tmp_path):
+        """Should return keep_url when user selects option 1."""
+        existing = {
+            "has_local": True,
+            "has_url": True,
+            "url": "https://example.com/domains.json",
+            "local_path": tmp_path / "domains.json",
+        }
+
+        with patch("nextdns_blocker.init.click.prompt", return_value="1"):
+            with patch("nextdns_blocker.init.click.echo"):
+                choice, url = prompt_domains_migration(existing)
+
+        assert choice == "keep_url"
+        assert url == "https://example.com/domains.json"
+
+    def test_both_local_and_url_switch_to_local(self, tmp_path):
+        """Should return local when user selects option 2."""
+        existing = {
+            "has_local": True,
+            "has_url": True,
+            "url": "https://example.com/domains.json",
+            "local_path": tmp_path / "domains.json",
+        }
+
+        with patch("nextdns_blocker.init.click.prompt", return_value="2"):
+            with patch("nextdns_blocker.init.click.echo"):
+                choice, url = prompt_domains_migration(existing)
+
+        assert choice == "local"
+        assert url is None
+
+    def test_both_local_and_url_change_url(self, tmp_path):
+        """Should return new URL when user selects option 3."""
+        existing = {
+            "has_local": True,
+            "has_url": True,
+            "url": "https://example.com/domains.json",
+            "local_path": tmp_path / "domains.json",
+        }
+
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            mock_prompt.side_effect = ["3", "https://new.example.com/domains.json"]
+            with patch("nextdns_blocker.init.click.echo"):
+                choice, url = prompt_domains_migration(existing)
+
+        assert choice == "url"
+        assert url == "https://new.example.com/domains.json"
+
+    def test_both_keep_both(self, tmp_path):
+        """Should return both when user selects option 4."""
+        existing = {
+            "has_local": True,
+            "has_url": True,
+            "url": "https://example.com/domains.json",
+            "local_path": tmp_path / "domains.json",
+        }
+
+        with patch("nextdns_blocker.init.click.prompt", return_value="4"):
+            with patch("nextdns_blocker.init.click.echo"):
+                choice, url = prompt_domains_migration(existing)
+
+        assert choice == "both"
+        assert url == "https://example.com/domains.json"
+
+    def test_local_only_keep(self, tmp_path):
+        """Should return local when user keeps local file."""
+        existing = {
+            "has_local": True,
+            "has_url": False,
+            "url": None,
+            "local_path": tmp_path / "domains.json",
+        }
+
+        with patch("nextdns_blocker.init.click.prompt", return_value="1"):
+            with patch("nextdns_blocker.init.click.echo"):
+                choice, url = prompt_domains_migration(existing)
+
+        assert choice == "local"
+        assert url is None
+
+    def test_local_only_switch_to_url(self, tmp_path):
+        """Should return url when user switches from local."""
+        existing = {
+            "has_local": True,
+            "has_url": False,
+            "url": None,
+            "local_path": tmp_path / "domains.json",
+        }
+
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            mock_prompt.side_effect = ["2", "https://example.com/domains.json"]
+            with patch("nextdns_blocker.init.click.echo"):
+                choice, url = prompt_domains_migration(existing)
+
+        assert choice == "url"
+        assert url == "https://example.com/domains.json"
+
+    def test_url_only_keep(self, tmp_path):
+        """Should return keep_url when user keeps URL."""
+        existing = {
+            "has_local": False,
+            "has_url": True,
+            "url": "https://example.com/domains.json",
+            "local_path": tmp_path / "domains.json",
+        }
+
+        with patch("nextdns_blocker.init.click.prompt", return_value="1"):
+            with patch("nextdns_blocker.init.click.echo"):
+                choice, url = prompt_domains_migration(existing)
+
+        assert choice == "keep_url"
+        assert url == "https://example.com/domains.json"
+
+    def test_url_only_switch_to_local(self, tmp_path):
+        """Should return local when user switches from URL."""
+        existing = {
+            "has_local": False,
+            "has_url": True,
+            "url": "https://example.com/domains.json",
+            "local_path": tmp_path / "domains.json",
+        }
+
+        with patch("nextdns_blocker.init.click.prompt", return_value="2"):
+            with patch("nextdns_blocker.init.click.echo"):
+                choice, url = prompt_domains_migration(existing)
+
+        assert choice == "local"
+        assert url is None
+
+    def test_url_only_change_url(self, tmp_path):
+        """Should return new URL when user changes URL."""
+        existing = {
+            "has_local": False,
+            "has_url": True,
+            "url": "https://example.com/domains.json",
+            "local_path": tmp_path / "domains.json",
+        }
+
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            mock_prompt.side_effect = ["3", "https://new.example.com/domains.json"]
+            with patch("nextdns_blocker.init.click.echo"):
+                choice, url = prompt_domains_migration(existing)
+
+        assert choice == "url"
+        assert url == "https://new.example.com/domains.json"
+
+    def test_no_existing_config(self, tmp_path):
+        """Should return none when no existing config."""
+        existing = {
+            "has_local": False,
+            "has_url": False,
+            "url": None,
+            "local_path": tmp_path / "domains.json",
+        }
+
+        choice, url = prompt_domains_migration(existing)
+
+        assert choice == "none"
+        assert url is None
+
+    def test_invalid_url_fallback(self, tmp_path):
+        """Should keep current URL when new URL is invalid."""
+        existing = {
+            "has_local": True,
+            "has_url": True,
+            "url": "https://example.com/domains.json",
+            "local_path": tmp_path / "domains.json",
+        }
+
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            mock_prompt.side_effect = ["3", "not-a-valid-url"]
+            with patch("nextdns_blocker.init.click.echo"):
+                choice, url = prompt_domains_migration(existing)
+
+        assert choice == "keep_url"
+        assert url == "https://example.com/domains.json"
+
+
+class TestIsMacos:
+    """Tests for is_macos function."""
+
+    def test_is_macos_darwin(self):
+        """Should return True on Darwin platform."""
+        with patch("nextdns_blocker.init.sys.platform", "darwin"):
+            assert is_macos() is True
+
+    def test_is_macos_linux(self):
+        """Should return False on Linux platform."""
+        with patch("nextdns_blocker.init.sys.platform", "linux"):
+            assert is_macos() is False
+
+
+class TestRunInitialSync:
+    """Tests for run_initial_sync function."""
+
+    def test_sync_success_with_exe(self):
+        """Should return True when sync succeeds."""
+        with patch("shutil.which", return_value="/usr/bin/nextdns-blocker"):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                result = run_initial_sync()
+
+        assert result is True
+
+    def test_sync_success_with_module(self):
+        """Should use python module when exe not found."""
+        with patch("shutil.which", return_value=None):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                result = run_initial_sync()
+
+        assert result is True
+        call_args = mock_run.call_args[0][0]
+        assert "-m" in call_args
+        assert "nextdns_blocker" in call_args
+
+    def test_sync_failure(self):
+        """Should return False when sync fails."""
+        with patch("shutil.which", return_value=None):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=1)
+                result = run_initial_sync()
+
+        assert result is False
+
+    def test_sync_exception(self):
+        """Should return False on exception."""
+        with patch("shutil.which", return_value=None):
+            with patch("subprocess.run", side_effect=Exception("error")):
+                result = run_initial_sync()
+
+        assert result is False
+
+
+class TestValidateApiCredentialsEdgeCases:
+    """Additional tests for validate_api_credentials edge cases."""
+
+    @patch("nextdns_blocker.init.requests.get")
+    def test_connection_error(self, mock_get):
+        """Should handle connection error."""
+        import requests as req
+
+        mock_get.side_effect = req.exceptions.ConnectionError("connection failed")
+
+        valid, msg = validate_api_credentials("testkey12345", "testprofile")
+
+        assert valid is False
+        assert "Connection failed" in msg
+
+    @patch("nextdns_blocker.init.requests.get")
+    def test_request_exception(self, mock_get):
+        """Should handle generic request exception."""
+        import requests as req
+
+        mock_get.side_effect = req.exceptions.RequestException("generic error")
+
+        valid, msg = validate_api_credentials("testkey12345", "testprofile")
+
+        assert valid is False
+        assert "Request error" in msg
+
+    @patch("nextdns_blocker.init.requests.get")
+    def test_other_status_code(self, mock_get):
+        """Should handle other HTTP status codes."""
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_get.return_value = mock_response
+
+        valid, msg = validate_api_credentials("testkey12345", "testprofile")
+
+        assert valid is False
+        assert "API error: 500" in msg
+
+
+class TestInstallLaunchd:
+    """Tests for _install_launchd function."""
+
+    def test_install_launchd_success(self, tmp_path):
+        """Should successfully install launchd jobs on macOS."""
+        from nextdns_blocker.init import _install_launchd
+
+        launch_agents = tmp_path / "Library" / "LaunchAgents"
+        log_dir = tmp_path / "logs"
+
+        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
+            with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
+                with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
+                    with patch("subprocess.run") as mock_run:
+                        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                        success, result = _install_launchd()
+
+        assert success is True
+        assert result == "launchd"
+        assert launch_agents.exists()
+
+    def test_install_launchd_uses_python_module(self, tmp_path):
+        """Should use python module when exe not found."""
+        from nextdns_blocker.init import _install_launchd
+
+        log_dir = tmp_path / "logs"
+
+        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
+            with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
+                with patch("shutil.which", return_value=None):
+                    with patch("subprocess.run") as mock_run:
+                        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                        success, result = _install_launchd()
+
+        assert success is True
+
+    def test_install_launchd_load_failure(self, tmp_path):
+        """Should return failure when launchctl load fails."""
+        from nextdns_blocker.init import _install_launchd
+
+        log_dir = tmp_path / "logs"
+
+        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
+            with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
+                with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
+                    with patch("subprocess.run") as mock_run:
+                        # First two calls (unload) succeed, third (load sync) fails
+                        mock_run.side_effect = [
+                            MagicMock(returncode=0),  # unload sync
+                            MagicMock(returncode=0),  # unload watchdog
+                            MagicMock(returncode=1, stdout="", stderr="error"),  # load sync
+                            MagicMock(returncode=0),  # load watchdog
+                        ]
+                        success, result = _install_launchd()
+
+        assert success is False
+        assert "Failed" in result
+
+    def test_install_launchd_exception(self, tmp_path):
+        """Should handle exceptions during launchd installation."""
+        from nextdns_blocker.init import _install_launchd
+
+        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
+            with patch("nextdns_blocker.init.get_log_dir", side_effect=Exception("test error")):
+                success, result = _install_launchd()
+
+        assert success is False
+        assert "launchd error" in result
+
+
+class TestInstallCron:
+    """Tests for _install_cron function."""
+
+    def test_install_cron_success(self, tmp_path):
+        """Should successfully install cron jobs."""
+        from nextdns_blocker.init import _install_cron
+
+        log_dir = tmp_path / "logs"
+
+        with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
+            with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
+                with patch("subprocess.run") as mock_run:
+                    mock_run.side_effect = [
+                        MagicMock(returncode=0, stdout=""),  # crontab -l
+                        MagicMock(returncode=0),  # crontab -
+                    ]
+                    success, result = _install_cron()
+
+        assert success is True
+        assert result == "cron"
+
+    def test_install_cron_no_existing_crontab(self, tmp_path):
+        """Should handle empty crontab."""
+        from nextdns_blocker.init import _install_cron
+
+        log_dir = tmp_path / "logs"
+
+        with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
+            with patch("shutil.which", return_value=None):
+                with patch("subprocess.run") as mock_run:
+                    mock_run.side_effect = [
+                        MagicMock(returncode=1, stdout=""),  # no crontab
+                        MagicMock(returncode=0),  # set crontab
+                    ]
+                    success, result = _install_cron()
+
+        assert success is True
+
+    def test_install_cron_replaces_existing(self, tmp_path):
+        """Should replace existing nextdns-blocker cron entries."""
+        from nextdns_blocker.init import _install_cron
+
+        log_dir = tmp_path / "logs"
+        existing_crontab = "*/5 * * * * nextdns-blocker sync\n0 * * * * other-task"
+
+        with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
+            with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
+                with patch("subprocess.run") as mock_run:
+                    mock_run.side_effect = [
+                        MagicMock(returncode=0, stdout=existing_crontab),
+                        MagicMock(returncode=0),
+                    ]
+                    success, result = _install_cron()
+
+        assert success is True
+        # Verify the new crontab was set
+        set_call = mock_run.call_args_list[1]
+        new_crontab = set_call[1]["input"]
+        assert "nextdns-blocker sync" in new_crontab
+        assert "nextdns-blocker watchdog" in new_crontab
+
+    def test_install_cron_failure(self, tmp_path):
+        """Should return failure when crontab fails."""
+        from nextdns_blocker.init import _install_cron
+
+        log_dir = tmp_path / "logs"
+
+        with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
+            with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
+                with patch("subprocess.run") as mock_run:
+                    mock_run.side_effect = [
+                        MagicMock(returncode=0, stdout=""),
+                        MagicMock(returncode=1),  # crontab set fails
+                    ]
+                    success, result = _install_cron()
+
+        assert success is False
+        assert "Failed" in result
+
+    def test_install_cron_exception(self, tmp_path):
+        """Should handle exceptions during cron installation."""
+        from nextdns_blocker.init import _install_cron
+
+        with patch("nextdns_blocker.init.get_log_dir", side_effect=Exception("test error")):
+            success, result = _install_cron()
+
+        assert success is False
+        assert "cron error" in result
+
+
+class TestInstallScheduling:
+    """Tests for install_scheduling function."""
+
+    def test_install_scheduling_macos(self):
+        """Should use launchd on macOS."""
+        from nextdns_blocker.init import install_scheduling
+
+        with patch("nextdns_blocker.init.is_macos", return_value=True):
+            with patch("nextdns_blocker.init._install_launchd") as mock_launchd:
+                mock_launchd.return_value = (True, "launchd")
+                success, result = install_scheduling()
+
+        assert success is True
+        assert result == "launchd"
+        mock_launchd.assert_called_once()
+
+    def test_install_scheduling_linux(self):
+        """Should use cron on Linux."""
+        from nextdns_blocker.init import install_scheduling
+
+        with patch("nextdns_blocker.init.is_macos", return_value=False):
+            with patch("nextdns_blocker.init._install_cron") as mock_cron:
+                mock_cron.return_value = (True, "cron")
+                success, result = install_scheduling()
+
+        assert success is True
+        assert result == "cron"
+        mock_cron.assert_called_once()
+
+
+class TestCreateEnvFileEdgeCases:
+    """Additional tests for create_env_file edge cases."""
+
+    def test_create_env_file_oserror(self, tmp_path):
+        """Should raise OSError when file creation fails."""
+        with patch("os.open", side_effect=OSError("Permission denied")):
+            with pytest.raises(OSError):
+                create_env_file(tmp_path, "key", "profile", "UTC")
+
+
+class TestInteractiveWizardEdgeCases:
+    """Additional tests for interactive wizard edge cases."""
+
+    def test_wizard_empty_profile_id(self, tmp_path):
+        """Should fail with empty profile ID."""
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            mock_prompt.side_effect = ["testapikey123", ""]  # Empty profile ID
+
+            result = run_interactive_wizard(tmp_path)
+
+        assert result is False
+
+    @patch("nextdns_blocker.init.requests.get")
+    def test_wizard_with_url_flag_deletes_local(self, mock_get, tmp_path):
+        """Should delete local file when URL provided via flag."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_get.return_value = mock_response
+
+        # Create existing local file
+        (tmp_path / "domains.json").write_text('{"domains": []}')
+
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            with patch("nextdns_blocker.init.click.confirm", return_value=True):
+                mock_prompt.side_effect = ["testapikey123", "testprofile", "UTC"]
+
+                result = run_interactive_wizard(
+                    tmp_path, domains_url="https://example.com/domains.json"
+                )
+
+        assert result is True
+        # Local file should be deleted
+        assert not (tmp_path / "domains.json").exists()
+
+    @patch("nextdns_blocker.init.requests.get")
+    def test_wizard_with_url_flag_keep_local(self, mock_get, tmp_path):
+        """Should keep local file when user declines deletion."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_get.return_value = mock_response
+
+        # Create existing local file
+        (tmp_path / "domains.json").write_text('{"domains": []}')
+
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            with patch("nextdns_blocker.init.click.confirm", return_value=False):
+                mock_prompt.side_effect = ["testapikey123", "testprofile", "UTC"]
+
+                result = run_interactive_wizard(
+                    tmp_path, domains_url="https://example.com/domains.json"
+                )
+
+        assert result is True
+        # Local file should still exist
+        assert (tmp_path / "domains.json").exists()
+
+    @patch("nextdns_blocker.init.requests.get")
+    def test_wizard_existing_config_migration(self, mock_get, tmp_path):
+        """Should handle existing config migration."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_get.return_value = mock_response
+
+        # Create existing URL config
+        (tmp_path / ".env").write_text("DOMAINS_URL=https://old.example.com/domains.json\n")
+
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            with patch("nextdns_blocker.init.click.confirm", return_value=False):
+                # Prompts: api_key, profile, timezone, then migration choice "1" (keep url)
+                mock_prompt.side_effect = ["testapikey123", "testprofile", "UTC", "1"]
+
+                result = run_interactive_wizard(tmp_path)
+
+        assert result is True
+
+
+class TestNonInteractiveEdgeCases:
+    """Additional tests for non-interactive mode edge cases."""
+
+    @responses.activate
+    def test_non_interactive_scheduling_warning(self, tmp_path):
+        """Should show warning when scheduling fails."""
+        responses.add(
+            responses.GET,
+            f"{NEXTDNS_API_URL}/profiles/testprofile/denylist",
+            json={"data": []},
+            status=200,
+        )
+
+        env = {
+            "NEXTDNS_API_KEY": "testkey12345",
+            "NEXTDNS_PROFILE_ID": "testprofile",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            with patch("nextdns_blocker.init.install_scheduling", return_value=(False, "error")):
+                result = run_non_interactive(tmp_path)
+
+        # Should still succeed even if scheduling fails
+        assert result is True
+
+    @responses.activate
+    def test_non_interactive_sync_warning(self, tmp_path):
+        """Should show warning when initial sync fails."""
+        responses.add(
+            responses.GET,
+            f"{NEXTDNS_API_URL}/profiles/testprofile/denylist",
+            json={"data": []},
+            status=200,
+        )
+
+        env = {
+            "NEXTDNS_API_KEY": "testkey12345",
+            "NEXTDNS_PROFILE_ID": "testprofile",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            with patch("nextdns_blocker.init.run_initial_sync", return_value=False):
+                result = run_non_interactive(tmp_path)
+
+        # Should still succeed even if sync fails
+        assert result is True

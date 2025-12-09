@@ -310,7 +310,7 @@ def fetch_remote_domains(url: str, use_cache: bool = True) -> dict[str, Any]:
         # Verify hash if configured
         if hash_url and not verify_remote_domains_hash(response.content, hash_url):
             raise ConfigurationError(
-                "Remote domains hash verification failed. " "Content may have been tampered with."
+                "Remote domains hash verification failed. Content may have been tampered with."
             )
 
         data = response.json()
@@ -341,9 +341,7 @@ def fetch_remote_domains(url: str, use_cache: bool = True) -> dict[str, Any]:
                 logger.info("Using cached domains as fallback")
                 return cached
 
-        raise ConfigurationError(
-            f"Failed to load domains from URL: {e}. " f"No cached data available."
-        )
+        raise ConfigurationError(f"Failed to load domains from URL: {e}. No cached data available.")
 
 
 def get_cache_status() -> dict[str, Any]:
@@ -424,9 +422,9 @@ def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
         return [f"'{domain}': available_hours must be a list"]
 
     # Collect all time ranges per day for overlap detection
-    day_time_ranges: dict[str, list[tuple[int, int, int]]] = (
-        {}
-    )  # day -> [(start_mins, end_mins, block_idx)]
+    day_time_ranges: dict[
+        str, list[tuple[int, int, int]]
+    ] = {}  # day -> [(start_mins, end_mins, block_idx)]
 
     # Validate each schedule block
     for block_idx, block in enumerate(hours):
@@ -536,7 +534,7 @@ def validate_allowlist_config(config: dict[str, Any], index: int) -> list[str]:
     # Allowlist should NOT have schedule (it's always 24/7)
     if "schedule" in config and config["schedule"] is not None:
         errors.append(
-            f"allowlist '{domain}': 'schedule' field not allowed " f"(allowlist is always 24/7)"
+            f"allowlist '{domain}': 'schedule' field not allowed (allowlist is always 24/7)"
         )
 
     return errors

@@ -645,3 +645,319 @@ class TestDisallowCommand:
         result = runner.invoke(main, ["disallow", "invalid domain!", "--config-dir", str(tmp_path)])
         assert result.exit_code == 1
         assert "Invalid domain" in result.output
+
+
+class TestUpdateCommand:
+    """Tests for update CLI command."""
+
+    def test_update_help(self, runner):
+        """Should show help for update command."""
+        result = runner.invoke(main, ["update", "--help"])
+        assert result.exit_code == 0
+        assert "update" in result.output.lower()
+
+    def test_update_already_latest(self, runner):
+        """Should show message when already on latest version."""
+        from nextdns_blocker import __version__
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = f'{{"info": {{"version": "{__version__}"}}}}'.encode()
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            result = runner.invoke(main, ["update"])
+
+        assert result.exit_code == 0
+        assert "already" in result.output.lower() or "latest" in result.output.lower()
+
+    def test_update_new_version_available_decline(self, runner):
+        """Should not upgrade when user declines."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"info": {"version": "99.0.0"}}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            result = runner.invoke(main, ["update"], input="n\n")
+
+        assert result.exit_code == 0
+        assert "99.0.0" in result.output
+
+    def test_update_new_version_with_yes_flag(self, runner):
+        """Should skip confirmation with -y flag."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"info": {"version": "99.0.0"}}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        mock_subprocess = MagicMock()
+        mock_subprocess.returncode = 0
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            with patch("subprocess.run", return_value=mock_subprocess):
+                result = runner.invoke(main, ["update", "-y"])
+
+        assert result.exit_code == 0
+        assert "99.0.0" in result.output
+
+    def test_update_pypi_error(self, runner):
+        """Should handle PyPI connection error."""
+        with patch("urllib.request.urlopen", side_effect=Exception("Network error")):
+            result = runner.invoke(main, ["update"])
+
+        assert result.exit_code == 1
+        assert "error" in result.output.lower()
+
+    def test_update_pip_failure(self, runner):
+        """Should handle pip upgrade failure."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"info": {"version": "99.0.0"}}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        mock_subprocess = MagicMock()
+        mock_subprocess.returncode = 1
+        mock_subprocess.stderr = "pip error"
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            with patch("subprocess.run", return_value=mock_subprocess):
+                result = runner.invoke(main, ["update", "-y"])
+
+        assert result.exit_code == 1
+
+
+class TestVerboseFlag:
+    """Tests for verbose flag functionality."""
+
+    def test_verbose_flag_exists(self, runner):
+        """Should accept verbose flag."""
+        result = runner.invoke(main, ["--help"])
+        assert "-v" in result.output or "--verbose" in result.output
+
+
+class TestSetupLogging:
+    """Tests for setup_logging function."""
+
+    def test_setup_logging_verbose(self, temp_log_dir):
+        """Should set DEBUG level when verbose=True."""
+        import logging
+
+        from nextdns_blocker.cli import setup_logging
+
+        # Clear existing handlers
+        root_logger = logging.getLogger()
+        root_logger.handlers = []
+
+        with patch("nextdns_blocker.cli.ensure_log_dir"):
+            with patch(
+                "nextdns_blocker.cli.get_app_log_file", return_value=temp_log_dir / "app.log"
+            ):
+                setup_logging(verbose=True)
+
+        assert root_logger.level == logging.DEBUG
+
+    def test_setup_logging_not_verbose(self, temp_log_dir):
+        """Should set INFO level when verbose=False."""
+        import logging
+
+        from nextdns_blocker.cli import setup_logging
+
+        # Clear existing handlers
+        root_logger = logging.getLogger()
+        root_logger.handlers = []
+
+        with patch("nextdns_blocker.cli.ensure_log_dir"):
+            with patch(
+                "nextdns_blocker.cli.get_app_log_file", return_value=temp_log_dir / "app.log"
+            ):
+                setup_logging(verbose=False)
+
+        assert root_logger.level == logging.INFO
+
+    def test_setup_logging_no_duplicate_handlers(self, temp_log_dir):
+        """Should not add duplicate handlers on multiple calls."""
+        import logging
+
+        from nextdns_blocker.cli import setup_logging
+
+        # Clear existing handlers
+        root_logger = logging.getLogger()
+        root_logger.handlers = []
+
+        with patch("nextdns_blocker.cli.ensure_log_dir"):
+            with patch(
+                "nextdns_blocker.cli.get_app_log_file", return_value=temp_log_dir / "app.log"
+            ):
+                setup_logging(verbose=False)
+                initial_count = len(root_logger.handlers)
+                setup_logging(verbose=True)
+                final_count = len(root_logger.handlers)
+
+        assert final_count == initial_count
+
+
+class TestPauseInfoEdgeCases:
+    """Tests for _get_pause_info edge cases."""
+
+    def test_pause_info_invalid_format(self, mock_pause_file):
+        """Should return not paused for invalid date format."""
+        mock_pause_file.write_text("invalid-date-format")
+        assert is_paused() is False
+
+
+class TestUpdateCommandEdgeCases:
+    """Additional tests for update command edge cases."""
+
+    def test_update_invalid_version_format(self, runner):
+        """Should handle invalid version format gracefully."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"info": {"version": "not.a.version.99"}}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        mock_subprocess = MagicMock()
+        mock_subprocess.returncode = 0
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            with patch("subprocess.run", return_value=mock_subprocess):
+                result = runner.invoke(main, ["update", "-y"])
+
+        # Should still work even with unusual version format
+        assert result.exit_code == 0
+
+    def test_update_subprocess_exception(self, runner):
+        """Should handle subprocess exception during upgrade."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"info": {"version": "99.0.0"}}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            with patch("subprocess.run", side_effect=Exception("subprocess error")):
+                result = runner.invoke(main, ["update", "-y"])
+
+        assert result.exit_code == 1
+        assert "error" in result.output.lower()
+
+
+class TestStatsCommandEdgeCases:
+    """Additional tests for stats command edge cases."""
+
+    def test_stats_read_error(self, runner, temp_log_dir):
+        """Should handle read error gracefully."""
+        audit_file = temp_log_dir / "audit.log"
+
+        # Create file then make it unreadable by simulating error
+        with patch("nextdns_blocker.cli.get_audit_log_file", return_value=audit_file):
+            with patch("builtins.open", side_effect=OSError("Permission denied")):
+                result = runner.invoke(main, ["stats"])
+
+        assert result.exit_code == 0
+
+
+class TestSyncCommandEdgeCases:
+    """Additional tests for sync command edge cases."""
+
+    @responses.activate
+    def test_sync_sends_discord_notification(self, runner, mock_pause_file, tmp_path):
+        """Should send Discord notification when configured."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json={"data": []},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json={"success": True},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            "https://discord.com/api/webhooks/test",
+            json={"success": True},
+            status=200,
+        )
+
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "NEXTDNS_API_KEY=testkey12345\n"
+            "NEXTDNS_PROFILE_ID=testprofile\n"
+            "DISCORD_WEBHOOK=https://discord.com/api/webhooks/test\n"
+        )
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text(
+            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
+        )
+
+        with patch("nextdns_blocker.cli.audit_log"):
+            result = runner.invoke(main, ["sync", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 0
+
+
+class TestHealthCommandEdgeCases:
+    """Additional tests for health command edge cases."""
+
+    def test_health_config_error(self, runner, mock_pause_file, tmp_path):
+        """Should handle configuration error."""
+        # Missing .env file
+        result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 1
+
+    @patch("nextdns_blocker.cli.NextDNSClient")
+    def test_health_missing_domains_file(self, mock_client_cls, runner, mock_pause_file, tmp_path):
+        """Should show warning for missing domains.json."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        # No domains.json file
+
+        mock_client = mock_client_cls.return_value
+        mock_client.get_denylist.return_value = []
+
+        with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
+            result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
+
+        # Should fail due to missing domains.json
+        assert result.exit_code == 1
+
+
+class TestStatusCommandEdgeCases:
+    """Additional tests for status command edge cases."""
+
+    def test_status_config_error(self, runner, mock_pause_file, tmp_path):
+        """Should handle configuration error."""
+        result = runner.invoke(main, ["status", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 1
+
+    @responses.activate
+    def test_status_with_protected_domains(self, runner, mock_pause_file, tmp_path):
+        """Should show protected domains in status."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json={"data": [{"id": "protected.com", "active": True}]},
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/allowlist",
+            json={"data": []},
+            status=200,
+        )
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text(
+            '{"domains": [{"domain": "protected.com", "protected": true}], "allowlist": []}'
+        )
+
+        result = runner.invoke(main, ["status", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "protected.com" in result.output

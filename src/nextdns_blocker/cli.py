@@ -607,9 +607,9 @@ def stats() -> None:
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
 def update(yes: bool) -> None:
     """Check for updates and upgrade to the latest version."""
+    import json
     import subprocess
     import urllib.request
-    import json
 
     click.echo("\n  Checking for updates...")
 

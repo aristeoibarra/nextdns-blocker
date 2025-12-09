@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 import click
@@ -171,7 +171,7 @@ def create_sample_domains(config_dir: Path) -> Path:
 # =============================================================================
 
 
-def detect_existing_config(config_dir: Path) -> dict:
+def detect_existing_config(config_dir: Path) -> dict[str, Any]:
     """
     Detect existing domains configuration.
 
@@ -185,7 +185,7 @@ def detect_existing_config(config_dir: Path) -> dict:
     env_file = config_dir / ".env"
     domains_file = config_dir / "domains.json"
 
-    result = {
+    result: dict[str, Any] = {
         "has_local": domains_file.exists(),
         "has_url": False,
         "url": None,
@@ -201,9 +201,9 @@ def detect_existing_config(config_dir: Path) -> dict:
                 if line.startswith("DOMAINS_URL=") and not line.startswith("#"):
                     url_value = line.split("=", 1)[1].strip()
                     # Remove quotes if present
-                    if url_value.startswith('"') and url_value.endswith('"'):
-                        url_value = url_value[1:-1]
-                    elif url_value.startswith("'") and url_value.endswith("'"):
+                    if (url_value.startswith('"') and url_value.endswith('"')) or (
+                        url_value.startswith("'") and url_value.endswith("'")
+                    ):
                         url_value = url_value[1:-1]
                     if url_value:
                         result["has_url"] = True
@@ -215,7 +215,7 @@ def detect_existing_config(config_dir: Path) -> dict:
     return result
 
 
-def prompt_domains_migration(existing: dict) -> tuple[str, Optional[str]]:
+def prompt_domains_migration(existing: dict[str, Any]) -> tuple[str, Optional[str]]:
     """
     Prompt user for domains configuration when existing config is detected.
 
@@ -326,7 +326,9 @@ def handle_domains_migration(
                 domains_file.unlink()
                 click.echo(f"  Deleted local file: {domains_file}")
             except OSError as e:
-                click.echo(click.style(f"  Warning: Could not delete {domains_file}: {e}", fg="yellow"))
+                click.echo(
+                    click.style(f"  Warning: Could not delete {domains_file}: {e}", fg="yellow")
+                )
         return url, False
 
     elif choice == "local":
@@ -373,51 +375,46 @@ def _install_launchd() -> tuple[bool, str]:
     import plistlib
     import shutil
 
-    # Get paths
-    launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
-    launch_agents_dir.mkdir(parents=True, exist_ok=True)
-
-    log_dir = get_log_dir()
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    # Find executable
-    exe_path = shutil.which("nextdns-blocker")
-    if exe_path:
-        exe_args = [exe_path]
-    else:
-        exe_args = [sys.executable, "-m", "nextdns_blocker"]
-
-    # Sync plist
-    sync_plist_path = launch_agents_dir / "com.nextdns-blocker.sync.plist"
-    sync_plist: dict = {
-        "Label": "com.nextdns-blocker.sync",
-        "ProgramArguments": exe_args + ["sync"],
-        "StartInterval": 120,  # 2 minutes
-        "RunAtLoad": True,
-        "KeepAlive": {"SuccessfulExit": False},
-        "StandardOutPath": str(log_dir / "sync.log"),
-        "StandardErrorPath": str(log_dir / "sync.log"),
-        "EnvironmentVariables": {
-            "PATH": "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
-        },
-    }
-
-    # Watchdog plist
-    watchdog_plist_path = launch_agents_dir / "com.nextdns-blocker.watchdog.plist"
-    watchdog_plist: dict = {
-        "Label": "com.nextdns-blocker.watchdog",
-        "ProgramArguments": exe_args + ["watchdog", "check"],
-        "StartInterval": 60,  # 1 minute
-        "RunAtLoad": True,
-        "KeepAlive": {"SuccessfulExit": False},
-        "StandardOutPath": str(log_dir / "watchdog.log"),
-        "StandardErrorPath": str(log_dir / "watchdog.log"),
-        "EnvironmentVariables": {
-            "PATH": "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
-        },
-    }
-
     try:
+        # Get paths
+        launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
+        launch_agents_dir.mkdir(parents=True, exist_ok=True)
+
+        log_dir = get_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Find executable
+        exe_path = shutil.which("nextdns-blocker")
+        if exe_path:
+            exe_args = [exe_path]
+        else:
+            exe_args = [sys.executable, "-m", "nextdns_blocker"]
+
+        # Sync plist
+        sync_plist_path = launch_agents_dir / "com.nextdns-blocker.sync.plist"
+        sync_plist: dict[str, Any] = {
+            "Label": "com.nextdns-blocker.sync",
+            "ProgramArguments": exe_args + ["sync"],
+            "StartInterval": 120,  # 2 minutes
+            "RunAtLoad": True,
+            "KeepAlive": {"SuccessfulExit": False},
+            "StandardOutPath": str(log_dir / "sync.log"),
+            "StandardErrorPath": str(log_dir / "sync.log"),
+            "EnvironmentVariables": {"PATH": "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"},
+        }
+
+        # Watchdog plist
+        watchdog_plist_path = launch_agents_dir / "com.nextdns-blocker.watchdog.plist"
+        watchdog_plist: dict[str, Any] = {
+            "Label": "com.nextdns-blocker.watchdog",
+            "ProgramArguments": exe_args + ["watchdog", "check"],
+            "StartInterval": 60,  # 1 minute
+            "RunAtLoad": True,
+            "KeepAlive": {"SuccessfulExit": False},
+            "StandardOutPath": str(log_dir / "watchdog.log"),
+            "StandardErrorPath": str(log_dir / "watchdog.log"),
+            "EnvironmentVariables": {"PATH": "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"},
+        }
         # Write plist files
         sync_plist_path.write_bytes(plistlib.dumps(sync_plist))
         sync_plist_path.chmod(0o644)
@@ -464,23 +461,22 @@ def _install_cron() -> tuple[bool, str]:
     """Install cron jobs for Linux."""
     import shutil
 
-    log_dir = get_log_dir()
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    # Find executable
-    exe_path = shutil.which("nextdns-blocker")
-    if exe_path:
-        exe = exe_path
-    else:
-        exe = f"{sys.executable} -m nextdns_blocker"
-
-    # Cron job definitions
-    sync_log = str(log_dir / "sync.log")
-    wd_log = str(log_dir / "watchdog.log")
-    cron_sync = f'*/2 * * * * {exe} sync >> "{sync_log}" 2>&1'
-    cron_wd = f'* * * * * {exe} watchdog check >> "{wd_log}" 2>&1'
-
     try:
+        log_dir = get_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Find executable
+        exe_path = shutil.which("nextdns-blocker")
+        if exe_path:
+            exe = exe_path
+        else:
+            exe = f"{sys.executable} -m nextdns_blocker"
+
+        # Cron job definitions
+        sync_log = str(log_dir / "sync.log")
+        wd_log = str(log_dir / "watchdog.log")
+        cron_sync = f'*/2 * * * * {exe} sync >> "{sync_log}" 2>&1'
+        cron_wd = f'* * * * * {exe} watchdog check >> "{wd_log}" 2>&1'
         # Get current crontab
         result = subprocess.run(
             ["crontab", "-l"],
@@ -617,10 +613,7 @@ def run_interactive_wizard(
         # If local file exists, ask if they want to delete it
         if existing["has_local"]:
             click.echo()
-            delete_local = click.confirm(
-                f"  Local domains.json exists. Delete it?",
-                default=True
-            )
+            delete_local = click.confirm("  Local domains.json exists. Delete it?", default=True)
             if delete_local:
                 try:
                     existing["local_path"].unlink()
