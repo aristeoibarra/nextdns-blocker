@@ -1,8 +1,11 @@
 # NextDNS Blocker
 
-[![PyPI version](https://img.shields.io/pypi/v/nextdns-blocker.svg)](https://pypi.org/project/nextdns-blocker/)
-[![Python versions](https://img.shields.io/pypi/pyversions/nextdns-blocker.svg)](https://pypi.org/project/nextdns-blocker/)
+[![PyPI version](https://img.shields.io/pypi/v/nextdns-blocker)](https://pypi.org/project/nextdns-blocker/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/nextdns-blocker)](https://pypi.org/project/nextdns-blocker/)
+[![Python versions](https://img.shields.io/pypi/pyversions/nextdns-blocker)](https://pypi.org/project/nextdns-blocker/)
+[![License](https://img.shields.io/github/license/aristeoibarra/nextdns-blocker)](LICENSE)
 [![CI](https://github.com/aristeoibarra/nextdns-blocker/actions/workflows/ci.yml/badge.svg)](https://github.com/aristeoibarra/nextdns-blocker/actions/workflows/ci.yml)
+
 
 Automated system to control domain access with per-domain schedule configuration using the NextDNS API.
 
