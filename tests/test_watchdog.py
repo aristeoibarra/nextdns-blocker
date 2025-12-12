@@ -1048,6 +1048,7 @@ class TestWritePlistFile:
         assert plist_file.exists()
         assert plist_file.read_bytes() == content
 
+    @skip_on_windows
     def test_write_plist_file_sets_permissions(self, temp_log_dir):
         """Should set file permissions to 0o644."""
         plist_file = temp_log_dir / "test.plist"

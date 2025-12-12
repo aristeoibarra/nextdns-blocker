@@ -798,6 +798,12 @@ class TestVerboseFlag:
 class TestSetupLogging:
     """Tests for setup_logging function."""
 
+    def _cleanup_handlers(self, logger):
+        """Close and remove all handlers to prevent Windows file locking issues."""
+        for handler in logger.handlers[:]:
+            handler.close()
+            logger.removeHandler(handler)
+
     def test_setup_logging_verbose(self, temp_log_dir):
         """Should set DEBUG level when verbose=True."""
         import logging
@@ -806,15 +812,19 @@ class TestSetupLogging:
 
         # Clear existing handlers
         root_logger = logging.getLogger()
-        root_logger.handlers = []
+        self._cleanup_handlers(root_logger)
 
-        with patch("nextdns_blocker.cli.ensure_log_dir"):
-            with patch(
-                "nextdns_blocker.cli.get_app_log_file", return_value=temp_log_dir / "app.log"
-            ):
-                setup_logging(verbose=True)
+        try:
+            with patch("nextdns_blocker.cli.ensure_log_dir"):
+                with patch(
+                    "nextdns_blocker.cli.get_app_log_file",
+                    return_value=temp_log_dir / "app.log",
+                ):
+                    setup_logging(verbose=True)
 
-        assert root_logger.level == logging.DEBUG
+            assert root_logger.level == logging.DEBUG
+        finally:
+            self._cleanup_handlers(root_logger)
 
     def test_setup_logging_not_verbose(self, temp_log_dir):
         """Should set INFO level when verbose=False."""
@@ -824,15 +834,19 @@ class TestSetupLogging:
 
         # Clear existing handlers
         root_logger = logging.getLogger()
-        root_logger.handlers = []
+        self._cleanup_handlers(root_logger)
 
-        with patch("nextdns_blocker.cli.ensure_log_dir"):
-            with patch(
-                "nextdns_blocker.cli.get_app_log_file", return_value=temp_log_dir / "app.log"
-            ):
-                setup_logging(verbose=False)
+        try:
+            with patch("nextdns_blocker.cli.ensure_log_dir"):
+                with patch(
+                    "nextdns_blocker.cli.get_app_log_file",
+                    return_value=temp_log_dir / "app.log",
+                ):
+                    setup_logging(verbose=False)
 
-        assert root_logger.level == logging.INFO
+            assert root_logger.level == logging.INFO
+        finally:
+            self._cleanup_handlers(root_logger)
 
     def test_setup_logging_no_duplicate_handlers(self, temp_log_dir):
         """Should not add duplicate handlers on multiple calls."""
@@ -842,18 +856,22 @@ class TestSetupLogging:
 
         # Clear existing handlers
         root_logger = logging.getLogger()
-        root_logger.handlers = []
+        self._cleanup_handlers(root_logger)
 
-        with patch("nextdns_blocker.cli.ensure_log_dir"):
-            with patch(
-                "nextdns_blocker.cli.get_app_log_file", return_value=temp_log_dir / "app.log"
-            ):
-                setup_logging(verbose=False)
-                initial_count = len(root_logger.handlers)
-                setup_logging(verbose=True)
-                final_count = len(root_logger.handlers)
+        try:
+            with patch("nextdns_blocker.cli.ensure_log_dir"):
+                with patch(
+                    "nextdns_blocker.cli.get_app_log_file",
+                    return_value=temp_log_dir / "app.log",
+                ):
+                    setup_logging(verbose=False)
+                    initial_count = len(root_logger.handlers)
+                    setup_logging(verbose=True)
+                    final_count = len(root_logger.handlers)
 
-        assert final_count == initial_count
+            assert final_count == initial_count
+        finally:
+            self._cleanup_handlers(root_logger)
 
 
 class TestPauseInfoEdgeCases:
