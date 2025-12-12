@@ -895,6 +895,53 @@ class TestUpdateCommandEdgeCases:
         assert result.exit_code == 1
         assert "error" in result.output.lower()
 
+    def test_update_uses_pipx_when_installed_via_pipx(self, runner, tmp_path):
+        """Should use pipx upgrade when installed via pipx."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"info": {"version": "99.0.0"}}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        mock_subprocess = MagicMock()
+        mock_subprocess.returncode = 0
+
+        # Create pipx venv directory to simulate pipx installation
+        pipx_venv = tmp_path / ".local" / "pipx" / "venvs" / "nextdns-blocker"
+        pipx_venv.mkdir(parents=True)
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            with patch("nextdns_blocker.cli.Path.home", return_value=tmp_path):
+                with patch("subprocess.run", return_value=mock_subprocess) as mock_run:
+                    result = runner.invoke(main, ["update", "-y"])
+
+        assert result.exit_code == 0
+        assert "pipx" in result.output.lower()
+        # Verify pipx upgrade was called
+        call_args = mock_run.call_args[0][0]
+        assert call_args[0] == "pipx"
+        assert call_args[1] == "upgrade"
+
+    def test_update_uses_pip_when_not_pipx(self, runner, tmp_path):
+        """Should use pip when not installed via pipx."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"info": {"version": "99.0.0"}}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        mock_subprocess = MagicMock()
+        mock_subprocess.returncode = 0
+
+        # tmp_path won't have pipx venv, so it should use pip
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            with patch("nextdns_blocker.cli.Path.home", return_value=tmp_path):
+                with patch("subprocess.run", return_value=mock_subprocess) as mock_run:
+                    result = runner.invoke(main, ["update", "-y"])
+
+        assert result.exit_code == 0
+        # Verify pip was called
+        call_args = mock_run.call_args[0][0]
+        assert "pip" in call_args
+
 
 class TestStatsCommandEdgeCases:
     """Additional tests for stats command edge cases."""

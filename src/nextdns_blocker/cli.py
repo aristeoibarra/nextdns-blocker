@@ -686,14 +686,26 @@ def update(yes: bool) -> None:
             click.echo("  Update cancelled.\n")
             return
 
+    # Detect if installed via pipx
+    pipx_venv = Path.home() / ".local" / "pipx" / "venvs" / "nextdns-blocker"
+    is_pipx_install = pipx_venv.exists()
+
     # Perform the update
     click.echo("\n  Updating...")
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "nextdns-blocker"],
-            capture_output=True,
-            text=True,
-        )
+        if is_pipx_install:
+            click.echo("  (detected pipx installation)")
+            result = subprocess.run(
+                ["pipx", "upgrade", "nextdns-blocker"],
+                capture_output=True,
+                text=True,
+            )
+        else:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--upgrade", "nextdns-blocker"],
+                capture_output=True,
+                text=True,
+            )
         if result.returncode == 0:
             click.echo(f"  Successfully updated to version {latest_version}")
             click.echo("  Please restart the application to use the new version.\n")
