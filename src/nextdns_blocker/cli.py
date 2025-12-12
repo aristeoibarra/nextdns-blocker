@@ -29,13 +29,16 @@ from .config import (
 from .exceptions import ConfigurationError, DomainValidationError
 from .init import run_interactive_wizard, run_non_interactive
 from .notifications import send_discord_notification
+from .platform_utils import get_executable_path, is_macos, is_windows
 from .scheduler import ScheduleEvaluator
 from .watchdog import (
     LAUNCHD_SYNC_LABEL,
     LAUNCHD_WATCHDOG_LABEL,
+    WINDOWS_TASK_SYNC_NAME,
+    WINDOWS_TASK_WATCHDOG_NAME,
     get_crontab,
+    has_windows_task,
     is_launchd_job_loaded,
-    is_macos,
 )
 
 # =============================================================================
@@ -424,6 +427,15 @@ def status(config_dir: Optional[Path]) -> None:
             click.echo(f"    watchdog: {wd_status}")
             if not sync_ok or not wd_ok:
                 click.echo("    Run: nextdns-blocker watchdog install")
+        elif is_windows():
+            sync_ok = has_windows_task(WINDOWS_TASK_SYNC_NAME)
+            wd_ok = has_windows_task(WINDOWS_TASK_WATCHDOG_NAME)
+            sync_status = "ok" if sync_ok else "NOT RUNNING"
+            wd_status = "ok" if wd_ok else "NOT RUNNING"
+            click.echo(f"    sync:     {sync_status}")
+            click.echo(f"    watchdog: {wd_status}")
+            if not sync_ok or not wd_ok:
+                click.echo("    Run: nextdns-blocker watchdog install")
         else:
             crontab = get_crontab()
             has_sync = "nextdns-blocker" in crontab and "sync" in crontab
@@ -607,7 +619,7 @@ def stats() -> None:
         return
 
     try:
-        with open(audit_file) as f:
+        with open(audit_file, encoding="utf-8") as f:
             lines = f.readlines()
 
         actions: dict[str, int] = {}
@@ -635,7 +647,6 @@ def stats() -> None:
 @main.command()
 def fix() -> None:
     """Fix common issues by reinstalling scheduler and running sync."""
-    import shutil
     import subprocess
 
     click.echo("\n  NextDNS Blocker Fix")
@@ -653,25 +664,22 @@ def fix() -> None:
 
     # Step 2: Find executable
     click.echo("  [2/4] Detecting installation...")
-    exe_path = shutil.which("nextdns-blocker")
-    if not exe_path:
-        pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
-        if pipx_exe.exists():
-            exe_path = str(pipx_exe)
-            click.echo("        Type: pipx")
-        else:
-            click.echo("        Type: module")
+    detected_path = get_executable_path()
+    exe_cmd: Optional[str] = detected_path
+    # Detect installation type
+    if "-m nextdns_blocker" in detected_path:
+        click.echo("        Type: module")
+        exe_cmd = None  # Use module invocation
+    elif ".local" in detected_path or "pipx" in detected_path.lower():
+        click.echo("        Type: pipx")
     else:
-        if ".local/bin" in exe_path:
-            click.echo("        Type: pipx")
-        else:
-            click.echo("        Type: system")
+        click.echo("        Type: system")
 
     # Step 3: Reinstall scheduler
     click.echo("  [3/4] Reinstalling scheduler...")
     try:
         if is_macos():
-            # Uninstall
+            # Uninstall launchd jobs
             subprocess.run(
                 [
                     "launchctl",
@@ -688,11 +696,21 @@ def fix() -> None:
                 ],
                 capture_output=True,
             )
+        elif is_windows():
+            # Uninstall Windows Task Scheduler tasks
+            subprocess.run(
+                ["schtasks", "/delete", "/tn", WINDOWS_TASK_SYNC_NAME, "/f"],
+                capture_output=True,
+            )
+            subprocess.run(
+                ["schtasks", "/delete", "/tn", WINDOWS_TASK_WATCHDOG_NAME, "/f"],
+                capture_output=True,
+            )
 
         # Use the watchdog install command
-        if exe_path:
+        if exe_cmd:
             result = subprocess.run(
-                [exe_path, "watchdog", "install"],
+                [exe_cmd, "watchdog", "install"],
                 capture_output=True,
                 text=True,
             )
@@ -715,9 +733,9 @@ def fix() -> None:
     # Step 4: Run sync
     click.echo("  [4/4] Running sync...")
     try:
-        if exe_path:
+        if exe_cmd:
             result = subprocess.run(
-                [exe_path, "sync"],
+                [exe_cmd, "sync"],
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -796,9 +814,14 @@ def update(yes: bool) -> None:
             click.echo("  Update cancelled.\n")
             return
 
-    # Detect if installed via pipx
-    pipx_venv = Path.home() / ".local" / "pipx" / "venvs" / "nextdns-blocker"
-    is_pipx_install = pipx_venv.exists()
+    # Detect if installed via pipx (cross-platform)
+    exe_path = get_executable_path()
+    # Check multiple indicators for pipx installation
+    pipx_venv_unix = Path.home() / ".local" / "pipx" / "venvs" / "nextdns-blocker"
+    pipx_venv_win = Path.home() / "pipx" / "venvs" / "nextdns-blocker"
+    is_pipx_install = (
+        pipx_venv_unix.exists() or pipx_venv_win.exists() or "pipx" in exe_path.lower()
+    )
 
     # Perform the update
     click.echo("\n  Updating...")

@@ -2,7 +2,6 @@
 
 import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -12,6 +11,12 @@ import requests
 
 from .common import SECURE_FILE_MODE, get_log_dir, validate_url
 from .config import get_config_dir
+from .platform_utils import (
+    get_executable_args,
+    get_executable_path,
+    is_macos,
+    is_windows,
+)
 
 # NextDNS API base URL for validation
 NEXTDNS_API_URL = "https://api.nextdns.io"
@@ -352,20 +357,17 @@ def handle_domains_migration(
 # =============================================================================
 
 
-def is_macos() -> bool:
-    """Check if running on macOS."""
-    return sys.platform == "darwin"
-
-
 def install_scheduling() -> tuple[bool, str]:
     """
-    Install scheduling jobs (launchd on macOS, cron on Linux).
+    Install scheduling jobs (launchd on macOS, cron on Linux, Task Scheduler on Windows).
 
     Returns:
         Tuple of (success, message)
     """
     if is_macos():
         return _install_launchd()
+    elif is_windows():
+        return _install_windows_task()
     else:
         return _install_cron()
 
@@ -373,7 +375,6 @@ def install_scheduling() -> tuple[bool, str]:
 def _install_launchd() -> tuple[bool, str]:
     """Install launchd jobs for macOS."""
     import plistlib
-    import shutil
 
     try:
         # Get paths
@@ -383,19 +384,8 @@ def _install_launchd() -> tuple[bool, str]:
         log_dir = get_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Find executable - check multiple locations for pipx compatibility
-        exe_path = shutil.which("nextdns-blocker")
-
-        # Fallback: check pipx default location if not found in PATH
-        if not exe_path:
-            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
-            if pipx_exe.exists():
-                exe_path = str(pipx_exe)
-
-        if exe_path:
-            exe_args = [exe_path]
-        else:
-            exe_args = [sys.executable, "-m", "nextdns_blocker"]
+        # Use centralized executable detection
+        exe_args = get_executable_args()
 
         # Sync plist
         sync_plist_path = launch_agents_dir / "com.nextdns-blocker.sync.plist"
@@ -470,25 +460,12 @@ def _install_launchd() -> tuple[bool, str]:
 
 def _install_cron() -> tuple[bool, str]:
     """Install cron jobs for Linux."""
-    import shutil
-
     try:
         log_dir = get_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Find executable - check multiple locations for pipx compatibility
-        exe_path = shutil.which("nextdns-blocker")
-
-        # Fallback: check pipx default location if not found in PATH
-        if not exe_path:
-            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
-            if pipx_exe.exists():
-                exe_path = str(pipx_exe)
-
-        if exe_path:
-            exe = exe_path
-        else:
-            exe = f"{sys.executable} -m nextdns_blocker"
+        # Use centralized executable detection
+        exe = get_executable_path()
 
         # Cron job definitions
         sync_log = str(log_dir / "sync.log")
@@ -533,33 +510,122 @@ def _install_cron() -> tuple[bool, str]:
         return False, f"cron error: {e}"
 
 
+def _escape_windows_path(path: str) -> str:
+    """
+    Escape a path for use in Windows Task Scheduler commands.
+
+    Within double quotes in cmd.exe:
+    - Percent signs must be doubled (%% instead of %)
+    - Double quotes must be escaped as ""
+    """
+    safe_path = path.replace("%", "%%")
+    safe_path = safe_path.replace('"', '""')
+    return safe_path
+
+
+def _build_task_command(exe: str, args: str, log_file: str) -> str:
+    """
+    Build a properly escaped command string for Windows Task Scheduler.
+
+    Handles paths with spaces, special characters, and ensures proper
+    quoting for cmd.exe execution context.
+    """
+    safe_exe = _escape_windows_path(exe)
+    safe_log = _escape_windows_path(log_file)
+    # Use nested quotes: outer for schtasks, inner for cmd /c
+    return f'cmd /c ""{safe_exe}" {args} >> "{safe_log}" 2>&1"'
+
+
+def _install_windows_task() -> tuple[bool, str]:
+    """Install Windows Task Scheduler tasks."""
+    try:
+        log_dir = get_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Use centralized executable detection
+        exe = get_executable_path()
+
+        # Task names
+        sync_task_name = "NextDNS-Blocker-Sync"
+        watchdog_task_name = "NextDNS-Blocker-Watchdog"
+
+        # Delete existing tasks (ignore errors)
+        subprocess.run(
+            ["schtasks", "/delete", "/tn", sync_task_name, "/f"],
+            capture_output=True,
+            timeout=30,
+        )
+        subprocess.run(
+            ["schtasks", "/delete", "/tn", watchdog_task_name, "/f"],
+            capture_output=True,
+            timeout=30,
+        )
+
+        # Create sync task (every 2 minutes)
+        sync_log = str(log_dir / "sync.log")
+        sync_cmd = _build_task_command(exe, "sync", sync_log)
+        result_sync = subprocess.run(
+            [
+                "schtasks",
+                "/create",
+                "/tn",
+                sync_task_name,
+                "/tr",
+                sync_cmd,
+                "/sc",
+                "minute",
+                "/mo",
+                "2",
+                "/f",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        # Create watchdog task (every 1 minute)
+        wd_log = str(log_dir / "watchdog.log")
+        wd_cmd = _build_task_command(exe, "watchdog check", wd_log)
+        result_wd = subprocess.run(
+            [
+                "schtasks",
+                "/create",
+                "/tn",
+                watchdog_task_name,
+                "/tr",
+                wd_cmd,
+                "/sc",
+                "minute",
+                "/mo",
+                "1",
+                "/f",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result_sync.returncode == 0 and result_wd.returncode == 0:
+            return True, "Task Scheduler"
+        else:
+            error_msg = result_sync.stderr or result_wd.stderr or "Unknown error"
+            return False, f"Failed to create scheduled tasks: {error_msg}"
+
+    except Exception as e:
+        return False, f"Task Scheduler error: {e}"
+
+
 def run_initial_sync() -> bool:
     """Run initial sync command."""
-    import shutil
-
     try:
-        exe_path = shutil.which("nextdns-blocker")
-
-        # Fallback: check pipx default location if not found in PATH
-        if not exe_path:
-            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
-            if pipx_exe.exists():
-                exe_path = str(pipx_exe)
-
-        if exe_path:
-            result = subprocess.run(
-                [exe_path, "sync"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-        else:
-            result = subprocess.run(
-                [sys.executable, "-m", "nextdns_blocker", "sync"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+        # Use centralized executable detection
+        exe_args = get_executable_args()
+        result = subprocess.run(
+            exe_args + ["sync"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         return result.returncode == 0
     except Exception:
         return False
@@ -714,17 +780,19 @@ def run_interactive_wizard(
     click.echo("    nextdns-blocker pause 30  - Pause for 30 min")
     click.echo("    nextdns-blocker health    - Health check")
     click.echo()
+    click.echo("  Logs:")
+    click.echo(f"    {get_log_dir()}")
+    click.echo()
     if is_macos():
-        click.echo("  Logs:")
-        click.echo(f"    {get_log_dir()}")
-        click.echo()
         click.echo("  launchd:")
         click.echo("    launchctl list | grep nextdns")
         click.echo()
-    else:
-        click.echo("  Logs:")
-        click.echo(f"    {get_log_dir()}")
+    elif is_windows():
+        click.echo("  Task Scheduler:")
+        click.echo("    schtasks /query /tn NextDNS-Blocker-Sync")
+        click.echo("    schtasks /query /tn NextDNS-Blocker-Watchdog")
         click.echo()
+    else:
         click.echo("  cron:")
         click.echo("    crontab -l | grep nextdns")
         click.echo()

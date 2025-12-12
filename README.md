@@ -8,7 +8,7 @@ Automated system to control domain access with per-domain schedule configuration
 
 ## Features
 
-- **Cross-platform**: Native support for macOS (launchd) and Linux (cron)
+- **Cross-platform**: Native support for macOS (launchd), Linux (cron), and Windows (Task Scheduler)
 - **Per-domain scheduling**: Configure unique availability hours for each domain
 - **Flexible time ranges**: Multiple time windows per day, different schedules per weekday
 - **Protected domains**: Mark domains as protected to prevent accidental unblocking
@@ -53,6 +53,24 @@ pip install -e .
 nextdns-blocker init
 ```
 
+### Windows Installation
+
+On Windows, you can also use the PowerShell installer:
+
+```powershell
+# Download and run the installer
+irm https://raw.githubusercontent.com/aristeoibarra/nextdns-blocker/main/install.ps1 | iex
+
+# Or run locally after cloning
+.\install.ps1
+```
+
+The installer will:
+- Check for Python installation
+- Install the package via pip
+- Run the interactive setup wizard
+- Configure Windows Task Scheduler for automatic sync
+
 ## Quick Setup
 
 ### 1. Get NextDNS Credentials
@@ -80,11 +98,16 @@ See [SCHEDULE_GUIDE.md](SCHEDULE_GUIDE.md) for detailed schedule configuration e
 
 ### 4. Install Watchdog (Optional)
 
-For automatic syncing every 2 minutes with cron:
+For automatic syncing every 2 minutes:
 
 ```bash
 nextdns-blocker watchdog install
 ```
+
+This installs platform-specific scheduled jobs:
+- **macOS**: launchd jobs (`~/Library/LaunchAgents/`)
+- **Linux**: cron jobs (`crontab -l`)
+- **Windows**: Task Scheduler tasks (view with `taskschd.msc`)
 
 Done! The system will now automatically sync based on your configured schedules.
 
@@ -394,6 +417,58 @@ sudo service cron status || sudo service crond status
 # Check watchdog status
 nextdns-blocker watchdog status
 ```
+
+### Windows Troubleshooting
+
+**Task Scheduler not running?**
+```powershell
+# Check Task Scheduler status
+nextdns-blocker watchdog status
+
+# View tasks in Task Scheduler GUI
+taskschd.msc
+
+# List tasks via command line
+schtasks /query /tn "NextDNS-Blocker-Sync"
+schtasks /query /tn "NextDNS-Blocker-Watchdog"
+
+# Manually run sync task
+schtasks /run /tn "NextDNS-Blocker-Sync"
+```
+
+**Paths with spaces causing issues?**
+- The application handles paths with spaces automatically
+- If you see errors, check that your username doesn't contain special characters like `<`, `>`, `|`, `&`
+- Log files are stored in: `%LOCALAPPDATA%\nextdns-blocker\logs\`
+
+**PowerShell script won't run?**
+```powershell
+# Check execution policy
+Get-ExecutionPolicy
+
+# Allow scripts for current user (if needed)
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Run installer
+.\install.ps1
+```
+
+**View Windows logs**
+```powershell
+# Application log
+Get-Content "$env:LOCALAPPDATA\nextdns-blocker\logs\app.log" -Tail 50
+
+# Sync log
+Get-Content "$env:LOCALAPPDATA\nextdns-blocker\logs\sync.log" -Tail 50
+
+# Audit log
+Get-Content "$env:LOCALAPPDATA\nextdns-blocker\logs\audit.log" -Tail 50
+```
+
+**File permissions on Windows**
+- Windows uses ACLs instead of Unix file permissions (0o600)
+- Files are created with default user permissions
+- Configuration files in `%APPDATA%\nextdns-blocker\` are only accessible by the current user in typical configurations
 
 ## Uninstall
 

@@ -180,7 +180,7 @@ def get_cached_domains(max_age: float = DOMAINS_CACHE_TTL) -> Optional[dict[str,
         return None
 
     try:
-        with open(cache_file) as f:
+        with open(cache_file, encoding="utf-8") as f:
             cache = json.load(f)
 
         timestamp = cache.get("timestamp", 0)
@@ -357,7 +357,7 @@ def get_cache_status() -> dict[str, Any]:
         return {"exists": False, "path": str(cache_file)}
 
     try:
-        with open(cache_file) as f:
+        with open(cache_file, encoding="utf-8") as f:
             cache = json.load(f)
 
         timestamp = cache.get("timestamp", 0)
@@ -610,7 +610,7 @@ def load_domains(
             raise ConfigurationError(f"Config file not found: {json_file}")
 
         try:
-            with open(json_file) as f:
+            with open(json_file, encoding="utf-8") as f:
                 config = json.load(f)
             logger.info("Loaded domains from local file")
         except json.JSONDecodeError as e:

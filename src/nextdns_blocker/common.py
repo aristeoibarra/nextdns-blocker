@@ -33,11 +33,17 @@ try:
 
 except ImportError:
     # Windows fallback using msvcrt
+    # Note: msvcrt.locking() differs from Unix fcntl.flock():
+    # - Uses LK_NBLCK (non-blocking) which fails immediately if lock unavailable
+    # - Locks only 1 byte at current position (sufficient for our append-only logs)
+    # - Does not support shared locks (exclusive parameter is ignored)
+    # This is acceptable for our use case since concurrent access is rare and
+    # the audit log uses append-only writes.
     try:
         import msvcrt
 
         def _lock_file(f: IO[Any], exclusive: bool = True) -> None:
-            """Acquire file lock (Windows implementation)."""
+            """Acquire file lock (Windows implementation using msvcrt.locking)."""
             msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
 
         def _unlock_file(f: IO[Any]) -> None:
@@ -86,6 +92,12 @@ def get_audit_log_file() -> Path:
 
 
 # Secure file permissions (owner read/write only)
+# Note: On Windows, Unix file mode bits (0o600) are largely ignored by the OS.
+# Files are created with default Windows ACLs based on the parent directory
+# permissions and the user's default ACL. The file is still only accessible
+# by the creating user in typical configurations, but the exact permissions
+# depend on Windows security settings rather than these mode bits.
+# For truly restrictive permissions on Windows, use SetFileSecurity() or icacls.
 SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600
 
 # Domain validation constants (RFC 1035)
@@ -292,7 +304,7 @@ def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
         log_entry = " | ".join(parts) + "\n"
 
         # Write with exclusive lock to prevent corruption from concurrent writes
-        with open(audit_file, "a") as f:
+        with open(audit_file, "a", encoding="utf-8") as f:
             _lock_file(f, exclusive=True)
             try:
                 f.write(log_entry)
@@ -355,7 +367,7 @@ def read_secure_file(path: Path) -> Optional[str]:
         return None
 
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             _lock_file(f, exclusive=False)
             try:
                 return f.read().strip()
