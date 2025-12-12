@@ -364,9 +364,7 @@ class TestStatusCommand:
             with patch("nextdns_blocker.cli.load_domains") as mock_domains:
                 with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
                     with patch("nextdns_blocker.cli.is_macos", return_value=True):
-                        with patch(
-                            "nextdns_blocker.cli.is_launchd_job_loaded", return_value=True
-                        ):
+                        with patch("nextdns_blocker.cli.is_launchd_job_loaded", return_value=True):
                             mock_config.return_value = {
                                 "api_key": "test",
                                 "profile_id": "testprofile",
@@ -392,9 +390,7 @@ class TestStatusCommand:
             with patch("nextdns_blocker.cli.load_domains") as mock_domains:
                 with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
                     with patch("nextdns_blocker.cli.is_macos", return_value=True):
-                        with patch(
-                            "nextdns_blocker.cli.is_launchd_job_loaded", return_value=False
-                        ):
+                        with patch("nextdns_blocker.cli.is_launchd_job_loaded", return_value=False):
                             mock_config.return_value = {
                                 "api_key": "test",
                                 "profile_id": "testprofile",

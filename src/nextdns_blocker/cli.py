@@ -673,11 +673,19 @@ def fix() -> None:
         if is_macos():
             # Uninstall
             subprocess.run(
-                ["launchctl", "unload", str(Path.home() / "Library/LaunchAgents/com.nextdns-blocker.sync.plist")],
+                [
+                    "launchctl",
+                    "unload",
+                    str(Path.home() / "Library/LaunchAgents/com.nextdns-blocker.sync.plist"),
+                ],
                 capture_output=True,
             )
             subprocess.run(
-                ["launchctl", "unload", str(Path.home() / "Library/LaunchAgents/com.nextdns-blocker.watchdog.plist")],
+                [
+                    "launchctl",
+                    "unload",
+                    str(Path.home() / "Library/LaunchAgents/com.nextdns-blocker.watchdog.plist"),
+                ],
                 capture_output=True,
             )
 
