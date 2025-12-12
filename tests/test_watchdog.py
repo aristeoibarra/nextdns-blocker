@@ -990,8 +990,8 @@ class TestGetExecutablePath:
         pipx_exe.touch()
 
         with patch("shutil.which", return_value=None):
-            with patch("nextdns_blocker.watchdog.Path.home", return_value=tmp_path):
-                with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
+            with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
+                with patch("nextdns_blocker.platform_utils.is_windows", return_value=False):
                     result = watchdog.get_executable_path()
                     assert result == str(pipx_exe)
 
@@ -1024,8 +1024,8 @@ class TestGetExecutableArgs:
         pipx_exe.touch()
 
         with patch("shutil.which", return_value=None):
-            with patch("nextdns_blocker.watchdog.Path.home", return_value=tmp_path):
-                with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
+            with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
+                with patch("nextdns_blocker.platform_utils.is_windows", return_value=False):
                     result = watchdog.get_executable_args()
                     assert result == [str(pipx_exe)]
 
