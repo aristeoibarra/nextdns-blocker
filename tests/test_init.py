@@ -14,7 +14,6 @@ from nextdns_blocker.init import (
     create_sample_domains,
     detect_existing_config,
     handle_domains_migration,
-    is_macos,
     prompt_domains_migration,
     run_initial_sync,
     run_interactive_wizard,
@@ -22,6 +21,7 @@ from nextdns_blocker.init import (
     validate_api_credentials,
     validate_timezone,
 )
+from nextdns_blocker.platform_utils import is_linux, is_macos, is_windows
 
 
 class TestValidateApiCredentials:
@@ -766,18 +766,38 @@ class TestPromptDomainsMigration:
         assert url == "https://example.com/domains.json"
 
 
-class TestIsMacos:
-    """Tests for is_macos function."""
+class TestPlatformDetection:
+    """Tests for platform detection functions (moved to platform_utils)."""
 
     def test_is_macos_darwin(self):
         """Should return True on Darwin platform."""
-        with patch("nextdns_blocker.init.sys.platform", "darwin"):
+        with patch("nextdns_blocker.platform_utils.sys.platform", "darwin"):
             assert is_macos() is True
 
     def test_is_macos_linux(self):
         """Should return False on Linux platform."""
-        with patch("nextdns_blocker.init.sys.platform", "linux"):
+        with patch("nextdns_blocker.platform_utils.sys.platform", "linux"):
             assert is_macos() is False
+
+    def test_is_windows_win32(self):
+        """Should return True on Windows platform."""
+        with patch("nextdns_blocker.platform_utils.sys.platform", "win32"):
+            assert is_windows() is True
+
+    def test_is_windows_darwin(self):
+        """Should return False on macOS platform."""
+        with patch("nextdns_blocker.platform_utils.sys.platform", "darwin"):
+            assert is_windows() is False
+
+    def test_is_linux_linux(self):
+        """Should return True on Linux platform."""
+        with patch("nextdns_blocker.platform_utils.sys.platform", "linux"):
+            assert is_linux() is True
+
+    def test_is_linux_darwin(self):
+        """Should return False on macOS platform."""
+        with patch("nextdns_blocker.platform_utils.sys.platform", "darwin"):
+            assert is_linux() is False
 
 
 class TestRunInitialSync:

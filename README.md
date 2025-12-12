@@ -8,7 +8,7 @@ Automated system to control domain access with per-domain schedule configuration
 
 ## Features
 
-- **Cross-platform**: Native support for macOS (launchd) and Linux (cron)
+- **Cross-platform**: Native support for macOS (launchd), Linux (cron), and Windows (Task Scheduler)
 - **Per-domain scheduling**: Configure unique availability hours for each domain
 - **Flexible time ranges**: Multiple time windows per day, different schedules per weekday
 - **Protected domains**: Mark domains as protected to prevent accidental unblocking
@@ -53,6 +53,24 @@ pip install -e .
 nextdns-blocker init
 ```
 
+### Windows Installation
+
+On Windows, you can also use the PowerShell installer:
+
+```powershell
+# Download and run the installer
+irm https://raw.githubusercontent.com/aristeoibarra/nextdns-blocker/main/install.ps1 | iex
+
+# Or run locally after cloning
+.\install.ps1
+```
+
+The installer will:
+- Check for Python installation
+- Install the package via pip
+- Run the interactive setup wizard
+- Configure Windows Task Scheduler for automatic sync
+
 ## Quick Setup
 
 ### 1. Get NextDNS Credentials
@@ -80,11 +98,16 @@ See [SCHEDULE_GUIDE.md](SCHEDULE_GUIDE.md) for detailed schedule configuration e
 
 ### 4. Install Watchdog (Optional)
 
-For automatic syncing every 2 minutes with cron:
+For automatic syncing every 2 minutes:
 
 ```bash
 nextdns-blocker watchdog install
 ```
+
+This installs platform-specific scheduled jobs:
+- **macOS**: launchd jobs (`~/Library/LaunchAgents/`)
+- **Linux**: cron jobs (`crontab -l`)
+- **Windows**: Task Scheduler tasks (view with `taskschd.msc`)
 
 Done! The system will now automatically sync based on your configured schedules.
 

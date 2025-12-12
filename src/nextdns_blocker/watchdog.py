@@ -1,9 +1,8 @@
-"""Watchdog - Monitors and restores scheduled jobs (cron/launchd) if deleted."""
+"""Watchdog - Monitors and restores scheduled jobs (cron/launchd/Task Scheduler) if deleted."""
 
 import contextlib
 import logging
 import plistlib
-import shutil
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -14,6 +13,12 @@ import click
 
 from .common import audit_log as _base_audit_log
 from .common import get_log_dir, read_secure_file, write_secure_file
+from .platform_utils import (
+    get_executable_args,
+    get_executable_path,
+    is_macos,
+    is_windows,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +32,9 @@ SUBPROCESS_TIMEOUT = 60
 LAUNCHD_SYNC_LABEL = "com.nextdns-blocker.sync"
 LAUNCHD_WATCHDOG_LABEL = "com.nextdns-blocker.watchdog"
 
-
-def is_macos() -> bool:
-    """Check if running on macOS."""
-    return sys.platform == "darwin"
+# Windows Task Scheduler constants
+WINDOWS_TASK_SYNC_NAME = "NextDNS-Blocker-Sync"
+WINDOWS_TASK_WATCHDOG_NAME = "NextDNS-Blocker-Watchdog"
 
 
 def get_launch_agents_dir() -> Path:
@@ -51,45 +55,6 @@ def get_watchdog_plist_path() -> Path:
 def get_disabled_file() -> Path:
     """Get the watchdog disabled state file path."""
     return get_log_dir() / ".watchdog_disabled"
-
-
-def get_executable_path() -> str:
-    """Get the full path to the nextdns-blocker executable.
-
-    Returns a string suitable for shell commands (cron).
-    For launchd, use get_executable_args() instead.
-    """
-    exe_path = shutil.which("nextdns-blocker")
-
-    # Fallback: check pipx default location if not found in PATH
-    if not exe_path:
-        pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
-        if pipx_exe.exists():
-            exe_path = str(pipx_exe)
-
-    if exe_path:
-        return exe_path
-    # Fallback to sys.executable module invocation
-    return f"{sys.executable} -m nextdns_blocker"
-
-
-def get_executable_args() -> list[str]:
-    """Get the executable as a list of arguments for launchd/subprocess.
-
-    Returns a list suitable for subprocess.run() and launchd ProgramArguments.
-    """
-    exe_path = shutil.which("nextdns-blocker")
-
-    # Fallback: check pipx default location if not found in PATH
-    if not exe_path:
-        pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
-        if pipx_exe.exists():
-            exe_path = str(pipx_exe)
-
-    if exe_path:
-        return [exe_path]
-    # Fallback to sys.executable module invocation
-    return [sys.executable, "-m", "nextdns_blocker"]
 
 
 def get_cron_sync() -> str:
@@ -632,13 +597,203 @@ def _run_sync_after_restore() -> None:
 
 
 # =============================================================================
+# WINDOWS TASK SCHEDULER MANAGEMENT
+# =============================================================================
+
+
+def _run_schtasks(
+    args: list[str], timeout: int = SUBPROCESS_TIMEOUT
+) -> subprocess.CompletedProcess[str]:
+    """Run schtasks command with standard options."""
+    return subprocess.run(
+        ["schtasks"] + args,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def has_windows_task(task_name: str) -> bool:
+    """Check if a Windows scheduled task exists."""
+    try:
+        result = _run_schtasks(["/query", "/tn", task_name])
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        return False
+
+
+def _install_windows_tasks() -> None:
+    """Install Windows Task Scheduler tasks."""
+    log_dir = get_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    exe = get_executable_path()
+    sync_log = str(log_dir / "sync.log")
+    wd_log = str(log_dir / "wd.log")
+
+    # Delete existing tasks (ignore errors)
+    _run_schtasks(["/delete", "/tn", WINDOWS_TASK_SYNC_NAME, "/f"])
+    _run_schtasks(["/delete", "/tn", WINDOWS_TASK_WATCHDOG_NAME, "/f"])
+
+    # Create sync task (every 2 minutes)
+    result_sync = _run_schtasks(
+        [
+            "/create",
+            "/tn",
+            WINDOWS_TASK_SYNC_NAME,
+            "/tr",
+            f'cmd /c ""{exe}" sync >> "{sync_log}" 2>&1"',
+            "/sc",
+            "minute",
+            "/mo",
+            "2",
+            "/f",
+        ]
+    )
+
+    if result_sync.returncode != 0:
+        click.echo(f"  error: failed to create sync task: {result_sync.stderr}", err=True)
+        sys.exit(1)
+
+    # Create watchdog task (every 1 minute)
+    result_wd = _run_schtasks(
+        [
+            "/create",
+            "/tn",
+            WINDOWS_TASK_WATCHDOG_NAME,
+            "/tr",
+            f'cmd /c ""{exe}" watchdog check >> "{wd_log}" 2>&1"',
+            "/sc",
+            "minute",
+            "/mo",
+            "1",
+            "/f",
+        ]
+    )
+
+    if result_wd.returncode != 0:
+        # Rollback: delete sync task
+        _run_schtasks(["/delete", "/tn", WINDOWS_TASK_SYNC_NAME, "/f"])
+        click.echo(f"  error: failed to create watchdog task: {result_wd.stderr}", err=True)
+        sys.exit(1)
+
+    audit_log("SCHTASKS_INSTALLED", "Manual install")
+    click.echo("\n  Task Scheduler jobs installed")
+    click.echo("    sync       every 2 min")
+    click.echo("    watchdog   every 1 min\n")
+
+
+def _uninstall_windows_tasks() -> None:
+    """Uninstall Windows Task Scheduler tasks."""
+    result_sync = _run_schtasks(["/delete", "/tn", WINDOWS_TASK_SYNC_NAME, "/f"])
+    result_wd = _run_schtasks(["/delete", "/tn", WINDOWS_TASK_WATCHDOG_NAME, "/f"])
+
+    audit_log("SCHTASKS_UNINSTALLED", "Manual uninstall")
+
+    if result_sync.returncode == 0 and result_wd.returncode == 0:
+        click.echo("\n  Task Scheduler jobs removed\n")
+    elif result_sync.returncode != 0 and result_wd.returncode != 0:
+        click.echo("\n  warning: failed to remove both tasks\n", err=True)
+    elif result_sync.returncode != 0:
+        click.echo("\n  watchdog removed, warning: failed to remove sync task\n", err=True)
+    else:
+        click.echo("\n  sync removed, warning: failed to remove watchdog task\n", err=True)
+
+
+def _status_windows_tasks() -> None:
+    """Display Windows Task Scheduler status."""
+    has_sync = has_windows_task(WINDOWS_TASK_SYNC_NAME)
+    has_wd = has_windows_task(WINDOWS_TASK_WATCHDOG_NAME)
+    disabled_remaining = get_disabled_remaining()
+
+    click.echo("\n  Task Scheduler")
+    click.echo("  --------------")
+    click.echo(f"    sync       {'ok' if has_sync else 'missing'}")
+    click.echo(f"    watchdog   {'ok' if has_wd else 'missing'}")
+
+    if disabled_remaining:
+        click.echo(f"\n  watchdog: DISABLED ({disabled_remaining})")
+    else:
+        status = "active" if (has_sync and has_wd) else "compromised"
+        click.echo(f"\n  status: {status}")
+    click.echo()
+
+
+def _check_windows_tasks() -> None:
+    """Check and restore Windows Task Scheduler tasks if missing."""
+    restored = False
+
+    # Check sync task
+    if not has_windows_task(WINDOWS_TASK_SYNC_NAME):
+        audit_log("SCHTASK_DELETED", "Sync task missing")
+        log_dir = get_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        exe = get_executable_path()
+        sync_log = str(log_dir / "sync.log")
+
+        result = _run_schtasks(
+            [
+                "/create",
+                "/tn",
+                WINDOWS_TASK_SYNC_NAME,
+                "/tr",
+                f'cmd /c ""{exe}" sync >> "{sync_log}" 2>&1"',
+                "/sc",
+                "minute",
+                "/mo",
+                "2",
+                "/f",
+            ]
+        )
+
+        if result.returncode == 0:
+            click.echo("  sync task restored")
+            restored = True
+        else:
+            click.echo("  warning: failed to restore sync task", err=True)
+
+    # Check watchdog task
+    if not has_windows_task(WINDOWS_TASK_WATCHDOG_NAME):
+        audit_log("SCHTASK_WD_DELETED", "Watchdog task missing")
+        log_dir = get_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        exe = get_executable_path()
+        wd_log = str(log_dir / "wd.log")
+
+        result = _run_schtasks(
+            [
+                "/create",
+                "/tn",
+                WINDOWS_TASK_WATCHDOG_NAME,
+                "/tr",
+                f'cmd /c ""{exe}" watchdog check >> "{wd_log}" 2>&1"',
+                "/sc",
+                "minute",
+                "/mo",
+                "1",
+                "/f",
+            ]
+        )
+
+        if result.returncode == 0:
+            click.echo("  watchdog task restored")
+            restored = True
+        else:
+            click.echo("  warning: failed to restore watchdog task", err=True)
+
+    # Run sync if tasks were restored
+    if restored:
+        _run_sync_after_restore()
+
+
+# =============================================================================
 # CLICK CLI
 # =============================================================================
 
 
 @click.group()
 def watchdog_cli() -> None:
-    """Watchdog commands for scheduled job management (cron/launchd)."""
+    """Watchdog commands for scheduled job management (cron/launchd/Task Scheduler)."""
     pass
 
 
@@ -652,6 +807,8 @@ def cmd_check() -> None:
 
     if is_macos():
         _check_launchd_jobs()
+    elif is_windows():
+        _check_windows_tasks()
     else:
         _check_cron_jobs()
 
@@ -661,6 +818,8 @@ def cmd_install() -> None:
     """Install sync and watchdog scheduled jobs."""
     if is_macos():
         _install_launchd_jobs()
+    elif is_windows():
+        _install_windows_tasks()
     else:
         _install_cron_jobs()
 
@@ -670,6 +829,8 @@ def cmd_uninstall() -> None:
     """Remove scheduled jobs."""
     if is_macos():
         _uninstall_launchd_jobs()
+    elif is_windows():
+        _uninstall_windows_tasks()
     else:
         _uninstall_cron_jobs()
 
@@ -679,6 +840,8 @@ def cmd_status() -> None:
     """Display current scheduled job status."""
     if is_macos():
         _status_launchd_jobs()
+    elif is_windows():
+        _status_windows_tasks()
     else:
         _status_cron_jobs()
 
