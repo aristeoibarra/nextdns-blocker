@@ -476,8 +476,15 @@ def _install_cron() -> tuple[bool, str]:
         log_dir = get_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Find executable
+        # Find executable - check multiple locations for pipx compatibility
         exe_path = shutil.which("nextdns-blocker")
+
+        # Fallback: check pipx default location if not found in PATH
+        if not exe_path:
+            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
+            if pipx_exe.exists():
+                exe_path = str(pipx_exe)
+
         if exe_path:
             exe = exe_path
         else:
@@ -532,6 +539,13 @@ def run_initial_sync() -> bool:
 
     try:
         exe_path = shutil.which("nextdns-blocker")
+
+        # Fallback: check pipx default location if not found in PATH
+        if not exe_path:
+            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
+            if pipx_exe.exists():
+                exe_path = str(pipx_exe)
+
         if exe_path:
             result = subprocess.run(
                 [exe_path, "sync"],
