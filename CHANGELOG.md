@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.0] - 2025-12-11
+
+### Added
+- **Fix Command**: `nextdns-blocker fix` for troubleshooting common issues
+  - Verifies configuration exists and is valid
+  - Detects installation type (pipx/system/module)
+  - Reinstalls scheduler (unload + install)
+  - Runs sync to verify everything works
+- **Scheduler Status**: `nextdns-blocker status` now shows scheduler health
+  - Displays sync and watchdog job status (ok/NOT RUNNING)
+  - Shows helpful command when scheduler is not running
+  - Supports both macOS (launchd) and Linux (cron)
+- **Pipx Update Support**: `nextdns-blocker update` detects pipx installations
+  - Uses `pipx upgrade` instead of `pip install --upgrade` when appropriate
+  - Automatic detection via pipx venv directory
+
+### Fixed
+- **Full Pipx Compatibility**: Complete support for pipx installations
+  - Added `~/.local/bin` to PATH in all launchd plists
+  - Pipx fallback detection in `_install_launchd()`, `_install_cron()`, `run_initial_sync()`
+  - Pipx fallback in watchdog's `get_executable_path()` and `get_executable_args()`
+  - Fixed `generate_plist()` to include pipx PATH
+- Scheduler auto-repair now works correctly with pipx installations
+
 ## [5.1.0] - 2025-12-09
 
 ### Added
