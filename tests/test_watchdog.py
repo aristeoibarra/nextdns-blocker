@@ -16,7 +16,9 @@ from nextdns_blocker import watchdog
 
 # Helper for skipping Unix-specific tests on Windows
 is_windows = sys.platform == "win32"
-skip_on_windows = pytest.mark.skipif(is_windows, reason="Unix permissions not applicable on Windows")
+skip_on_windows = pytest.mark.skipif(
+    is_windows, reason="Unix permissions not applicable on Windows"
+)
 
 
 @pytest.fixture

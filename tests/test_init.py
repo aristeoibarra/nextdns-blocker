@@ -26,7 +26,9 @@ from nextdns_blocker.platform_utils import is_linux, is_macos, is_windows
 
 # Helper for skipping Unix-specific tests on Windows
 is_windows_platform = sys.platform == "win32"
-skip_on_windows = pytest.mark.skipif(is_windows_platform, reason="Unix permissions not applicable on Windows")
+skip_on_windows = pytest.mark.skipif(
+    is_windows_platform, reason="Unix permissions not applicable on Windows"
+)
 
 
 class TestValidateApiCredentials:

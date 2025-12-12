@@ -27,7 +27,9 @@ from nextdns_blocker.exceptions import ConfigurationError, DomainValidationError
 
 # Helper for skipping Unix-specific tests on Windows
 is_windows = sys.platform == "win32"
-skip_on_windows = pytest.mark.skipif(is_windows, reason="Unix permissions not applicable on Windows")
+skip_on_windows = pytest.mark.skipif(
+    is_windows, reason="Unix permissions not applicable on Windows"
+)
 
 
 @pytest.fixture
@@ -994,7 +996,9 @@ class TestFixCommand:
                 with patch("nextdns_blocker.cli.Path.home", return_value=tmp_path):
                     with patch("nextdns_blocker.cli.is_macos", return_value=True):
                         with patch("nextdns_blocker.cli.is_windows", return_value=False):
-                            with patch("nextdns_blocker.platform_utils.is_windows", return_value=False):
+                            with patch(
+                                "nextdns_blocker.platform_utils.is_windows", return_value=False
+                            ):
                                 with patch("subprocess.run", return_value=mock_subprocess):
                                     result = runner.invoke(main, ["fix"])
 
