@@ -1,0 +1,158 @@
+{
+  "domains": [
+    {
+      "domain": "tiktok.com",
+      "description": "Short-form video platform that heavily disrupts study focus.",
+      "protected": false,
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "12:00", "end": "14:00" },
+              { "start": "18:00", "end": "23:59" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "instagram.com",
+      "description": "Photo and video sharing platform that encourages endless scrolling.",
+      "protected": false,
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "12:00", "end": "14:00" },
+              { "start": "18:00", "end": "23:59" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "twitter.com",
+      "description": "News and updates feed that can cause frequent distractions.",
+      "protected": false,
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "12:00", "end": "14:00" },
+              { "start": "18:00", "end": "23:59" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "snapchat.com",
+      "description": "Messaging app with snaps and stories; mostly used to chat with friends",
+      "protected": false,
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "12:00", "end": "14:00" },
+              { "start": "18:00", "end": "23:59" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "youtube.com",
+      "description": "Video platform where recommended videos can consume hours unintentionally.",
+      "protected": false,
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "12:00", "end": "14:00" },
+              { "start": "18:00", "end": "23:59" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "netflix.com",
+      "description": "Streaming service for movies and shows; commonly used for leisure in free time",
+      "protected": false,
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "12:00", "end": "14:00" },
+              { "start": "18:00", "end": "23:59" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "twitch.tv",
+      "description": "Live streaming platform popular with gaming and entertainment content.",
+      "protected": false,
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "12:00", "end": "14:00" },
+              { "start": "18:00", "end": "23:59" }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
