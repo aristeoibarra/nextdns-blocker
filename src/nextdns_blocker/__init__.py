@@ -1,6 +1,6 @@
 """NextDNS Blocker - Automated domain blocking with per-domain scheduling."""
 
-__version__ = "5.1.0"
+__version__ = "5.2.0"
 
 from .client import NextDNSClient
 from .config import (

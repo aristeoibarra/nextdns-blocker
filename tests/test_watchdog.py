@@ -714,7 +714,7 @@ class TestGeneratePlist:
         assert parsed["RunAtLoad"] is True
 
     def test_generate_plist_includes_path(self):
-        """Should include PATH environment variable."""
+        """Should include PATH environment variable with pipx location."""
         import plistlib
 
         content = watchdog.generate_plist(
@@ -725,7 +725,9 @@ class TestGeneratePlist:
         )
         parsed = plistlib.loads(content)
         assert "PATH" in parsed["EnvironmentVariables"]
-        assert "/opt/homebrew/bin" in parsed["EnvironmentVariables"]["PATH"]
+        path_env = parsed["EnvironmentVariables"]["PATH"]
+        assert "/opt/homebrew/bin" in path_env
+        assert "/.local/bin" in path_env  # pipx location
 
     def test_generate_plist_log_paths(self):
         """Should set stdout and stderr to log file."""
@@ -935,6 +937,37 @@ class TestCmdCheckMultiplatform:
                 assert result.exit_code == 0
 
 
+class TestGetExecutablePath:
+    """Tests for get_executable_path function."""
+
+    def test_get_executable_path_with_installed_binary(self):
+        """Should return path when binary is found."""
+        with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
+            result = watchdog.get_executable_path()
+            assert result == "/usr/local/bin/nextdns-blocker"
+
+    def test_get_executable_path_fallback_to_module(self, tmp_path):
+        """Should return python module invocation when binary not found anywhere."""
+        with patch("shutil.which", return_value=None):
+            with patch("nextdns_blocker.watchdog.Path.home", return_value=tmp_path):
+                result = watchdog.get_executable_path()
+                assert sys.executable in result
+                assert "-m nextdns_blocker" in result
+
+    def test_get_executable_path_pipx_fallback(self, tmp_path):
+        """Should use pipx executable when shutil.which fails but pipx exe exists."""
+        # Create pipx executable location
+        pipx_bin = tmp_path / ".local" / "bin"
+        pipx_bin.mkdir(parents=True)
+        pipx_exe = pipx_bin / "nextdns-blocker"
+        pipx_exe.touch()
+
+        with patch("shutil.which", return_value=None):
+            with patch("nextdns_blocker.watchdog.Path.home", return_value=tmp_path):
+                result = watchdog.get_executable_path()
+                assert result == str(pipx_exe)
+
+
 class TestGetExecutableArgs:
     """Tests for get_executable_args function."""
 
@@ -944,14 +977,28 @@ class TestGetExecutableArgs:
             result = watchdog.get_executable_args()
             assert result == ["/usr/local/bin/nextdns-blocker"]
 
-    def test_get_executable_args_fallback_to_module(self):
-        """Should return python module invocation when binary not found."""
+    def test_get_executable_args_fallback_to_module(self, tmp_path):
+        """Should return python module invocation when binary not found anywhere."""
         with patch("shutil.which", return_value=None):
-            result = watchdog.get_executable_args()
-            assert len(result) == 3
-            assert result[0] == sys.executable
-            assert result[1] == "-m"
-            assert result[2] == "nextdns_blocker"
+            with patch("nextdns_blocker.watchdog.Path.home", return_value=tmp_path):
+                result = watchdog.get_executable_args()
+                assert len(result) == 3
+                assert result[0] == sys.executable
+                assert result[1] == "-m"
+                assert result[2] == "nextdns_blocker"
+
+    def test_get_executable_args_pipx_fallback(self, tmp_path):
+        """Should use pipx executable when shutil.which fails but pipx exe exists."""
+        # Create pipx executable location
+        pipx_bin = tmp_path / ".local" / "bin"
+        pipx_bin.mkdir(parents=True)
+        pipx_exe = pipx_bin / "nextdns-blocker"
+        pipx_exe.touch()
+
+        with patch("shutil.which", return_value=None):
+            with patch("nextdns_blocker.watchdog.Path.home", return_value=tmp_path):
+                result = watchdog.get_executable_args()
+                assert result == [str(pipx_exe)]
 
     def test_get_executable_args_returns_list(self):
         """Should always return a list."""

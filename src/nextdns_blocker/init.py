@@ -383,8 +383,15 @@ def _install_launchd() -> tuple[bool, str]:
         log_dir = get_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Find executable
+        # Find executable - check multiple locations for pipx compatibility
         exe_path = shutil.which("nextdns-blocker")
+
+        # Fallback: check pipx default location if not found in PATH
+        if not exe_path:
+            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
+            if pipx_exe.exists():
+                exe_path = str(pipx_exe)
+
         if exe_path:
             exe_args = [exe_path]
         else:
@@ -400,7 +407,9 @@ def _install_launchd() -> tuple[bool, str]:
             "KeepAlive": {"SuccessfulExit": False},
             "StandardOutPath": str(log_dir / "sync.log"),
             "StandardErrorPath": str(log_dir / "sync.log"),
-            "EnvironmentVariables": {"PATH": "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"},
+            "EnvironmentVariables": {
+                "PATH": f"{Path.home()}/.local/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
+            },
         }
 
         # Watchdog plist
@@ -413,7 +422,9 @@ def _install_launchd() -> tuple[bool, str]:
             "KeepAlive": {"SuccessfulExit": False},
             "StandardOutPath": str(log_dir / "watchdog.log"),
             "StandardErrorPath": str(log_dir / "watchdog.log"),
-            "EnvironmentVariables": {"PATH": "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"},
+            "EnvironmentVariables": {
+                "PATH": f"{Path.home()}/.local/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
+            },
         }
         # Write plist files
         sync_plist_path.write_bytes(plistlib.dumps(sync_plist))
@@ -465,8 +476,15 @@ def _install_cron() -> tuple[bool, str]:
         log_dir = get_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Find executable
+        # Find executable - check multiple locations for pipx compatibility
         exe_path = shutil.which("nextdns-blocker")
+
+        # Fallback: check pipx default location if not found in PATH
+        if not exe_path:
+            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
+            if pipx_exe.exists():
+                exe_path = str(pipx_exe)
+
         if exe_path:
             exe = exe_path
         else:
@@ -521,6 +539,13 @@ def run_initial_sync() -> bool:
 
     try:
         exe_path = shutil.which("nextdns-blocker")
+
+        # Fallback: check pipx default location if not found in PATH
+        if not exe_path:
+            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
+            if pipx_exe.exists():
+                exe_path = str(pipx_exe)
+
         if exe_path:
             result = subprocess.run(
                 [exe_path, "sync"],
