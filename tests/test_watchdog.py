@@ -991,8 +991,9 @@ class TestGetExecutablePath:
 
         with patch("shutil.which", return_value=None):
             with patch("nextdns_blocker.watchdog.Path.home", return_value=tmp_path):
-                result = watchdog.get_executable_path()
-                assert result == str(pipx_exe)
+                with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
+                    result = watchdog.get_executable_path()
+                    assert result == str(pipx_exe)
 
 
 class TestGetExecutableArgs:
@@ -1024,8 +1025,9 @@ class TestGetExecutableArgs:
 
         with patch("shutil.which", return_value=None):
             with patch("nextdns_blocker.watchdog.Path.home", return_value=tmp_path):
-                result = watchdog.get_executable_args()
-                assert result == [str(pipx_exe)]
+                with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
+                    result = watchdog.get_executable_args()
+                    assert result == [str(pipx_exe)]
 
     def test_get_executable_args_returns_list(self):
         """Should always return a list."""
