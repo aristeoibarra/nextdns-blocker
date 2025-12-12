@@ -714,7 +714,7 @@ class TestGeneratePlist:
         assert parsed["RunAtLoad"] is True
 
     def test_generate_plist_includes_path(self):
-        """Should include PATH environment variable."""
+        """Should include PATH environment variable with pipx location."""
         import plistlib
 
         content = watchdog.generate_plist(
@@ -725,7 +725,9 @@ class TestGeneratePlist:
         )
         parsed = plistlib.loads(content)
         assert "PATH" in parsed["EnvironmentVariables"]
-        assert "/opt/homebrew/bin" in parsed["EnvironmentVariables"]["PATH"]
+        path_env = parsed["EnvironmentVariables"]["PATH"]
+        assert "/opt/homebrew/bin" in path_env
+        assert "/.local/bin" in path_env  # pipx location
 
     def test_generate_plist_log_paths(self):
         """Should set stdout and stderr to log file."""

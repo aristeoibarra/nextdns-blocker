@@ -261,7 +261,9 @@ def generate_plist(
         "KeepAlive": {"SuccessfulExit": False},  # Restart if process crashes
         "StandardOutPath": str(log_file),
         "StandardErrorPath": str(log_file),
-        "EnvironmentVariables": {"PATH": "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"},
+        "EnvironmentVariables": {
+            "PATH": f"{Path.home()}/.local/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
+        },
     }
     return plistlib.dumps(plist_dict)
 
