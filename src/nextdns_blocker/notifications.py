@@ -38,7 +38,7 @@ def get_webhook_url() -> Optional[str]:
     return os.getenv("DISCORD_WEBHOOK_URL")
 
 
-def send_discord_notification(domain: str, event_type: str) -> None:
+def send_discord_notification(domain: str, event_type: str, webhook_url: str = None) -> None:
     """
     Send a Discord webhook notification for a block/unblock event.
 
