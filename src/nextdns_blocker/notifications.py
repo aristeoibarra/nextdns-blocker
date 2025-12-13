@@ -61,10 +61,10 @@ def send_discord_notification(domain: str, event_type: str) -> None:
 
     # Determine title and color based on event type
     if event_type == "block":
-        title = "Domain Blocked"
+        title = "🔒 Domain Blocked"
         color = COLOR_BLOCK
     elif event_type == "unblock":
-        title = "Domain Unblocked"
+        title = "🔓 Domain Unblocked"
         color = COLOR_UNBLOCK
     else:
         logger.warning(f"Unknown event type: {event_type}, skipping notification")
