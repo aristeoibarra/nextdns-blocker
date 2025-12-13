@@ -552,3 +552,26 @@ The codebase follows these practices:
 ## License
 
 MIT
+
+## ❓ Frequently Asked Questions
+
+###  What is the difference between this tool and the NextDNS dashboard?
+While the NextDNS dashboard allows you to manually toggle blocklists or set basic parental controls, **nextdns-blocker** is an automation agent. It allows for:
+- **Dynamic Scheduling:** Automatically blocking and unblocking specific domains at precise times (e.g., blocking gaming sites only during study hours).
+- **State Enforcement:** The "Watchdog" feature actively monitors your configuration to ensure restrictions haven't been manually disabled or bypassed.
+
+###  How do I get my NextDNS API Key and Profile ID?
+- **Profile ID:** This is the 6-character code found in the URL of your NextDNS dashboard (e.g., `https://my.nextdns.io/abcdef` -> `abcdef`).
+- **API Key:** Go to your [NextDNS Account page](https://my.nextdns.io/account), scroll to the "API Key" section, and click to reveal/copy your key.
+
+###  Does this tool block ads automatically?
+**No.** This tool is designed to manage **access policies** (blocking specific websites/apps) rather than maintaining ad-block lists. For ad blocking, please enable the *NextDNS Ads & Trackers Blocklist* directly in your profile settings.
+
+###  How does the "Watchdog" feature work?
+The Watchdog runs in the background to prevent unauthorized changes. If a blocked domain is manually unblocked via the dashboard (or by another user), the Watchdog detects the discrepancy and immediately re-applies the block rule to maintain the security policy.
+
+###  Where can I see what changes the blocker has made?
+The tool includes an **Audit Log** feature. Check the generated log files (default location typically in the installation directory) to view a history of all block/unblock actions and watchdog enforcement events.
+
+###  Can I run this on a Raspberry Pi?
+**Yes.** Since `nextdns-blocker` is a Python package, it is lightweight and compatible with any system that supports Python 3, including Raspberry Pi, Linux servers, macOS, and Windows.
