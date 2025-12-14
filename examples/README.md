@@ -129,3 +129,4 @@ Need help customizing these? Tell us which pattern you want (e.g. "block social 
 ```
 
 Copy any snippet into your chosen example file (e.g. `minimal.json`) and edit `domain`, `days`, and `time_ranges` to match your needs.
+
