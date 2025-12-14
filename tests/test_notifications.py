@@ -78,7 +78,7 @@ class TestDiscordNotifications:
         assert len(payload["embeds"]) == 1
 
         embed = payload["embeds"][0]
-        assert embed["title"] == "Domain Blocked"
+        assert embed["title"] == "🔒 Domain Blocked"
         assert embed["description"] == "reddit.com"
         assert embed["color"] == COLOR_BLOCK
         assert embed["footer"]["text"] == "NextDNS Blocker"
@@ -103,7 +103,7 @@ class TestDiscordNotifications:
         request = responses.calls[0].request
         payload = json.loads(request.body)
         embed = payload["embeds"][0]
-        assert embed["title"] == "Domain Unblocked"
+        assert embed["title"] == "🔓 Domain Unblocked"
         assert embed["description"] == "reddit.com"
         assert embed["color"] == COLOR_UNBLOCK
 

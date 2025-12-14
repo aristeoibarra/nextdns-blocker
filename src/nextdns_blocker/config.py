@@ -38,6 +38,9 @@ API_KEY_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{8,}$")
 # NextDNS Profile ID pattern: alphanumeric, typically 6 characters like "abc123"
 PROFILE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,30}$")
 
+# Discord Webhook pattern: Follows Regex for default rl
+DISCORD_WEBHOOK_PATTERN = re.compile(r"^https://discord\.com/api/webhooks/\d+/[a-zA-Z0-9_-]+$")
+
 
 def validate_api_key(api_key: str) -> bool:
     """
@@ -67,6 +70,21 @@ def validate_profile_id(profile_id: str) -> bool:
     if not profile_id or not isinstance(profile_id, str):
         return False
     return PROFILE_ID_PATTERN.match(profile_id.strip()) is not None
+
+
+def validate_discord_webhook(url: str) -> bool:
+    """
+    Validate Discord Webhook URL format.
+
+    Args:
+        url: Webhook URL string to validate
+
+    Returns:
+        True if valid format, False otherwise
+    """
+    if not url or not isinstance(url, str):
+        return False
+    return DISCORD_WEBHOOK_PATTERN.match(url.strip()) is not None
 
 
 # =============================================================================
@@ -693,6 +711,7 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
     config: dict[str, Any] = {
         "api_key": os.getenv("NEXTDNS_API_KEY"),
         "profile_id": os.getenv("NEXTDNS_PROFILE_ID"),
+        "discord_webhook_url": os.getenv("DISCORD_WEBHOOK_URL"),
         "timezone": os.getenv("TIMEZONE", DEFAULT_TIMEZONE),
         "domains_url": os.getenv("DOMAINS_URL"),
         "timeout": safe_int(os.getenv("API_TIMEOUT"), DEFAULT_TIMEOUT, "API_TIMEOUT"),
@@ -728,6 +747,14 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
             f"Invalid DOMAINS_URL '{config['domains_url']}'. "
             f"Must be a valid http:// or https:// URL"
         )
+
+    # Validate Discord Webhook if provided
+    webhook_url = config.get("discord_webhook_url")
+    if webhook_url and not validate_discord_webhook(webhook_url):
+        logger.warning(f"Invalid DISCORD_WEBHOOK_URL format: {webhook_url}")
+        logger.warning("Expected format: https://discord.com/api/webhooks/{id}/{token}")
+        # Option: Set to None to prevent usage, or keep it to let it fail loudly later
+        # config["discord_webhook_url"] = None
 
     return config
 

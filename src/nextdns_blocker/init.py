@@ -74,6 +74,85 @@ def validate_timezone(tz_str: str) -> tuple[bool, str]:
         return False, f"Invalid timezone: {tz_str}"
 
 
+def detect_system_timezone() -> str:
+    """
+    Auto-detect the system timezone.
+
+    Attempts detection in order:
+    1. TZ environment variable
+    2. /etc/localtime symlink (macOS/Linux)
+    3. Windows tzutil command
+    4. Falls back to UTC
+
+    Returns:
+        IANA timezone string (e.g., 'America/Mexico_City')
+    """
+    # Try TZ environment variable first
+    tz_env = os.environ.get("TZ")
+    if tz_env:
+        try:
+            ZoneInfo(tz_env)
+            return tz_env
+        except KeyError:
+            pass
+
+    # Try reading /etc/localtime symlink (macOS/Linux)
+    if not is_windows():
+        try:
+            localtime = Path("/etc/localtime")
+            if localtime.is_symlink():
+                target = str(localtime.resolve())
+                # Handle both "zoneinfo/" and "zoneinfo.default/" (macOS)
+                for marker in ("zoneinfo/", "zoneinfo.default/"):
+                    if marker in target:
+                        tz_name = target.split(marker)[-1]
+                        ZoneInfo(tz_name)
+                        return tz_name
+        except (OSError, KeyError):
+            pass
+
+    # Try Windows tzutil command
+    if is_windows():
+        try:
+            result = subprocess.run(
+                ["tzutil", "/g"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            windows_tz = result.stdout.strip()
+            # Map common Windows timezone names to IANA
+            windows_to_iana = {
+                "Pacific Standard Time": "America/Los_Angeles",
+                "Mountain Standard Time": "America/Denver",
+                "Central Standard Time": "America/Chicago",
+                "Eastern Standard Time": "America/New_York",
+                "Central Standard Time (Mexico)": "America/Mexico_City",
+                "US Eastern Standard Time": "America/Indianapolis",
+                "Atlantic Standard Time": "America/Halifax",
+                "UTC": "UTC",
+                "GMT Standard Time": "Europe/London",
+                "W. Europe Standard Time": "Europe/Berlin",
+                "Romance Standard Time": "Europe/Paris",
+                "Central European Standard Time": "Europe/Warsaw",
+                "E. Europe Standard Time": "Europe/Bucharest",
+                "Russian Standard Time": "Europe/Moscow",
+                "China Standard Time": "Asia/Shanghai",
+                "Tokyo Standard Time": "Asia/Tokyo",
+                "Korea Standard Time": "Asia/Seoul",
+                "India Standard Time": "Asia/Kolkata",
+                "AUS Eastern Standard Time": "Australia/Sydney",
+                "E. Australia Standard Time": "Australia/Brisbane",
+                "New Zealand Standard Time": "Pacific/Auckland",
+            }
+            if windows_tz in windows_to_iana:
+                return windows_to_iana[windows_tz]
+        except (subprocess.SubprocessError, OSError):
+            pass
+
+    return "UTC"
+
+
 def create_env_file(
     config_dir: Path,
     api_key: str,
@@ -667,8 +746,8 @@ def run_interactive_wizard(
 
     profile_id = profile_id.strip()
 
-    # Prompt for timezone
-    default_tz = "UTC"
+    # Prompt for timezone (auto-detect from system)
+    default_tz = detect_system_timezone()
     timezone = click.prompt("  Timezone", default=default_tz)
     timezone = timezone.strip()
 

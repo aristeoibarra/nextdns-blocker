@@ -38,7 +38,9 @@ def get_webhook_url() -> Optional[str]:
     return os.getenv("DISCORD_WEBHOOK_URL")
 
 
-def send_discord_notification(domain: str, event_type: str) -> None:
+def send_discord_notification(
+    domain: str, event_type: str, webhook_url: Optional[str] = None
+) -> None:
     """
     Send a Discord webhook notification for a block/unblock event.
 
@@ -54,17 +56,18 @@ def send_discord_notification(domain: str, event_type: str) -> None:
     if not is_notifications_enabled():
         return
 
-    webhook_url = get_webhook_url()
+    if webhook_url is None:
+        webhook_url = get_webhook_url()
     if not webhook_url:
         logger.debug("Discord webhook URL not configured, skipping notification")
         return
 
     # Determine title and color based on event type
     if event_type == "block":
-        title = "Domain Blocked"
+        title = "🔒 Domain Blocked"
         color = COLOR_BLOCK
     elif event_type == "unblock":
-        title = "Domain Unblocked"
+        title = "🔓 Domain Unblocked"
         color = COLOR_UNBLOCK
     else:
         logger.warning(f"Unknown event type: {event_type}, skipping notification")

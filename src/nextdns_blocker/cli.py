@@ -253,7 +253,9 @@ def unblock(domain: str, config_dir: Optional[Path]) -> None:
 
         if client.unblock(domain):
             audit_log("UNBLOCK", domain)
-            send_discord_notification(domain, "unblock")
+            send_discord_notification(
+                domain, "unblock", webhook_url=config.get("discord_webhook_url")
+            )
             click.echo(f"\n  Unblocked: {domain}\n")
         else:
             click.echo(f"\n  Error: Failed to unblock '{domain}'\n", err=True)
@@ -322,7 +324,9 @@ def sync(
                 else:
                     if client.block(domain):
                         audit_log("BLOCK", domain)
-                        send_discord_notification(domain, "block")
+                        send_discord_notification(
+                            domain, "block", webhook_url=config.get("discord_webhook_url")
+                        )
                         blocked_count += 1
             elif not should_block and is_blocked:
                 # Don't unblock protected domains
@@ -336,7 +340,9 @@ def sync(
                 else:
                     if client.unblock(domain):
                         audit_log("UNBLOCK", domain)
-                        send_discord_notification(domain, "unblock")
+                        send_discord_notification(
+                            domain, "unblock", webhook_url=config.get("discord_webhook_url")
+                        )
                         unblocked_count += 1
 
         # Sync allowlist
@@ -604,6 +610,37 @@ def health(config_dir: Optional[Path]) -> None:
         click.echo("  Status: HEALTHY\n")
     else:
         click.echo("  Status: DEGRADED\n")
+        sys.exit(1)
+
+
+@main.command()
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Config directory (default: auto-detect)",
+)
+def test_notifications(config_dir: Optional[Path]) -> None:
+    """Send a test notification to verify Discord integration."""
+    try:
+        config = load_config(config_dir)
+        webhook_url = config.get("discord_webhook_url")
+
+        if not webhook_url:
+            click.echo("\n  [✗] Error: DISCORD_WEBHOOK_URL is not set in configuration.", err=True)
+            click.echo("      Please add it to your .env file.\n", err=True)
+            sys.exit(1)
+
+        click.echo("\n  Sending test notification...")
+
+        # We pass the loaded webhook_url explicitly
+        send_discord_notification(
+            event_type="test", domain="Test Connection", webhook_url=webhook_url
+        )
+
+        click.echo(" Notification sent! Check your Discord channel.\n")
+
+    except ConfigurationError as e:
+        click.echo(f"\n  Config error: {e}\n", err=True)
         sys.exit(1)
 
 

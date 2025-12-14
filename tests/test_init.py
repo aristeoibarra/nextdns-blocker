@@ -14,6 +14,7 @@ from nextdns_blocker.init import (
     create_env_file,
     create_sample_domains,
     detect_existing_config,
+    detect_system_timezone,
     handle_domains_migration,
     prompt_domains_migration,
     run_initial_sync,
@@ -106,6 +107,99 @@ class TestValidateTimezone:
         valid, msg = validate_timezone("Invalid/Timezone")
         assert valid is False
         assert "Invalid timezone" in msg
+
+
+class TestDetectSystemTimezone:
+    """Tests for detect_system_timezone function."""
+
+    def test_returns_string(self):
+        """Should return a string."""
+        result = detect_system_timezone()
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_returns_valid_timezone(self):
+        """Should return a valid IANA timezone."""
+        from zoneinfo import ZoneInfo
+
+        result = detect_system_timezone()
+        # Should not raise KeyError
+        ZoneInfo(result)
+
+    @patch.dict(os.environ, {"TZ": "America/New_York"})
+    def test_uses_tz_env_variable(self):
+        """Should use TZ environment variable when set."""
+        result = detect_system_timezone()
+        assert result == "America/New_York"
+
+    @patch.dict(os.environ, {"TZ": "Invalid/Timezone"})
+    def test_ignores_invalid_tz_env(self):
+        """Should ignore invalid TZ environment variable."""
+        result = detect_system_timezone()
+        # Should fall back to system detection or UTC, not the invalid value
+        assert result != "Invalid/Timezone"
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("nextdns_blocker.init.is_windows", return_value=False)
+    @patch("nextdns_blocker.init.Path")
+    def test_unix_symlink_detection(self, mock_path_class, mock_is_windows):
+        """Should detect timezone from /etc/localtime symlink on Unix."""
+        mock_path = MagicMock()
+        mock_path.is_symlink.return_value = True
+        mock_path.resolve.return_value = MagicMock(
+            __str__=lambda self: "/usr/share/zoneinfo/Europe/London"
+        )
+        mock_path_class.return_value = mock_path
+
+        result = detect_system_timezone()
+        assert result == "Europe/London"
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("nextdns_blocker.init.is_windows", return_value=False)
+    @patch("nextdns_blocker.init.Path")
+    def test_macos_zoneinfo_default_path(self, mock_path_class, mock_is_windows):
+        """Should detect timezone from macOS zoneinfo.default path."""
+        mock_path = MagicMock()
+        mock_path.is_symlink.return_value = True
+        mock_path.resolve.return_value = MagicMock(
+            __str__=lambda self: "/usr/share/zoneinfo.default/America/Los_Angeles"
+        )
+        mock_path_class.return_value = mock_path
+
+        result = detect_system_timezone()
+        assert result == "America/Los_Angeles"
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("nextdns_blocker.init.is_windows", return_value=True)
+    @patch("nextdns_blocker.init.subprocess.run")
+    def test_windows_tzutil_detection(self, mock_run, mock_is_windows):
+        """Should detect timezone using tzutil on Windows."""
+        mock_run.return_value = MagicMock(stdout="Pacific Standard Time\n")
+
+        result = detect_system_timezone()
+        assert result == "America/Los_Angeles"
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("nextdns_blocker.init.is_windows", return_value=True)
+    @patch("nextdns_blocker.init.subprocess.run")
+    def test_windows_unknown_timezone_falls_back(self, mock_run, mock_is_windows):
+        """Should fall back to UTC for unknown Windows timezone."""
+        mock_run.return_value = MagicMock(stdout="Unknown Timezone Name\n")
+
+        result = detect_system_timezone()
+        assert result == "UTC"
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("nextdns_blocker.init.is_windows", return_value=False)
+    @patch("nextdns_blocker.init.Path")
+    def test_falls_back_to_utc(self, mock_path_class, mock_is_windows):
+        """Should fall back to UTC when detection fails."""
+        mock_path = MagicMock()
+        mock_path.is_symlink.return_value = False
+        mock_path_class.return_value = mock_path
+
+        result = detect_system_timezone()
+        assert result == "UTC"
 
 
 class TestCreateEnvFile:
