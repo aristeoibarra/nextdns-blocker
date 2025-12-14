@@ -90,7 +90,7 @@ nextdns-blocker init
 The wizard will prompt for:
 - API Key
 - Profile ID
-- Timezone
+- Timezone (auto-detected from system)
 - Option to create sample domains.json
 
 ### 3. Configure Domains and Schedules
@@ -255,7 +255,7 @@ crontab -l
 |----------|----------|---------|-------------|
 | `NEXTDNS_API_KEY` | Yes | - | Your NextDNS API key |
 | `NEXTDNS_PROFILE_ID` | Yes | - | Your NextDNS profile ID |
-| `TIMEZONE` | No | `UTC` | Timezone for schedule evaluation |
+| `TIMEZONE` | No | Auto-detected | Timezone for schedule evaluation (auto-detected during init) |
 | `API_TIMEOUT` | No | `10` | API request timeout in seconds |
 | `API_RETRIES` | No | `3` | Number of retry attempts |
 | `DOMAINS_URL` | No | - | URL to fetch domains.json from |
@@ -380,7 +380,12 @@ nextdns-blocker status
 
 ### Timezone
 
-Edit `.env` to change timezone:
+The timezone is auto-detected during `init` based on your system settings:
+- **macOS/Linux**: Reads `/etc/localtime` symlink
+- **Windows**: Uses `tzutil /g` command
+- **Fallback**: `TZ` environment variable or `UTC`
+
+To override, edit `.env`:
 
 ```bash
 TIMEZONE=America/New_York
@@ -404,8 +409,8 @@ See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_z
 - See `domains.json.example` for reference
 
 **Wrong timezone?**
-- Update `TIMEZONE` in `.env`
-- Re-run `./install.sh`
+- Re-run `nextdns-blocker init` (timezone is auto-detected)
+- Or manually update `TIMEZONE` in `.env`
 - Check logs to verify timezone is being used
 
 **API timeouts?**
