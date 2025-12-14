@@ -60,3 +60,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 .claude/
+
+# Documentation (Astro/Starlight)
+docs/node_modules/
+docs/dist/
+docs/.astro/
