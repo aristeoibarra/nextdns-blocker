@@ -1,9 +1,15 @@
-# CODEOWNERS - Define code owners for automatic review requests
-# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
-
 # Default owner for everything
 * @aristeoibarra
 
-# Critical files require explicit review
-.github/workflows/publish.yml @aristeoibarra
-pyproject.toml @aristeoibarra
+# Documentation
+*.md @aristeoibarra
+docs/ @aristeoibarra
+
+# Source code
+src/ @aristeoibarra
+
+# Tests
+tests/ @aristeoibarra
+
+# CI/CD
+.github/ @aristeoibarra
