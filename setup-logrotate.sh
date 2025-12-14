@@ -13,6 +13,7 @@ detect_os() {
         Linux*)     echo "linux" ;;
         *)          echo "unknown" ;;
     esac
+    
 }
 
 OS=$(detect_os)
