@@ -4,7 +4,7 @@ import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import click
 from rich.console import Console
@@ -23,9 +23,13 @@ from .common import (
 from .config import (
     DEFAULT_PAUSE_MINUTES,
     get_cache_status,
+    get_config_dir,
     get_protected_domains,
     load_config,
     load_domains,
+    validate_allowlist_config,
+    validate_domain_config,
+    validate_no_overlap,
 )
 from .exceptions import ConfigurationError, DomainValidationError
 from .init import run_interactive_wizard, run_non_interactive
@@ -920,6 +924,185 @@ def update(yes: bool) -> None:
     except Exception as e:
         console.print(f"  [red]Update failed: {e}[/red]\n", highlight=False)
         sys.exit(1)
+
+
+@main.command()
+@click.option("--json", "output_json", is_flag=True, help="Output in JSON format")
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Config directory (default: auto-detect)",
+)
+def validate(output_json: bool, config_dir: Optional[Path]) -> None:
+    """Validate configuration files before deployment.
+
+    Checks domains.json for:
+    - Valid JSON syntax
+    - Valid domain formats
+    - Valid schedule time formats (HH:MM)
+    - No denylist/allowlist conflicts
+    """
+    import json as json_module
+
+    # Determine config directory
+    if config_dir is None:
+        config_dir = get_config_dir()
+
+    results: dict[str, Any] = {
+        "valid": True,
+        "checks": [],
+        "errors": [],
+        "warnings": [],
+        "summary": {},
+    }
+
+    def add_check(name: str, passed: bool, detail: str = "") -> None:
+        results["checks"].append({"name": name, "passed": passed, "detail": detail})
+        if not passed:
+            results["valid"] = False
+
+    def add_error(message: str) -> None:
+        results["errors"].append(message)
+        results["valid"] = False
+
+    def add_warning(message: str) -> None:
+        results["warnings"].append(message)
+
+    # Check 1: domains.json exists and has valid JSON syntax
+    domains_file = config_dir / "domains.json"
+    domains_data = None
+
+    # Try local file first, then check for remote URL
+    config_has_url = False
+    try:
+        env_config = load_config(config_dir)
+        config_has_url = bool(env_config.get("domains_url"))
+    except ConfigurationError:
+        pass
+
+    if domains_file.exists():
+        try:
+            with open(domains_file, encoding="utf-8") as f:
+                domains_data = json_module.load(f)
+            add_check("domains.json", True, "valid JSON syntax")
+        except json_module.JSONDecodeError as e:
+            add_check("domains.json", False, f"invalid JSON: {e}")
+            add_error(f"JSON syntax error: {e}")
+    elif config_has_url:
+        # Remote URL configured - try to load from cache or fetch
+        try:
+            from .config import fetch_remote_domains
+
+            domains_data = fetch_remote_domains(env_config["domains_url"])
+            add_check("domains.json", True, "loaded from remote URL")
+        except ConfigurationError as e:
+            add_check("domains.json", False, f"failed to load: {e}")
+            add_error(str(e))
+    else:
+        add_check("domains.json", False, "file not found")
+        add_error(f"domains.json not found at {domains_file}")
+
+    if domains_data is None:
+        # Cannot proceed without valid domains data
+        if output_json:
+            console.print(json_module.dumps(results, indent=2))
+        else:
+            console.print("\n  [red]❌ Configuration validation failed[/red]")
+            for error in results["errors"]:
+                console.print(f"  [red]✗[/red] {error}")
+            console.print()
+        sys.exit(1)
+
+    # Check 2: Validate structure
+    if not isinstance(domains_data, dict):
+        add_error("Configuration must be a JSON object")
+    elif "domains" not in domains_data:
+        add_error("Missing 'domains' array in configuration")
+
+    domains_list = domains_data.get("domains", []) if isinstance(domains_data, dict) else []
+    allowlist_list = domains_data.get("allowlist", []) if isinstance(domains_data, dict) else []
+
+    # Update summary
+    results["summary"]["domains_count"] = len(domains_list)
+    results["summary"]["allowlist_count"] = len(allowlist_list)
+
+    # Check 3: Count and validate domains
+    if domains_list:
+        add_check("domains configured", True, f"{len(domains_list)} domains")
+    else:
+        add_check("domains configured", False, "no domains found")
+
+    # Check 4: Count allowlist entries
+    if allowlist_list:
+        add_check("allowlist entries", True, f"{len(allowlist_list)} entries")
+
+    # Check 5: Count protected domains
+    protected_domains = [d for d in domains_list if d.get("protected", False)]
+    results["summary"]["protected_count"] = len(protected_domains)
+    if protected_domains:
+        add_check("protected domains", True, f"{len(protected_domains)} protected")
+
+    # Check 6: Validate each domain configuration
+    domain_errors: list[str] = []
+    schedule_count = 0
+
+    for idx, domain_config in enumerate(domains_list):
+        errors = validate_domain_config(domain_config, idx)
+        domain_errors.extend(errors)
+        if domain_config.get("schedule"):
+            schedule_count += 1
+
+    results["summary"]["schedules_count"] = schedule_count
+
+    # Check 7: Validate allowlist entries
+    for idx, allowlist_config in enumerate(allowlist_list):
+        errors = validate_allowlist_config(allowlist_config, idx)
+        domain_errors.extend(errors)
+
+    if domain_errors:
+        add_check("domain formats", False, f"{len(domain_errors)} error(s)")
+        for error in domain_errors:
+            add_error(error)
+    else:
+        add_check("domain formats", True, "all valid")
+
+    # Check 8: Validate schedules
+    if schedule_count > 0:
+        # Schedule validation is done as part of validate_domain_config
+        # If we got here without errors, schedules are valid
+        if not domain_errors:
+            add_check("schedules", True, f"{schedule_count} schedule(s) valid")
+
+    # Check 9: Check for denylist/allowlist conflicts
+    overlap_errors = validate_no_overlap(domains_list, allowlist_list)
+    if overlap_errors:
+        add_check("no conflicts", False, f"{len(overlap_errors)} conflict(s)")
+        for error in overlap_errors:
+            add_error(error)
+    else:
+        add_check("no conflicts", True, "no denylist/allowlist conflicts")
+
+    # Output results
+    if output_json:
+        console.print(json_module.dumps(results, indent=2))
+    else:
+        console.print()
+        for check in results["checks"]:
+            if check["passed"]:
+                console.print(f"  [green]✓[/green] {check['name']}: {check['detail']}")
+            else:
+                console.print(f"  [red]✗[/red] {check['name']}: {check['detail']}")
+
+        if results["errors"]:
+            console.print(f"\n  [red]❌ Configuration has {len(results['errors'])} error(s)[/red]")
+            for error in results["errors"]:
+                console.print(f"    • {error}")
+        else:
+            console.print("\n  [green]✅ Configuration OK[/green]")
+
+        console.print()
+
+    sys.exit(0 if results["valid"] else 1)
 
 
 if __name__ == "__main__":
