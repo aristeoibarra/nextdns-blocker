@@ -78,7 +78,9 @@ def cmd_show(action_id: str) -> None:
     """Show details of a pending action."""
     # Support partial ID matching
     actions = get_pending_actions()
-    matching = [a for a in actions if a.get("id", "").endswith(action_id) or a.get("id", "") == action_id]
+    matching = [
+        a for a in actions if a.get("id", "").endswith(action_id) or a.get("id", "") == action_id
+    ]
 
     if not matching:
         console.print(f"\n  [red]Error: No action found matching '{action_id}'[/red]\n")
@@ -140,7 +142,9 @@ def cmd_cancel(action_id: str, yes: bool, config_dir: Optional[Path]) -> None:
 
     # Support partial ID matching
     actions = get_pending_actions(status="pending")
-    matching = [a for a in actions if a.get("id", "").endswith(action_id) or a.get("id", "") == action_id]
+    matching = [
+        a for a in actions if a.get("id", "").endswith(action_id) or a.get("id", "") == action_id
+    ]
 
     if not matching:
         console.print(f"\n  [red]Error: No pending action found matching '{action_id}'[/red]\n")
@@ -180,7 +184,9 @@ def cmd_cancel(action_id: str, yes: bool, config_dir: Optional[Path]) -> None:
             webhook_url=webhook_url,
         )
 
-        console.print(f"\n  [green]Cancelled pending unblock for {action.get('domain', 'unknown')}[/green]\n")
+        console.print(
+            f"\n  [green]Cancelled pending unblock for {action.get('domain', 'unknown')}[/green]\n"
+        )
     else:
         console.print("\n  [red]Error: Failed to cancel action[/red]\n")
 
