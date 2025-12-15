@@ -848,6 +848,56 @@ def watchdog_cli() -> None:
     pass
 
 
+def _process_pending_actions() -> None:
+    """Execute pending actions that are ready."""
+    from .client import NextDNSClient
+    from .config import load_config
+    from .notifications import send_discord_notification
+    from .pending import cleanup_old_actions, get_ready_actions, mark_action_executed
+
+    ready_actions = get_ready_actions()
+    if not ready_actions:
+        return
+
+    try:
+        config = load_config()
+        client = NextDNSClient(
+            config["api_key"],
+            config["profile_id"],
+            config["timeout"],
+            config["retries"],
+        )
+    except Exception as e:
+        logger.error(f"Failed to load config for pending actions: {e}")
+        return
+
+    for action in ready_actions:
+        domain = action["domain"]
+        action_id = action["id"]
+
+        if action["action"] == "unblock":
+            try:
+                if client.unblock(domain):
+                    mark_action_executed(action_id)
+                    audit_log("UNBLOCK", f"{domain} (pending: {action_id})")
+                    send_discord_notification(
+                        domain,
+                        "unblock",
+                        webhook_url=config.get("discord_webhook_url"),
+                    )
+                    click.echo(f"  Executed pending unblock: {domain}")
+                else:
+                    logger.error(f"Failed to unblock {domain} (pending: {action_id})")
+            except Exception as e:
+                logger.error(f"Error processing pending action {action_id}: {e}")
+
+    # Periodic cleanup of old actions
+    import random
+
+    if random.random() < 0.01:  # ~1% chance per run
+        cleanup_old_actions(max_age_days=7)
+
+
 @watchdog_cli.command("check")
 def cmd_check() -> None:
     """Check and restore scheduled jobs if missing."""
@@ -855,6 +905,9 @@ def cmd_check() -> None:
         remaining = get_disabled_remaining()
         click.echo(f"  watchdog disabled ({remaining})")
         return
+
+    # Process pending actions first
+    _process_pending_actions()
 
     if is_macos():
         _check_launchd_jobs()

@@ -154,7 +154,7 @@ class TestProtectedDomainErrors:
         runner: CliRunner,
         tmp_path: Path,
     ) -> None:
-        """Test that unblock command rejects protected domains."""
+        """Test that unblock command rejects protected domains (unblock_delay: never)."""
         config_dir = tmp_path / "config"
         log_dir = tmp_path / "logs"
         config_dir.mkdir(parents=True)
@@ -179,7 +179,8 @@ class TestProtectedDomainErrors:
                 )
 
         assert result.exit_code != 0
-        assert "protected" in result.output.lower()
+        # Now shows "unblock_delay: never" instead of "protected"
+        assert "cannot be unblocked" in result.output.lower()
 
 
 class TestInvalidDomainErrors:

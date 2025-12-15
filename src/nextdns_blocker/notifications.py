@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 # Discord embed colors
 COLOR_BLOCK = 15158332  # Red
 COLOR_UNBLOCK = 3066993  # Green
+COLOR_PENDING = 16776960  # Yellow
+COLOR_CANCEL = 9807270  # Gray
 
 # Notification timeout in seconds
 NOTIFICATION_TIMEOUT = 5
@@ -64,11 +66,17 @@ def send_discord_notification(
 
     # Determine title and color based on event type
     if event_type == "block":
-        title = "🔒 Domain Blocked"
+        title = "Domain Blocked"
         color = COLOR_BLOCK
     elif event_type == "unblock":
-        title = "🔓 Domain Unblocked"
+        title = "Domain Unblocked"
         color = COLOR_UNBLOCK
+    elif event_type == "pending":
+        title = "Unblock Scheduled"
+        color = COLOR_PENDING
+    elif event_type == "cancel_pending":
+        title = "Scheduled Unblock Cancelled"
+        color = COLOR_CANCEL
     else:
         logger.warning(f"Unknown event type: {event_type}, skipping notification")
         return

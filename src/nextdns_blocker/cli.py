@@ -241,12 +241,15 @@ def resume() -> None:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Config directory (default: auto-detect)",
 )
-def unblock(domain: str, config_dir: Optional[Path]) -> None:
+@click.option("--force", is_flag=True, help="Skip delay and unblock immediately")
+def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
     """Manually unblock a DOMAIN."""
+    from .config import get_unblock_delay, parse_unblock_delay_seconds
+    from .pending import create_pending_action, get_pending_for_domain
+
     try:
         config = load_config(config_dir)
         domains, _ = load_domains(config["script_dir"])
-        protected = get_protected_domains(domains)
 
         if not validate_domain(domain):
             console.print(
@@ -254,13 +257,54 @@ def unblock(domain: str, config_dir: Optional[Path]) -> None:
             )
             sys.exit(1)
 
-        if domain in protected:
+        # Get unblock_delay setting for this domain
+        unblock_delay = get_unblock_delay(domains, domain)
+
+        # Handle 'never' - cannot unblock
+        if unblock_delay == "never":
             console.print(
-                f"\n  [blue]Error: '{domain}' is protected and cannot be unblocked[/blue]\n",
+                f"\n  [blue]Error: '{domain}' cannot be unblocked "
+                f"(unblock_delay: never)[/blue]\n",
                 highlight=False,
             )
             sys.exit(1)
 
+        # Check for existing pending action
+        existing = get_pending_for_domain(domain)
+        if existing and not force:
+            execute_at = existing["execute_at"]
+            console.print(
+                f"\n  [yellow]Pending unblock already scheduled for '{domain}'[/yellow]"
+                f"\n  Execute at: {execute_at}"
+                f"\n  ID: {existing['id']}"
+                f"\n  Use 'pending cancel {existing['id'][-12:]}' to cancel\n"
+            )
+            return
+
+        # Handle delay (if set and not forcing)
+        delay_seconds = parse_unblock_delay_seconds(unblock_delay or "0")
+
+        if delay_seconds and delay_seconds > 0 and not force:
+            # Create pending action
+            action = create_pending_action(domain, unblock_delay, requested_by="cli")
+            if action:
+                send_discord_notification(
+                    domain=f"{domain} (scheduled)",
+                    event_type="pending",
+                    webhook_url=config.get("discord_webhook_url"),
+                )
+                execute_at = action["execute_at"]
+                console.print(f"\n  [yellow]Unblock scheduled for '{domain}'[/yellow]")
+                console.print(f"  Delay: {unblock_delay}")
+                console.print(f"  Execute at: {execute_at}")
+                console.print(f"  ID: {action['id']}")
+                console.print("\n  Use 'pending list' to view or 'pending cancel' to abort\n")
+            else:
+                console.print("\n  [red]Error: Failed to schedule unblock[/red]\n")
+                sys.exit(1)
+            return
+
+        # Immediate unblock (no delay, delay=0, or --force)
         client = NextDNSClient(
             config["api_key"], config["profile_id"], config["timeout"], config["retries"]
         )
@@ -315,9 +359,11 @@ def sync(
         return
 
     try:
+        from .config import get_unblock_delay, parse_unblock_delay_seconds
+        from .pending import create_pending_action, get_pending_for_domain
+
         config = load_config(config_dir)
         domains, allowlist = load_domains(config["script_dir"])
-        protected = get_protected_domains(domains)
 
         client = NextDNSClient(
             config["api_key"], config["profile_id"], config["timeout"], config["retries"]
@@ -347,12 +393,39 @@ def sync(
                         )
                         blocked_count += 1
             elif not should_block and is_blocked:
-                # Don't unblock protected domains
-                if domain in protected:
+                # Check unblock_delay for this domain
+                domain_delay = get_unblock_delay(domains, domain)
+
+                # Handle 'never' - cannot unblock
+                if domain_delay == "never":
                     if verbose:
-                        console.print(f"  [blue]Protected (skip unblock): {domain}[/blue]")
+                        console.print(f"  [blue]Cannot unblock (never): {domain}[/blue]")
                     continue
 
+                delay_seconds = parse_unblock_delay_seconds(domain_delay or "0")
+
+                if delay_seconds and delay_seconds > 0:
+                    # Check if already pending
+                    existing = get_pending_for_domain(domain)
+                    if existing:
+                        if verbose:
+                            console.print(f"  [yellow]Already pending: {domain}[/yellow]")
+                        continue
+
+                    if dry_run:
+                        console.print(
+                            f"  [yellow]Would schedule UNBLOCK: {domain} "
+                            f"(delay: {domain_delay})[/yellow]"
+                        )
+                    else:
+                        action = create_pending_action(domain, domain_delay, requested_by="sync")
+                        if action and verbose:
+                            console.print(
+                                f"  [yellow]Scheduled unblock: {domain} ({domain_delay})[/yellow]"
+                            )
+                    continue
+
+                # Immediate unblock (no delay)
                 if dry_run:
                     console.print(f"  [green]Would UNBLOCK: {domain}[/green]")
                 else:
@@ -397,7 +470,6 @@ def status(config_dir: Optional[Path]) -> None:
     try:
         config = load_config(config_dir)
         domains, allowlist = load_domains(config["script_dir"])
-        protected = get_protected_domains(domains)
 
         client = NextDNSClient(
             config["api_key"], config["profile_id"], config["timeout"], config["retries"]
@@ -422,7 +494,6 @@ def status(config_dir: Optional[Path]) -> None:
             domain = domain_config["domain"]
             should_block = evaluator.should_block_domain(domain_config)
             is_blocked = client.is_blocked(domain)
-            is_protected = domain in protected
 
             if is_blocked:
                 status_icon = "🔴"
@@ -433,11 +504,22 @@ def status(config_dir: Optional[Path]) -> None:
 
             expected = "block" if should_block else "allow"
             match = "[green]✓[/green]" if (should_block == is_blocked) else "[red]✗ MISMATCH[/red]"
-            protected_flag = " [blue]\\[protected][/blue]" if is_protected else ""
+
+            # Show unblock_delay setting
+            domain_delay = domain_config.get("unblock_delay")
+            # Backward compatibility: protected=true -> never
+            if domain_config.get("protected", False):
+                domain_delay = "never"
+            if domain_delay == "never":
+                delay_flag = " [blue]\\[never][/blue]"
+            elif domain_delay and domain_delay != "0":
+                delay_flag = f" [cyan]\\[{domain_delay}][/cyan]"
+            else:
+                delay_flag = ""
 
             # Pad domain for alignment
             console.print(
-                f"    {status_icon} {domain:<20} {status_text} (should: {expected}) {match}{protected_flag}"
+                f"    {status_icon} {domain:<20} {status_text} (should: {expected}) {match}{delay_flag}"
             )
 
         if allowlist:

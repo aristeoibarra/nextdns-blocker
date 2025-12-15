@@ -36,6 +36,22 @@ PROFILE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,30}$")
 # Discord Webhook pattern: Follows Regex for default rl
 DISCORD_WEBHOOK_PATTERN = re.compile(r"^https://discord\.com/api/webhooks/\d+/[a-zA-Z0-9_-]+$")
 
+# =============================================================================
+# UNBLOCK DELAY SETTINGS
+# =============================================================================
+
+# Valid unblock_delay values
+VALID_UNBLOCK_DELAYS = frozenset({"never", "24h", "4h", "30m", "0"})
+
+# Mapping of unblock_delay strings to seconds (None for 'never' = cannot unblock)
+UNBLOCK_DELAY_SECONDS: dict[str, Optional[int]] = {
+    "never": None,
+    "24h": 24 * 60 * 60,
+    "4h": 4 * 60 * 60,
+    "30m": 30 * 60,
+    "0": 0,
+}
+
 
 def validate_api_key(api_key: str) -> bool:
     """
@@ -80,6 +96,34 @@ def validate_discord_webhook(url: str) -> bool:
     if not url or not isinstance(url, str):
         return False
     return DISCORD_WEBHOOK_PATTERN.match(url.strip()) is not None
+
+
+def validate_unblock_delay(delay: str) -> bool:
+    """
+    Validate unblock_delay value.
+
+    Args:
+        delay: Delay string to validate ('never', '24h', '4h', '30m', '0')
+
+    Returns:
+        True if valid, False otherwise
+    """
+    if not delay or not isinstance(delay, str):
+        return False
+    return delay in VALID_UNBLOCK_DELAYS
+
+
+def parse_unblock_delay_seconds(delay: str) -> Optional[int]:
+    """
+    Convert unblock_delay string to seconds.
+
+    Args:
+        delay: Delay string ('never', '24h', '4h', '30m', '0')
+
+    Returns:
+        Number of seconds, or None for 'never' (cannot unblock)
+    """
+    return UNBLOCK_DELAY_SECONDS.get(delay)
 
 
 # =============================================================================
@@ -177,6 +221,14 @@ def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
     domain = domain.strip()
     if not validate_domain(domain):
         return [f"#{index}: Invalid domain format '{domain}'"]
+
+    # Validate unblock_delay if present
+    unblock_delay = config.get("unblock_delay")
+    if unblock_delay is not None and not validate_unblock_delay(unblock_delay):
+        errors.append(
+            f"'{domain}': invalid unblock_delay '{unblock_delay}' "
+            f"(valid: {', '.join(sorted(VALID_UNBLOCK_DELAYS))})"
+        )
 
     # Check schedule if present
     schedule = config.get("schedule")
@@ -547,7 +599,9 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
 
 def get_protected_domains(domains: list[dict[str, Any]]) -> list[str]:
     """
-    Extract domains marked as protected from config.
+    Extract domains that cannot be unblocked from config.
+
+    Includes domains with protected=true (legacy) or unblock_delay="never".
 
     Args:
         domains: List of domain configurations
@@ -555,4 +609,29 @@ def get_protected_domains(domains: list[dict[str, Any]]) -> list[str]:
     Returns:
         List of protected domain names
     """
-    return [d["domain"] for d in domains if d.get("protected", False)]
+    return [
+        d["domain"]
+        for d in domains
+        if d.get("protected", False) or d.get("unblock_delay") == "never"
+    ]
+
+
+def get_unblock_delay(domains: list[dict[str, Any]], domain: str) -> Optional[str]:
+    """
+    Get the unblock_delay setting for a specific domain.
+
+    Args:
+        domains: List of domain configurations
+        domain: Domain name to look up
+
+    Returns:
+        unblock_delay value ('never', '24h', '4h', '30m', '0') or None if not set.
+        Returns 'never' for domains with protected=true (backward compatibility).
+    """
+    for d in domains:
+        if d.get("domain") == domain:
+            # Backward compatibility: protected=true -> unblock_delay='never'
+            if d.get("protected", False):
+                return "never"
+            return d.get("unblock_delay")
+    return None
