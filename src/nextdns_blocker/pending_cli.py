@@ -42,26 +42,30 @@ def cmd_list(show_all: bool) -> None:
 
     now = datetime.now()
     for action in actions:
-        execute_at = datetime.fromisoformat(action["execute_at"])
-        remaining = execute_at - now
+        try:
+            execute_at = datetime.fromisoformat(action["execute_at"])
+            remaining = execute_at - now
 
-        if remaining.total_seconds() > 0:
-            hours, remainder = divmod(int(remaining.total_seconds()), 3600)
-            minutes = remainder // 60
-            time_str = f"{execute_at.strftime('%H:%M')} ({hours}h {minutes}m)"
-        else:
-            time_str = "[green]READY[/green]"
+            if remaining.total_seconds() > 0:
+                hours, remainder = divmod(int(remaining.total_seconds()), 3600)
+                minutes = remainder // 60
+                time_str = f"{execute_at.strftime('%H:%M')} ({hours}h {minutes}m)"
+            else:
+                time_str = "[green]READY[/green]"
 
-        # Truncate ID for display (show last 12 chars)
-        display_id = action["id"][-12:]
+            # Truncate ID for display (show last 12 chars)
+            display_id = action["id"][-12:]
 
-        table.add_row(
-            display_id,
-            action["domain"],
-            action["delay"],
-            time_str,
-            action["status"],
-        )
+            table.add_row(
+                display_id,
+                action["domain"],
+                action["delay"],
+                time_str,
+                action["status"],
+            )
+        except (KeyError, ValueError):
+            # Skip malformed actions
+            continue
 
     console.print()
     console.print(table)
