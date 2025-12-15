@@ -283,7 +283,7 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
         # Handle delay (if set and not forcing)
         delay_seconds = parse_unblock_delay_seconds(unblock_delay or "0")
 
-        if delay_seconds and delay_seconds > 0 and not force:
+        if delay_seconds and delay_seconds > 0 and not force and unblock_delay:
             # Create pending action
             action = create_pending_action(domain, unblock_delay, requested_by="cli")
             if action:
@@ -403,7 +403,7 @@ def sync(
 
                 delay_seconds = parse_unblock_delay_seconds(domain_delay or "0")
 
-                if delay_seconds and delay_seconds > 0:
+                if delay_seconds and delay_seconds > 0 and domain_delay:
                     # Check if already pending
                     existing = get_pending_for_domain(domain)
                     if existing:

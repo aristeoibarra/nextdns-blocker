@@ -46,7 +46,7 @@ def _load_pending_data() -> dict[str, Any]:
         return {"version": PENDING_VERSION, "pending_actions": []}
 
     try:
-        data = json.loads(content)
+        data: dict[str, Any] = json.loads(content)
         # Ensure version compatibility
         if data.get("version") != PENDING_VERSION:
             logger.warning("Pending file version mismatch, migrating...")
@@ -106,7 +106,8 @@ def create_pending_action(
     data = _load_pending_data()
 
     # Check for duplicate pending action for same domain
-    for existing in data["pending_actions"]:
+    pending_actions: list[dict[str, Any]] = data["pending_actions"]
+    for existing in pending_actions:
         if existing["domain"] == domain and existing["status"] == "pending":
             logger.warning(f"Pending action already exists for {domain}")
             return existing
@@ -122,7 +123,8 @@ def create_pending_action(
 def get_pending_action(action_id: str) -> Optional[dict[str, Any]]:
     """Get a pending action by ID."""
     data = _load_pending_data()
-    for action in data["pending_actions"]:
+    pending_actions: list[dict[str, Any]] = data["pending_actions"]
+    for action in pending_actions:
         if action["id"] == action_id:
             return action
     return None
@@ -139,7 +141,7 @@ def get_pending_actions(status: Optional[str] = None) -> list[dict[str, Any]]:
         List of matching actions
     """
     data = _load_pending_data()
-    actions = data.get("pending_actions", [])
+    actions: list[dict[str, Any]] = data.get("pending_actions", [])
     if status:
         actions = [a for a in actions if a.get("status") == status]
     return actions
@@ -148,7 +150,8 @@ def get_pending_actions(status: Optional[str] = None) -> list[dict[str, Any]]:
 def get_pending_for_domain(domain: str) -> Optional[dict[str, Any]]:
     """Get pending action for a specific domain."""
     data = _load_pending_data()
-    for action in data["pending_actions"]:
+    pending_actions: list[dict[str, Any]] = data["pending_actions"]
+    for action in pending_actions:
         if action["domain"] == domain and action["status"] == "pending":
             return action
     return None
