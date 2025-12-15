@@ -227,9 +227,14 @@ def cleanup_old_actions(max_age_days: int = 7) -> int:
     data = _load_pending_data()
     original_count = len(data["pending_actions"])
 
-    data["pending_actions"] = [
-        a for a in data["pending_actions"] if datetime.fromisoformat(a["created_at"]) > cutoff
-    ]
+    new_actions = []
+    for a in data["pending_actions"]:
+        try:
+            if datetime.fromisoformat(a["created_at"]) > cutoff:
+                new_actions.append(a)
+        except (ValueError, KeyError):
+            logger.warning(f"Invalid created_at in action: {a.get('id')}")
+    data["pending_actions"] = new_actions
 
     removed = original_count - len(data["pending_actions"])
     if removed > 0:
