@@ -90,12 +90,16 @@ nextdns-blocker init
 The wizard will prompt for:
 - API Key
 - Profile ID
-- Timezone (auto-detected from system)
-- Option to create sample domains.json
+
+Timezone is automatically detected from your system and saved to `config.json`.
 
 ### 3. Configure Domains and Schedules
 
-Edit `domains.json` in your config directory to configure your domains and their availability schedules.
+Edit `config.json` in your config directory to configure your domains and their availability schedules:
+
+```bash
+nextdns-blocker config edit
+```
 
 See [SCHEDULE_GUIDE.md](SCHEDULE_GUIDE.md) for detailed schedule configuration examples.
 
@@ -128,8 +132,8 @@ nano .env  # Add your API key, profile ID, and timezone
 ### 2. Configure Domains
 
 ```bash
-cp domains.json.example domains.json
-nano domains.json  # Configure your domains and schedules
+cp config.json.example config.json
+nano config.json  # Configure your domains and schedules
 ```
 
 ### 3. Run with Docker Compose
@@ -166,8 +170,7 @@ docker compose exec nextdns-blocker python nextdns_blocker.py status
 |----------|----------|---------|-------------|
 | `NEXTDNS_API_KEY` | Yes | - | Your NextDNS API key |
 | `NEXTDNS_PROFILE_ID` | Yes | - | Your NextDNS profile ID |
-| `DOMAINS_URL` | No | - | URL to fetch domains.json remotely |
-| `TZ` | No | `America/Mexico_City` | Container timezone |
+| `TZ` | No | `UTC` | Container timezone |
 
 ## Commands
 
@@ -255,12 +258,12 @@ crontab -l
 |----------|----------|---------|-------------|
 | `NEXTDNS_API_KEY` | Yes | - | Your NextDNS API key |
 | `NEXTDNS_PROFILE_ID` | Yes | - | Your NextDNS profile ID |
-| `TIMEZONE` | No | Auto-detected | Timezone for schedule evaluation (auto-detected during init) |
 | `API_TIMEOUT` | No | `10` | API request timeout in seconds |
 | `API_RETRIES` | No | `3` | Number of retry attempts |
-| `DOMAINS_URL` | No | - | URL to fetch domains.json from |
 | `DISCORD_WEBHOOK_URL` | No | - | Discord webhook URL for notifications |
 | `DISCORD_NOTIFICATIONS_ENABLED` | No | `false` | Enable Discord notifications (`true`/`false`) |
+
+> **Note:** Timezone is now configured in `config.json` under `settings.timezone` and is auto-detected during setup.
 
 ### Discord Notifications
 
@@ -282,15 +285,20 @@ Notifications show:
 
 ### Domain Schedules
 
-Edit `domains.json` to configure which domains to manage and their availability schedules:
+Edit `config.json` to configure which domains to manage and their availability schedules:
 
 ```json
 {
-  "domains": [
+  "version": "1.0",
+  "settings": {
+    "timezone": "America/New_York",
+    "editor": null
+  },
+  "blocklist": [
     {
       "domain": "reddit.com",
       "description": "Social media",
-      "protected": false,
+      "unblock_delay": "0",
       "schedule": {
         "available_hours": [
           {
@@ -312,10 +320,11 @@ Edit `domains.json` to configure which domains to manage and their availability 
     {
       "domain": "gambling-site.com",
       "description": "Always blocked",
-      "protected": true,
+      "unblock_delay": "never",
       "schedule": null
     }
-  ]
+  ],
+  "allowlist": []
 }
 ```
 
@@ -325,7 +334,7 @@ Edit `domains.json` to configure which domains to manage and their availability 
 |-------|----------|-------------|
 | `domain` | Yes | Domain name to manage |
 | `description` | No | Human-readable description |
-| `protected` | No | If `true`, domain cannot be manually unblocked |
+| `unblock_delay` | No | `"0"` = instant unblock, `"never"` = cannot unblock manually |
 | `schedule` | No | Availability schedule (null = always blocked) |
 
 Changes take effect on next sync (every 2 minutes).
@@ -385,10 +394,10 @@ The timezone is auto-detected during `init` based on your system settings:
 - **Windows**: Uses `tzutil /g` command
 - **Fallback**: `TZ` environment variable or `UTC`
 
-To override, edit `.env`:
+Timezone is stored in `config.json` under `settings.timezone`. To change it:
 
 ```bash
-TIMEZONE=America/New_York
+nextdns-blocker config set timezone America/New_York
 ```
 
 See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
@@ -401,16 +410,17 @@ See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_z
 - Test manually: `nextdns-blocker sync`
 - Validate JSON: `python3 -m json.tool domains.json`
 
-**Domains.json errors?**
+**Config.json errors?**
 - Ensure valid JSON syntax (use [jsonlint.com](https://jsonlint.com))
 - Check time format is HH:MM (24-hour)
 - Check day names are lowercase (monday, tuesday, etc.)
 - Domain names must be valid (no spaces, special characters)
-- See `domains.json.example` for reference
+- Validate with: `nextdns-blocker config validate`
+- See `config.json.example` for reference
 
 **Wrong timezone?**
-- Re-run `nextdns-blocker init` (timezone is auto-detected)
-- Or manually update `TIMEZONE` in `.env`
+- Change with: `nextdns-blocker config set timezone America/New_York`
+- Or re-run `nextdns-blocker init` (timezone is auto-detected)
 - Check logs to verify timezone is being used
 
 **API timeouts?**
@@ -542,7 +552,7 @@ The codebase follows these practices:
   - `social-media.json` - Social networks management
   - `parental-control.json` - Protected content blocking
   - `study-mode.json` - Student-focused scheduling for distraction-free studying
-- [domains.json.example](domains.json.example) - Example configuration file
+- [config.json.example](config.json.example) - Example configuration file
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 
 ## Security

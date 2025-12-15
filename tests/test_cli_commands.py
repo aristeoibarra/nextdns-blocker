@@ -596,47 +596,6 @@ class TestReadSecureFile:
         assert result is None
 
 
-class TestSyncWithDomainsUrl:
-    """Tests for sync command with --domains-url flag."""
-
-    @responses.activate
-    def test_sync_with_domains_url_flag(self, runner, mock_pause_file, tmp_path):
-        """Test sync uses --domains-url flag to fetch remote domains."""
-        remote_url = "https://example.com/domains.json"
-
-        responses.add(
-            responses.GET,
-            remote_url,
-            json={"domains": [{"domain": "remote.com"}], "allowlist": []},
-            status=200,
-        )
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/testprofile/denylist",
-            json={"data": []},
-            status=200,
-        )
-        responses.add(
-            responses.POST,
-            f"{API_URL}/profiles/testprofile/denylist",
-            json={"success": True},
-            status=200,
-        )
-
-        env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-
-        with patch(
-            "nextdns_blocker.config.get_domains_cache_file", return_value=tmp_path / "cache.json"
-        ):
-            result = runner.invoke(
-                main,
-                ["sync", "--config-dir", str(tmp_path), "--domains-url", remote_url, "--dry-run"],
-            )
-
-        assert result.exit_code == 0
-
-
 class TestAllowCommand:
     """Tests for allow CLI command."""
 

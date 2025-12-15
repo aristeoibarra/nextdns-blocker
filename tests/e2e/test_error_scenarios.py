@@ -24,8 +24,6 @@ from .conftest import (
     TEST_API_KEY,
     TEST_PROFILE_ID,
     TEST_TIMEZONE,
-    add_allowlist_mock,
-    add_denylist_mock,
 )
 
 
@@ -373,57 +371,6 @@ class TestMalformedDomainsFile:
 
         # Should handle missing key
         assert result.exit_code != 0 or "error" in result.output.lower()
-
-
-class TestRemoteDomainsErrors:
-    """Tests for remote domains.json error handling."""
-
-    @responses.activate
-    def test_sync_handles_remote_url_404(
-        self,
-        runner: CliRunner,
-        tmp_path: Path,
-    ) -> None:
-        """Test that sync handles 404 for remote domains URL."""
-        config_dir = tmp_path / "config"
-        log_dir = tmp_path / "logs"
-        config_dir.mkdir(parents=True)
-        log_dir.mkdir(parents=True)
-
-        remote_url = "https://example.com/domains.json"
-
-        (config_dir / ".env").write_text(
-            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
-            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
-            f"TIMEZONE={TEST_TIMEZONE}\n"
-            f"DOMAINS_URL={remote_url}\n"
-        )
-
-        # Create local fallback domains.json
-        domains_data = {"domains": []}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
-
-        # Remote URL returns 404
-        responses.add(
-            responses.GET,
-            remote_url,
-            json={"error": "Not Found"},
-            status=404,
-        )
-
-        add_denylist_mock(responses, domains=[])
-        add_allowlist_mock(responses, domains=[])
-
-        with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
-            with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
-                result = runner.invoke(
-                    main,
-                    ["sync", "--config-dir", str(config_dir)],
-                )
-
-        # Should either use cached/local version or fail gracefully
-        # The behavior depends on whether cache exists
-        assert result.exit_code == 0 or "error" in result.output.lower()
 
 
 class TestVersionCommand:

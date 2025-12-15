@@ -367,16 +367,13 @@ def isolate_test_environment(
     once per test function, significantly improving test performance.
     """
     # Create a module-level temp directory for cache
-    cache_dir = tmp_path_factory.mktemp("cache")
-
     # Save and clear environment variables that might interfere
-    env_vars = ["NEXTDNS_API_KEY", "NEXTDNS_PROFILE_ID", "TIMEZONE", "DOMAINS_URL"]
+    env_vars = ["NEXTDNS_API_KEY", "NEXTDNS_PROFILE_ID", "TIMEZONE"]
     original = {k: os.environ.get(k) for k in env_vars}
     for var in env_vars:
         os.environ.pop(var, None)
 
-    with patch("nextdns_blocker.config.get_cache_dir", return_value=cache_dir):
-        yield
+    yield
 
     # Restore original environment
     for var, value in original.items():

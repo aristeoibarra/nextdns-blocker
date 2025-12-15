@@ -22,7 +22,6 @@ from .common import (
 )
 from .config import (
     DEFAULT_PAUSE_MINUTES,
-    get_cache_status,
     get_config_dir,
     get_protected_domains,
     load_config,
@@ -31,6 +30,7 @@ from .config import (
     validate_domain_config,
     validate_no_overlap,
 )
+from .config_cli import register_config
 from .exceptions import ConfigurationError, DomainValidationError
 from .init import run_interactive_wizard, run_non_interactive
 from .notifications import send_discord_notification
@@ -194,11 +194,10 @@ def main(ctx: click.Context, no_color: bool) -> None:
     type=click.Path(file_okay=False, path_type=Path),
     help="Config directory (default: XDG config dir)",
 )
-@click.option("--url", "domains_url", help="URL for remote domains.json")
 @click.option(
     "--non-interactive", is_flag=True, help="Use environment variables instead of prompts"
 )
-def init(config_dir: Optional[Path], domains_url: Optional[str], non_interactive: bool) -> None:
+def init(config_dir: Optional[Path], non_interactive: bool) -> None:
     """Initialize NextDNS Blocker configuration.
 
     Runs an interactive wizard to configure API credentials and create
@@ -208,9 +207,9 @@ def init(config_dir: Optional[Path], domains_url: Optional[str], non_interactive
     and NEXTDNS_PROFILE_ID environment variables).
     """
     if non_interactive:
-        success = run_non_interactive(config_dir, domains_url)
+        success = run_non_interactive(config_dir)
     else:
-        success = run_interactive_wizard(config_dir, domains_url)
+        success = run_interactive_wizard(config_dir)
 
     if not success:
         sys.exit(1)
@@ -246,7 +245,7 @@ def unblock(domain: str, config_dir: Optional[Path]) -> None:
     """Manually unblock a DOMAIN."""
     try:
         config = load_config(config_dir)
-        domains, _ = load_domains(config["script_dir"], config.get("domains_url"))
+        domains, _ = load_domains(config["script_dir"])
         protected = get_protected_domains(domains)
 
         if not validate_domain(domain):
@@ -292,15 +291,21 @@ def unblock(domain: str, config_dir: Optional[Path]) -> None:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Config directory (default: auto-detect)",
 )
-@click.option(
-    "--domains-url",
-    "domains_url_override",
-    help="URL for remote domains.json (overrides DOMAINS_URL from config)",
-)
+@click.option("--_from_config_group", is_flag=True, hidden=True)
 def sync(
-    dry_run: bool, verbose: bool, config_dir: Optional[Path], domains_url_override: Optional[str]
+    dry_run: bool,
+    verbose: bool,
+    config_dir: Optional[Path],
+    _from_config_group: bool = False,
 ) -> None:
     """Synchronize domain blocking with schedules."""
+    # Show deprecation warning if called directly
+    if not _from_config_group:
+        console.print(
+            "\n  [yellow]⚠ Deprecated:[/yellow] Use 'nextdns-blocker config sync' instead.\n",
+            highlight=False,
+        )
+
     setup_logging(verbose)
 
     # Check pause state
@@ -311,9 +316,7 @@ def sync(
 
     try:
         config = load_config(config_dir)
-        # CLI flag overrides config file
-        domains_url = domains_url_override or config.get("domains_url")
-        domains, allowlist = load_domains(config["script_dir"], domains_url)
+        domains, allowlist = load_domains(config["script_dir"])
         protected = get_protected_domains(domains)
 
         client = NextDNSClient(
@@ -393,7 +396,7 @@ def status(config_dir: Optional[Path]) -> None:
     """Show current blocking status."""
     try:
         config = load_config(config_dir)
-        domains, allowlist = load_domains(config["script_dir"], config.get("domains_url"))
+        domains, allowlist = load_domains(config["script_dir"])
         protected = get_protected_domains(domains)
 
         client = NextDNSClient(
@@ -590,7 +593,7 @@ def health(config_dir: Optional[Path]) -> None:
     # Check domains.json
     checks_total += 1
     try:
-        domains, allowlist = load_domains(config["script_dir"], config.get("domains_url"))
+        domains, allowlist = load_domains(config["script_dir"])
         console.print(
             f"  [green][✓][/green] Domains loaded ({len(domains)} domains, {len(allowlist)} allowlist)"
         )
@@ -598,22 +601,6 @@ def health(config_dir: Optional[Path]) -> None:
     except ConfigurationError as e:
         console.print(f"  [red][✗][/red] Domains: {e}")
         sys.exit(1)
-
-    # Check remote domains cache (informational only, doesn't affect pass/fail)
-    if config.get("domains_url"):
-        cache_status = get_cache_status()
-        if cache_status.get("exists"):
-            if cache_status.get("corrupted"):
-                console.print("  [yellow][!][/yellow] Remote domains cache: corrupted")
-            else:
-                age_mins = cache_status.get("age_seconds", 0) // 60
-                expired = "expired" if cache_status.get("expired") else "valid"
-                color = "yellow" if cache_status.get("expired") else "green"
-                console.print(
-                    f"  [blue][i][/blue] Remote domains cache: [{color}]{expired}[/{color}] (age: {age_mins}m)"
-                )
-        else:
-            console.print("  [blue][i][/blue] Remote domains cache: not present")
 
     # Check API connectivity
     checks_total += 1
@@ -933,7 +920,10 @@ def update(yes: bool) -> None:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Config directory (default: auto-detect)",
 )
-def validate(output_json: bool, config_dir: Optional[Path]) -> None:
+@click.option("--_from_config_group", is_flag=True, hidden=True)
+def validate(
+    output_json: bool, config_dir: Optional[Path], _from_config_group: bool = False
+) -> None:
     """Validate configuration files before deployment.
 
     Checks domains.json for:
@@ -942,6 +932,13 @@ def validate(output_json: bool, config_dir: Optional[Path]) -> None:
     - Valid schedule time formats (HH:MM)
     - No denylist/allowlist conflicts
     """
+    # Show deprecation warning if called directly (but not for JSON output)
+    if not _from_config_group and not output_json:
+        console.print(
+            "\n  [yellow]⚠ Deprecated:[/yellow] Use 'nextdns-blocker config validate' instead.\n",
+            highlight=False,
+        )
+
     import json as json_module
 
     # Determine config directory
@@ -968,39 +965,34 @@ def validate(output_json: bool, config_dir: Optional[Path]) -> None:
     def add_warning(message: str) -> None:
         results["warnings"].append(message)
 
-    # Check 1: domains.json exists and has valid JSON syntax
-    domains_file = config_dir / "domains.json"
+    # Check 1: config file exists and has valid JSON syntax
+    # Support both new config.json and legacy domains.json
+    config_file = config_dir / "config.json"
+    legacy_file = config_dir / "domains.json"
     domains_data = None
+    config_filename = None
 
-    # Try local file first, then check for remote URL
-    config_has_url = False
-    try:
-        env_config = load_config(config_dir)
-        config_has_url = bool(env_config.get("domains_url"))
-    except ConfigurationError:
-        pass
-
-    if domains_file.exists():
+    if config_file.exists():
+        config_filename = "config.json"
         try:
-            with open(domains_file, encoding="utf-8") as f:
+            with open(config_file, encoding="utf-8") as f:
                 domains_data = json_module.load(f)
-            add_check("domains.json", True, "valid JSON syntax")
+            add_check(config_filename, True, "valid JSON syntax")
         except json_module.JSONDecodeError as e:
-            add_check("domains.json", False, f"invalid JSON: {e}")
+            add_check(config_filename, False, f"invalid JSON: {e}")
             add_error(f"JSON syntax error: {e}")
-    elif config_has_url:
-        # Remote URL configured - try to load from cache or fetch
+    elif legacy_file.exists():
+        config_filename = "domains.json"
         try:
-            from .config import fetch_remote_domains
-
-            domains_data = fetch_remote_domains(env_config["domains_url"])
-            add_check("domains.json", True, "loaded from remote URL")
-        except ConfigurationError as e:
-            add_check("domains.json", False, f"failed to load: {e}")
-            add_error(str(e))
+            with open(legacy_file, encoding="utf-8") as f:
+                domains_data = json_module.load(f)
+            add_check(config_filename, True, "valid JSON syntax (legacy format)")
+        except json_module.JSONDecodeError as e:
+            add_check(config_filename, False, f"invalid JSON: {e}")
+            add_error(f"JSON syntax error: {e}")
     else:
-        add_check("domains.json", False, "file not found")
-        add_error(f"domains.json not found at {domains_file}")
+        add_check("config", False, "file not found")
+        add_error(f"Config file not found. Expected: {config_file} or {legacy_file}")
 
     if domains_data is None:
         # Cannot proceed without valid domains data
@@ -1016,11 +1008,15 @@ def validate(output_json: bool, config_dir: Optional[Path]) -> None:
     # Check 2: Validate structure
     if not isinstance(domains_data, dict):
         add_error("Configuration must be a JSON object")
-    elif "domains" not in domains_data:
-        add_error("Missing 'domains' array in configuration")
+    elif "blocklist" not in domains_data and "domains" not in domains_data:
+        add_error("Missing 'blocklist' or 'domains' array in configuration")
 
-    domains_list = domains_data.get("domains", []) if isinstance(domains_data, dict) else []
-    allowlist_list = domains_data.get("allowlist", []) if isinstance(domains_data, dict) else []
+    # Support both "blocklist" (new) and "domains" (legacy) keys
+    domains_list: list[dict[str, Any]] = []
+    allowlist_list: list[dict[str, Any]] = []
+    if isinstance(domains_data, dict):
+        domains_list = domains_data.get("blocklist") or domains_data.get("domains") or []
+        allowlist_list = domains_data.get("allowlist") or []
 
     # Update summary
     results["summary"]["domains_count"] = len(domains_list)
@@ -1103,6 +1099,14 @@ def validate(output_json: bool, config_dir: Optional[Path]) -> None:
         console.print()
 
     sys.exit(0 if results["valid"] else 1)
+
+
+# =============================================================================
+# REGISTER COMMAND GROUPS
+# =============================================================================
+
+# Register config command group
+register_config(main)
 
 
 if __name__ == "__main__":
