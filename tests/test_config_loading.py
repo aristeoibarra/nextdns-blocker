@@ -5,7 +5,6 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-import responses
 
 from nextdns_blocker.common import (
     parse_env_value,
@@ -176,6 +175,7 @@ class TestLoadDomains:
             load_domains(str(temp_dir))
 
         assert "must be a JSON object" in str(exc_info.value)
+
 
 class TestDomainConfigValidation:
     """Additional tests for domain config validation with new domain validation."""
@@ -354,6 +354,7 @@ TIMEZONE=UTC
             config = load_config(config_dir=temp_dir)
             assert config["api_key"] == "bomkey12345"
             assert config["profile_id"] == "bomprofile"
+
 
 class TestValidateUrl:
     """Tests for validate_url function."""

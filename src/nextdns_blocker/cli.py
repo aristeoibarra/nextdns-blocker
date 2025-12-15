@@ -30,6 +30,7 @@ from .config import (
     validate_domain_config,
     validate_no_overlap,
 )
+from .config_cli import register_config
 from .exceptions import ConfigurationError, DomainValidationError
 from .init import run_interactive_wizard, run_non_interactive
 from .notifications import send_discord_notification
@@ -44,7 +45,6 @@ from .watchdog import (
     has_windows_task,
     is_launchd_job_loaded,
 )
-from .config_cli import register_config
 
 # =============================================================================
 # LOGGING SETUP
@@ -921,7 +921,9 @@ def update(yes: bool) -> None:
     help="Config directory (default: auto-detect)",
 )
 @click.option("--_from_config_group", is_flag=True, hidden=True)
-def validate(output_json: bool, config_dir: Optional[Path], _from_config_group: bool = False) -> None:
+def validate(
+    output_json: bool, config_dir: Optional[Path], _from_config_group: bool = False
+) -> None:
     """Validate configuration files before deployment.
 
     Checks domains.json for:

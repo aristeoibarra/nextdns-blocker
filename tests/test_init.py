@@ -381,6 +381,7 @@ class TestInitCommand:
 
         assert result.exit_code == 1
 
+
 class TestInteractiveWizard:
     """Tests for interactive wizard flow."""
 

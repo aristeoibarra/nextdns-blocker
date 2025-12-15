@@ -380,9 +380,7 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
     elif legacy_file.exists():
         json_file = legacy_file
     else:
-        raise ConfigurationError(
-            f"Config file not found. Expected: {config_file} or {legacy_file}"
-        )
+        raise ConfigurationError(f"Config file not found. Expected: {config_file} or {legacy_file}")
 
     try:
         with open(json_file, encoding="utf-8") as f:

@@ -153,9 +153,9 @@ def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
     audit_log("CONFIG_EDIT", str(config_path))
 
     console.print(
-        f"  [green]✓[/green] File saved"
-        f"\n  [yellow]![/yellow] Run 'nextdns-blocker config validate' to check syntax"
-        f"\n  [yellow]![/yellow] Run 'nextdns-blocker config sync' to apply changes\n"
+        "  [green]✓[/green] File saved"
+        "\n  [yellow]![/yellow] Run 'nextdns-blocker config validate' to check syntax"
+        "\n  [yellow]![/yellow] Run 'nextdns-blocker config sync' to apply changes\n"
     )
 
 
@@ -188,7 +188,7 @@ def cmd_show(config_dir: Optional[Path], output_json: bool) -> None:
 
             # Show settings if present
             if "settings" in config_data:
-                console.print(f"\n  [bold]Settings:[/bold]")
+                console.print("\n  [bold]Settings:[/bold]")
                 for key, value in config_data["settings"].items():
                     display_value = value if value is not None else "[dim]not set[/dim]"
                     console.print(f"    {key}: {display_value}")
@@ -288,7 +288,7 @@ def cmd_migrate(config_dir: Optional[Path], dry_run: bool, force: bool) -> None:
         if new_path.exists():
             console.print(f"  [green]Already using {NEW_CONFIG_FILE}[/green]\n")
         else:
-            console.print(f"  [dim]Run 'nextdns-blocker init' to create a config.[/dim]\n")
+            console.print("  [dim]Run 'nextdns-blocker init' to create a config.[/dim]\n")
         return
 
     # Check if new config already exists
@@ -311,13 +311,13 @@ def cmd_migrate(config_dir: Optional[Path], dry_run: bool, force: bool) -> None:
         allowlist_count = len(new_config.get("allowlist", []))
 
         if dry_run:
-            console.print(f"\n  [bold]Migration Preview (dry-run)[/bold]")
-            console.print(f"\n  Would migrate:")
+            console.print("\n  [bold]Migration Preview (dry-run)[/bold]")
+            console.print("\n  Would migrate:")
             console.print(f"    Blocklist: {blocklist_count} entries (renamed from 'domains')")
             console.print(f"    Allowlist: {allowlist_count} entries")
-            console.print(f"    Settings: defaults applied")
+            console.print("    Settings: defaults applied")
             console.print(f"    Version: {CONFIG_VERSION}")
-            console.print(f"\n  [dim]Run without --dry-run to apply changes.[/dim]\n")
+            console.print("\n  [dim]Run without --dry-run to apply changes.[/dim]\n")
             return
 
         # Create backup
@@ -327,12 +327,12 @@ def cmd_migrate(config_dir: Optional[Path], dry_run: bool, force: bool) -> None:
         # Save new config
         save_config_file(new_path, new_config)
 
-        console.print(f"\n  [bold]Migration Complete[/bold]")
+        console.print("\n  [bold]Migration Complete[/bold]")
         console.print(f"\n  [green]✓[/green] Blocklist: {blocklist_count} entries migrated")
         console.print(f"  [green]✓[/green] Allowlist: {allowlist_count} entries migrated")
-        console.print(f"  [green]✓[/green] Settings: defaults applied")
+        console.print("  [green]✓[/green] Settings: defaults applied")
         console.print(f"  [green]✓[/green] Backup created: {backup_path.name}")
-        console.print(f"\n  [dim]Run 'nextdns-blocker config validate' to verify.[/dim]\n")
+        console.print("\n  [dim]Run 'nextdns-blocker config validate' to verify.[/dim]\n")
 
         audit_log("CONFIG_MIGRATE", f"{LEGACY_DOMAINS_FILE} -> {NEW_CONFIG_FILE}")
 
@@ -362,7 +362,9 @@ def cmd_validate(ctx: click.Context, output_json: bool, config_dir: Optional[Pat
     from .cli import validate as root_validate
 
     # Call the root validate function (without deprecation warning)
-    ctx.invoke(root_validate, output_json=output_json, config_dir=config_dir, _from_config_group=True)
+    ctx.invoke(
+        root_validate, output_json=output_json, config_dir=config_dir, _from_config_group=True
+    )
 
 
 @config_cli.command("sync")

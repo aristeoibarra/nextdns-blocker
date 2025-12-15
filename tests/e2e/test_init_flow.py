@@ -268,6 +268,7 @@ class TestInitThenSync:
 
         assert result.exit_code == 0, f"Sync failed: {result.output}"
 
+
 class TestInitIdempotent:
     """Tests for re-running init on existing configuration."""
 

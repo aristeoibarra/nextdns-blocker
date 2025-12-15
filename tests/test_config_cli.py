@@ -1,7 +1,6 @@
 """Tests for config command group."""
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -32,9 +31,7 @@ def temp_config_dir(tmp_path):
     """Create a temporary config directory with .env file."""
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "NEXTDNS_API_KEY=test_key_12345\n"
-        "NEXTDNS_PROFILE_ID=abc123\n"
-        "TIMEZONE=UTC\n"
+        "NEXTDNS_API_KEY=test_key_12345\n" "NEXTDNS_PROFILE_ID=abc123\n" "TIMEZONE=UTC\n"
     )
     return tmp_path
 
@@ -133,7 +130,9 @@ class TestConfigShow:
         config_file = temp_config_dir / NEW_CONFIG_FILE
         config_file.write_text(json.dumps(new_config_format))
 
-        result = runner.invoke(main, ["config", "show", "--json", "--config-dir", str(temp_config_dir)])
+        result = runner.invoke(
+            main, ["config", "show", "--json", "--config-dir", str(temp_config_dir)]
+        )
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert output["version"] == "1.0"
@@ -170,7 +169,8 @@ class TestConfigSet:
         config_file.write_text(json.dumps(new_config_format))
 
         result = runner.invoke(
-            main, ["config", "set", "timezone", "Europe/London", "--config-dir", str(temp_config_dir)]
+            main,
+            ["config", "set", "timezone", "Europe/London", "--config-dir", str(temp_config_dir)],
         )
         assert result.exit_code == 0
         assert "Europe/London" in result.output
@@ -250,7 +250,9 @@ class TestConfigMigrate:
         assert result.exit_code == 0
         assert "No legacy" in result.output
 
-    def test_migrate_already_migrated(self, runner, temp_config_dir, legacy_domains_config, new_config_format):
+    def test_migrate_already_migrated(
+        self, runner, temp_config_dir, legacy_domains_config, new_config_format
+    ):
         """Test migrate when config.json already exists."""
         legacy_file = temp_config_dir / LEGACY_DOMAINS_FILE
         legacy_file.write_text(json.dumps(legacy_domains_config))
@@ -308,10 +310,7 @@ class TestConfigEdit:
         """Test config edit fails when no config file exists."""
         # Create .env without DOMAINS_URL so it looks for local file
         env_file = tmp_path / ".env"
-        env_file.write_text(
-            "NEXTDNS_API_KEY=test_key_12345\n"
-            "NEXTDNS_PROFILE_ID=abc123\n"
-        )
+        env_file.write_text("NEXTDNS_API_KEY=test_key_12345\n" "NEXTDNS_PROFILE_ID=abc123\n")
 
         result = runner.invoke(main, ["config", "edit", "--config-dir", str(tmp_path)])
         assert result.exit_code == 1
@@ -322,10 +321,7 @@ class TestConfigEdit:
         """Test config edit opens editor."""
         # Create .env without DOMAINS_URL
         env_file = tmp_path / ".env"
-        env_file.write_text(
-            "NEXTDNS_API_KEY=test_key_12345\n"
-            "NEXTDNS_PROFILE_ID=abc123\n"
-        )
+        env_file.write_text("NEXTDNS_API_KEY=test_key_12345\n" "NEXTDNS_PROFILE_ID=abc123\n")
 
         config_file = tmp_path / NEW_CONFIG_FILE
         config_file.write_text(json.dumps(new_config_format))
@@ -355,7 +351,9 @@ class TestDeprecationWarnings:
         assert "Deprecated" in result.output
         assert "config validate" in result.output
 
-    def test_root_validate_json_no_deprecation(self, runner, temp_config_dir, legacy_domains_config):
+    def test_root_validate_json_no_deprecation(
+        self, runner, temp_config_dir, legacy_domains_config
+    ):
         """Test root validate --json does not show deprecation warning."""
         domains_file = temp_config_dir / LEGACY_DOMAINS_FILE
         domains_file.write_text(json.dumps(legacy_domains_config))
