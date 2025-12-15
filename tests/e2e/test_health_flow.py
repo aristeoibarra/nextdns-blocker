@@ -260,61 +260,6 @@ class TestHealthAPIConnectivity:
         assert "5 items in denylist" in result.output
 
 
-class TestHealthRemoteCache:
-    """Tests for health command remote cache status."""
-
-    @responses.activate
-    def test_health_shows_cache_status_when_using_remote_url(
-        self,
-        runner: CliRunner,
-        tmp_path: Path,
-    ) -> None:
-        """Test that health shows cache status when DOMAINS_URL is configured."""
-        config_dir = tmp_path / "config"
-        log_dir = tmp_path / "logs"
-        config_dir.mkdir(parents=True)
-        log_dir.mkdir(parents=True)
-
-        remote_url = "https://example.com/domains.json"
-
-        (config_dir / ".env").write_text(
-            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
-            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
-            f"TIMEZONE={TEST_TIMEZONE}\n"
-            f"DOMAINS_URL={remote_url}\n"
-        )
-
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
-
-        # Mock the remote URL
-        responses.add(
-            responses.GET,
-            remote_url,
-            json=domains_data,
-            status=200,
-        )
-        add_denylist_mock(responses, domains=[])
-
-        cache_status = {
-            "exists": True,
-            "corrupted": False,
-            "age_seconds": 300,
-            "expired": False,
-        }
-
-        with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
-            with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
-                with patch("nextdns_blocker.cli.get_cache_status", return_value=cache_status):
-                    result = runner.invoke(
-                        main,
-                        ["health", "--config-dir", str(config_dir)],
-                    )
-
-        assert result.exit_code == 0
-        assert "cache" in result.output.lower()
-
-
 class TestHealthLogDirectory:
     """Tests for health command log directory checks."""
 

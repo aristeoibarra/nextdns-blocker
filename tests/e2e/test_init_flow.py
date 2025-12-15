@@ -73,20 +73,19 @@ class TestInitNonInteractive:
         env_content = env_file.read_text()
         assert TEST_API_KEY in env_content
         assert TEST_PROFILE_ID in env_content
-        assert TEST_TIMEZONE in env_content
+
+        # Verify config.json was created with timezone
+        config_file = config_dir / "config.json"
+        assert config_file.exists(), "Expected config.json to be created"
 
     @responses.activate
-    def test_init_non_interactive_does_not_create_domains_json(
+    def test_init_non_interactive_creates_config_json(
         self,
         runner: CliRunner,
         tmp_path: Path,
         clean_env: None,
     ) -> None:
-        """Test that init --non-interactive creates .env but not domains.json.
-
-        Note: Non-interactive init is designed for CI/CD where domains.json
-        should already exist or a DOMAINS_URL should be provided.
-        """
+        """Test that init --non-interactive creates .env and config.json."""
         config_dir = tmp_path / "config"
 
         # Mock API validation
@@ -103,7 +102,6 @@ class TestInitNonInteractive:
                 env = {
                     "NEXTDNS_API_KEY": TEST_API_KEY,
                     "NEXTDNS_PROFILE_ID": TEST_PROFILE_ID,
-                    "TIMEZONE": TEST_TIMEZONE,
                 }
 
                 with patch.dict(os.environ, env, clear=False):
@@ -114,14 +112,12 @@ class TestInitNonInteractive:
 
         assert result.exit_code == 0, f"Init failed: {result.output}"
 
-        # Non-interactive mode only creates .env, not domains.json
-        # (domains.json should be created separately or via --url)
+        # Both .env and config.json should be created
         env_file = config_dir / ".env"
         assert env_file.exists(), "Expected .env to be created"
 
-        config_dir / "domains.json"
-        # Non-interactive mode doesn't create sample domains.json
-        # This is expected behavior for CI/CD environments
+        config_file = config_dir / "config.json"
+        assert config_file.exists(), "Expected config.json to be created"
 
     @responses.activate
     def test_init_with_invalid_credentials_fails(
@@ -221,9 +217,11 @@ class TestInitThenSync:
 
         assert result.exit_code == 0, f"Init failed: {result.output}"
 
-        # Step 2: Create domains.json (normally done separately in CI/CD)
-        domains_data = {
-            "domains": [
+        # Step 2: Update config.json with domain (created by init with empty blocklist)
+        config_data = {
+            "version": "1.0",
+            "settings": {"timezone": TEST_TIMEZONE, "editor": None},
+            "blocklist": [
                 {
                     "domain": "test.com",
                     "schedule": {
@@ -235,9 +233,10 @@ class TestInitThenSync:
                         ]
                     },
                 }
-            ]
+            ],
+            "allowlist": [],
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(config_data))
 
         # Step 3: Add mocks for sync command
         responses.add(
@@ -268,116 +267,6 @@ class TestInitThenSync:
                 )
 
         assert result.exit_code == 0, f"Sync failed: {result.output}"
-
-    @responses.activate
-    def test_init_with_remote_url_then_sync(
-        self,
-        runner: CliRunner,
-        tmp_path: Path,
-        clean_env: None,
-    ) -> None:
-        """Test init with --url option followed by sync."""
-        config_dir = tmp_path / "config"
-        log_dir = tmp_path / "logs"
-        log_dir.mkdir(parents=True)
-
-        remote_domains_url = "https://example.com/domains.json"
-        remote_domains = {
-            "domains": [
-                {
-                    "domain": "remote-test.com",
-                    "schedule": {
-                        "available_hours": [
-                            {
-                                "days": ["monday"],
-                                "time_ranges": [{"start": "09:00", "end": "17:00"}],
-                            }
-                        ]
-                    },
-                }
-            ]
-        }
-
-        # Mock API validation
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/{TEST_PROFILE_ID}/denylist",
-            json={"data": []},
-            status=200,
-        )
-
-        # Mock remote domains.json
-        responses.add(
-            responses.GET,
-            remote_domains_url,
-            json=remote_domains,
-            status=200,
-        )
-
-        env = {
-            "NEXTDNS_API_KEY": TEST_API_KEY,
-            "NEXTDNS_PROFILE_ID": TEST_PROFILE_ID,
-            "TIMEZONE": TEST_TIMEZONE,
-        }
-
-        # Run init with URL (mocking scheduler and initial sync)
-        with patch("nextdns_blocker.init.install_scheduling", return_value=(True, "mock")):
-            with patch("nextdns_blocker.init.run_initial_sync", return_value=True):
-                with patch.dict(os.environ, env, clear=False):
-                    result = runner.invoke(
-                        main,
-                        [
-                            "init",
-                            "--non-interactive",
-                            "--config-dir",
-                            str(config_dir),
-                            "--url",
-                            remote_domains_url,
-                        ],
-                    )
-
-        assert result.exit_code == 0, f"Init failed: {result.output}"
-
-        # Verify DOMAINS_URL is in .env
-        env_content = (config_dir / ".env").read_text()
-        assert remote_domains_url in env_content
-
-        # Add mocks for sync
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/{TEST_PROFILE_ID}/denylist",
-            json={"data": []},
-            status=200,
-        )
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/{TEST_PROFILE_ID}/allowlist",
-            json={"data": []},
-            status=200,
-        )
-        responses.add(
-            responses.GET,
-            remote_domains_url,
-            json=remote_domains,
-            status=200,
-        )
-        responses.add(
-            responses.POST,
-            f"{API_URL}/profiles/{TEST_PROFILE_ID}/denylist",
-            json={"success": True},
-            status=200,
-        )
-
-        # Run sync
-        with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
-            with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
-                result = runner.invoke(
-                    main,
-                    ["sync", "--config-dir", str(config_dir)],
-                )
-
-        assert result.exit_code == 0, f"Sync failed: {result.output}"
-
 
 class TestInitIdempotent:
     """Tests for re-running init on existing configuration."""

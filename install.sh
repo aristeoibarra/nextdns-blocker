@@ -124,16 +124,18 @@ else
     exit 0
 fi
 
-# Check for domains.json
-if [ -f "$CONFIG_DIR/domains.json" ]; then
-    echo "         using local: $CONFIG_DIR/domains.json"
-elif [ -f "$SCRIPT_DIR/domains.json" ]; then
-    echo "         copying: $SCRIPT_DIR/domains.json -> $CONFIG_DIR/domains.json"
-    cp "$SCRIPT_DIR/domains.json" "$CONFIG_DIR/domains.json"
-elif [ -n "$DOMAINS_URL" ]; then
-    echo "         using remote: $DOMAINS_URL"
+# Check for config.json (new format) or domains.json (legacy)
+if [ -f "$CONFIG_DIR/config.json" ]; then
+    echo "         using local: $CONFIG_DIR/config.json"
+elif [ -f "$CONFIG_DIR/domains.json" ]; then
+    echo "         using legacy: $CONFIG_DIR/domains.json"
+    echo "         tip: run 'nextdns-blocker config migrate' to upgrade"
+elif [ -f "$SCRIPT_DIR/config.json" ]; then
+    echo "         copying: $SCRIPT_DIR/config.json -> $CONFIG_DIR/config.json"
+    cp "$SCRIPT_DIR/config.json" "$CONFIG_DIR/config.json"
 else
-    echo "  warning: no domains.json found and DOMAINS_URL not set"
+    echo "  warning: no config.json found"
+    echo "           run 'nextdns-blocker init' to create one"
 fi
 
 # Step 6: Validate API

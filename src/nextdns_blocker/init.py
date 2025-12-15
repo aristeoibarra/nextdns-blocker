@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import click
 import requests
 
-from .common import SECURE_FILE_MODE, get_log_dir, validate_url
+from .common import SECURE_FILE_MODE, get_log_dir
 from .config import get_config_dir
 from .platform_utils import (
     get_executable_args,
@@ -157,18 +157,14 @@ def create_env_file(
     config_dir: Path,
     api_key: str,
     profile_id: str,
-    timezone: str,
-    domains_url: Optional[str] = None,
 ) -> Path:
     """
-    Create .env file with configuration.
+    Create .env file with API credentials.
 
     Args:
         config_dir: Directory to create .env in
         api_key: NextDNS API key
         profile_id: NextDNS profile ID
-        timezone: Timezone string
-        domains_url: Optional URL for remote domains.json
 
     Returns:
         Path to created .env file
@@ -183,15 +179,6 @@ def create_env_file(
 # NextDNS API credentials (required)
 NEXTDNS_API_KEY={api_key}
 NEXTDNS_PROFILE_ID={profile_id}
-
-# Timezone for schedule evaluation
-TIMEZONE={timezone}
-"""
-
-    if domains_url:
-        content += f"""
-# Remote domains.json URL (optional)
-DOMAINS_URL={domains_url}
 """
 
     # Write with secure permissions
@@ -206,229 +193,36 @@ DOMAINS_URL={domains_url}
     return env_file
 
 
-def create_sample_domains(config_dir: Path) -> Path:
+def create_config_file(config_dir: Path, timezone: str) -> Path:
     """
-    Create a sample domains.json file.
+    Create config.json with initial structure.
 
     Args:
-        config_dir: Directory to create domains.json in
+        config_dir: Directory to create config.json in
+        timezone: Auto-detected timezone string
 
     Returns:
-        Path to created domains.json file
+        Path to created config.json file
     """
+    import json
+
     config_dir.mkdir(parents=True, exist_ok=True)
 
-    domains_file = config_dir / "domains.json"
+    config_file = config_dir / "config.json"
 
-    content = """{
-  "domains": [
-    {
-      "domain": "example.com",
-      "schedule": {
-        "available_hours": [
-          {
-            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
-            "time_ranges": [
-              {"start": "18:00", "end": "21:00"}
-            ]
-          },
-          {
-            "days": ["saturday", "sunday"],
-            "time_ranges": [
-              {"start": "10:00", "end": "22:00"}
-            ]
-          }
-        ]
-      }
-    }
-  ],
-  "allowlist": []
-}
-"""
-
-    domains_file.write_text(content)
-    return domains_file
-
-
-# =============================================================================
-# EXISTING CONFIGURATION DETECTION
-# =============================================================================
-
-
-def detect_existing_config(config_dir: Path) -> dict[str, Any]:
-    """
-    Detect existing domains configuration.
-
-    Returns:
-        Dict with keys:
-            - has_local: bool - True if domains.json exists locally
-            - has_url: bool - True if DOMAINS_URL is set in .env
-            - url: str|None - The DOMAINS_URL value if set
-            - local_path: Path - Path to local domains.json
-    """
-    env_file = config_dir / ".env"
-    domains_file = config_dir / "domains.json"
-
-    result: dict[str, Any] = {
-        "has_local": domains_file.exists(),
-        "has_url": False,
-        "url": None,
-        "local_path": domains_file,
+    config = {
+        "_comment": "NextDNS Blocker configuration. See docs for schedule format.",
+        "version": "1.0",
+        "settings": {
+            "timezone": timezone,
+            "editor": None,
+        },
+        "blocklist": [],
+        "allowlist": [],
     }
 
-    # Check .env for DOMAINS_URL
-    if env_file.exists():
-        try:
-            content = env_file.read_text()
-            for line in content.split("\n"):
-                line = line.strip()
-                if line.startswith("DOMAINS_URL=") and not line.startswith("#"):
-                    url_value = line.split("=", 1)[1].strip()
-                    # Remove quotes if present
-                    if (url_value.startswith('"') and url_value.endswith('"')) or (
-                        url_value.startswith("'") and url_value.endswith("'")
-                    ):
-                        url_value = url_value[1:-1]
-                    if url_value:
-                        result["has_url"] = True
-                        result["url"] = url_value
-                    break
-        except OSError:
-            pass
-
-    return result
-
-
-def prompt_domains_migration(existing: dict[str, Any]) -> tuple[str, Optional[str]]:
-    """
-    Prompt user for domains configuration when existing config is detected.
-
-    Args:
-        existing: Dict from detect_existing_config()
-
-    Returns:
-        Tuple of (choice, url):
-            - choice: "local", "url", or "keep"
-            - url: The URL if choice is "url", None otherwise
-    """
-    click.echo()
-    click.echo(click.style("  Existing domains configuration detected:", fg="yellow"))
-
-    if existing["has_local"] and existing["has_url"]:
-        click.echo(f"    - Local file: {existing['local_path']}")
-        click.echo(f"    - Remote URL: {existing['url']}")
-        click.echo()
-        click.echo("  Options:")
-        click.echo("    [1] Keep remote URL (recommended)")
-        click.echo("    [2] Switch to local file (will remove URL from config)")
-        click.echo("    [3] Change to different URL")
-        click.echo("    [4] Keep both (URL takes priority)")
-
-        choice = click.prompt("  Choice", type=click.Choice(["1", "2", "3", "4"]), default="1")
-
-        if choice == "1":
-            return "keep_url", existing["url"]
-        elif choice == "2":
-            return "local", None
-        elif choice == "3":
-            new_url = click.prompt("  New URL")
-            if validate_url(new_url):
-                return "url", new_url
-            else:
-                click.echo(click.style("  Invalid URL, keeping current", fg="red"))
-                return "keep_url", existing["url"]
-        else:
-            return "both", existing["url"]
-
-    elif existing["has_local"]:
-        click.echo(f"    - Local file: {existing['local_path']}")
-        click.echo()
-        click.echo("  Options:")
-        click.echo("    [1] Keep local file")
-        click.echo("    [2] Switch to remote URL (will delete local file)")
-
-        choice = click.prompt("  Choice", type=click.Choice(["1", "2"]), default="1")
-
-        if choice == "1":
-            return "local", None
-        else:
-            new_url = click.prompt("  Enter URL")
-            if validate_url(new_url):
-                return "url", new_url
-            else:
-                click.echo(click.style("  Invalid URL, keeping local file", fg="red"))
-                return "local", None
-
-    elif existing["has_url"]:
-        click.echo(f"    - Remote URL: {existing['url']}")
-        click.echo()
-        click.echo("  Options:")
-        click.echo("    [1] Keep remote URL")
-        click.echo("    [2] Switch to local file (will remove URL from config)")
-        click.echo("    [3] Change to different URL")
-
-        choice = click.prompt("  Choice", type=click.Choice(["1", "2", "3"]), default="1")
-
-        if choice == "1":
-            return "keep_url", existing["url"]
-        elif choice == "2":
-            return "local", None
-        else:
-            new_url = click.prompt("  New URL")
-            if validate_url(new_url):
-                return "url", new_url
-            else:
-                click.echo(click.style("  Invalid URL, keeping current", fg="red"))
-                return "keep_url", existing["url"]
-
-    # No existing config
-    return "none", None
-
-
-def handle_domains_migration(
-    config_dir: Path, choice: str, url: Optional[str]
-) -> tuple[Optional[str], bool]:
-    """
-    Handle the domains migration based on user choice.
-
-    Args:
-        config_dir: Configuration directory
-        choice: User's choice ("local", "url", "keep_url", "both", "none")
-        url: URL if applicable
-
-    Returns:
-        Tuple of (domains_url, should_create_local):
-            - domains_url: URL to save in .env, or None
-            - should_create_local: True if should create/keep local domains.json
-    """
-    domains_file = config_dir / "domains.json"
-
-    if choice == "url":
-        # Switch to URL, delete local file if exists
-        if domains_file.exists():
-            try:
-                domains_file.unlink()
-                click.echo(f"  Deleted local file: {domains_file}")
-            except OSError as e:
-                click.echo(
-                    click.style(f"  Warning: Could not delete {domains_file}: {e}", fg="yellow")
-                )
-        return url, False
-
-    elif choice == "local":
-        # Switch to local, URL will not be saved
-        return None, not domains_file.exists()
-
-    elif choice == "keep_url":
-        # Keep existing URL
-        return url, False
-
-    elif choice == "both":
-        # Keep both (URL takes priority in sync)
-        return url, False
-
-    else:  # "none" - no existing config
-        return None, False
+    config_file.write_text(json.dumps(config, indent=2) + "\n")
+    return config_file
 
 
 # =============================================================================
@@ -710,15 +504,12 @@ def run_initial_sync() -> bool:
         return False
 
 
-def run_interactive_wizard(
-    config_dir_override: Optional[Path] = None, domains_url: Optional[str] = None
-) -> bool:
+def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
     """
     Run the interactive setup wizard.
 
     Args:
         config_dir_override: Optional config directory override
-        domains_url: Optional URL for remote domains.json
 
     Returns:
         True if setup completed successfully
@@ -746,19 +537,7 @@ def run_interactive_wizard(
 
     profile_id = profile_id.strip()
 
-    # Prompt for timezone (auto-detect from system)
-    default_tz = detect_system_timezone()
-    timezone = click.prompt("  Timezone", default=default_tz)
-    timezone = timezone.strip()
-
-    # Validate timezone
-    tz_valid, tz_msg = validate_timezone(timezone)
-    if not tz_valid:
-        click.echo(click.style(f"\n  Error: {tz_msg}", fg="red"))
-        click.echo("  See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones\n")
-        return False
-
-    # Validate credentials first
+    # Validate credentials
     click.echo()
     click.echo("  Validating credentials... ", nl=False)
 
@@ -774,58 +553,22 @@ def run_interactive_wizard(
     # Determine config directory
     config_dir = get_config_dir(config_dir_override)
 
-    # Check for existing domains configuration
-    existing = detect_existing_config(config_dir)
-    should_create_local = False
+    # Auto-detect timezone
+    timezone = detect_system_timezone()
+    click.echo(f"  Timezone detected: {timezone}")
 
-    if domains_url:
-        # URL provided via --url flag, use it directly
-        # If local file exists, ask if they want to delete it
-        if existing["has_local"]:
-            click.echo()
-            delete_local = click.confirm("  Local domains.json exists. Delete it?", default=True)
-            if delete_local:
-                try:
-                    existing["local_path"].unlink()
-                    click.echo(f"  Deleted: {existing['local_path']}")
-                except OSError as e:
-                    click.echo(click.style(f"  Warning: Could not delete: {e}", fg="yellow"))
-    elif existing["has_local"] or existing["has_url"]:
-        # Existing configuration detected, show migration options
-        choice, url = prompt_domains_migration(existing)
-        domains_url, should_create_local = handle_domains_migration(config_dir, choice, url)
-    else:
-        # No existing config, prompt for new configuration
-        click.echo()
-        click.echo("  Domains URL (optional, press Enter to skip)")
-        url_input = click.prompt("  URL", default="", show_default=False)
-        url_input = url_input.strip()
-
-        if url_input:
-            if validate_url(url_input):
-                domains_url = url_input
-            else:
-                click.echo(
-                    click.style("\n  Error: Invalid URL format (must be http/https)", fg="red")
-                )
-                return False
-        else:
-            # No URL, will offer to create sample domains.json
-            should_create_local = True
-
-    # Create .env file
+    # Create .env file (credentials only)
     click.echo()
-    env_file = create_env_file(config_dir, api_key, profile_id, timezone, domains_url)
-    click.echo(f"  Configuration saved to: {env_file}")
+    env_file = create_env_file(config_dir, api_key, profile_id)
+    click.echo(f"  Created: {env_file}")
 
-    # Create sample domains.json if needed
-    if should_create_local and not (config_dir / "domains.json").exists():
-        click.echo()
-        create_sample = click.confirm("  Create sample domains.json?", default=True)
-
-        if create_sample:
-            domains_file = create_sample_domains(config_dir)
-            click.echo(f"  Created: {domains_file}")
+    # Create config.json if it doesn't exist
+    config_file = config_dir / "config.json"
+    if not config_file.exists():
+        config_file = create_config_file(config_dir, timezone)
+        click.echo(f"  Created: {config_file}")
+    else:
+        click.echo(f"  Existing config.json found: {config_file}")
 
     # Install scheduling (launchd/cron)
     click.echo()
@@ -853,6 +596,9 @@ def run_interactive_wizard(
     click.echo()
     click.echo(click.style("  Setup complete!", fg="green", bold=True))
     click.echo()
+    click.echo("  Next steps:")
+    click.echo("    nextdns-blocker config edit  - Add domains to block")
+    click.echo()
     click.echo("  Commands:")
     click.echo("    nextdns-blocker status    - Show blocking status")
     click.echo("    nextdns-blocker sync      - Manual sync")
@@ -879,27 +625,22 @@ def run_interactive_wizard(
     return True
 
 
-def run_non_interactive(
-    config_dir_override: Optional[Path] = None, domains_url: Optional[str] = None
-) -> bool:
+def run_non_interactive(config_dir_override: Optional[Path] = None) -> bool:
     """
     Run non-interactive setup using environment variables.
 
     Expects:
         NEXTDNS_API_KEY: API key
         NEXTDNS_PROFILE_ID: Profile ID
-        TIMEZONE: Timezone (optional, defaults to UTC)
 
     Args:
         config_dir_override: Optional config directory override
-        domains_url: Optional URL for remote domains.json
 
     Returns:
         True if setup completed successfully
     """
     api_key = os.environ.get("NEXTDNS_API_KEY")
     profile_id = os.environ.get("NEXTDNS_PROFILE_ID")
-    timezone = os.environ.get("TIMEZONE", "UTC")
 
     if not api_key:
         click.echo("Error: NEXTDNS_API_KEY environment variable not set", err=True)
@@ -907,12 +648,6 @@ def run_non_interactive(
 
     if not profile_id:
         click.echo("Error: NEXTDNS_PROFILE_ID environment variable not set", err=True)
-        return False
-
-    # Validate timezone
-    tz_valid, tz_msg = validate_timezone(timezone)
-    if not tz_valid:
-        click.echo(f"Error: {tz_msg}", err=True)
         return False
 
     # Validate credentials
@@ -924,9 +659,18 @@ def run_non_interactive(
     # Determine config directory
     config_dir = get_config_dir(config_dir_override)
 
-    # Create .env file
-    env_file = create_env_file(config_dir, api_key, profile_id, timezone, domains_url)
+    # Auto-detect timezone
+    timezone = detect_system_timezone()
+
+    # Create .env file (credentials only)
+    env_file = create_env_file(config_dir, api_key, profile_id)
     click.echo(f"Configuration saved to: {env_file}")
+
+    # Create config.json if it doesn't exist
+    config_file = config_dir / "config.json"
+    if not config_file.exists():
+        create_config_file(config_dir, timezone)
+        click.echo(f"Created: {config_file}")
 
     # Install scheduling
     sched_success, sched_type = install_scheduling()

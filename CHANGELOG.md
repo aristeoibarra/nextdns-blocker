@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - v6.0.0
+
+### Breaking Changes
+- **Removed remote URL support**: `DOMAINS_URL` and `DOMAINS_HASH_URL` environment variables no longer supported
+- **New configuration format**: `config.json` replaces `domains.json`
+  - `domains` key renamed to `blocklist`
+  - `protected` field replaced with `unblock_delay` (`"0"` = instant, `"never"` = protected)
+  - Settings (timezone, editor) now in `settings` object
+- **Timezone moved to config.json**: No longer in `.env`, stored in `config.json` under `settings.timezone`
+- **init wizard simplified**: No longer prompts for timezone (auto-detected) or remote URL
+
+### Added
+- **Config command group**: `nextdns-blocker config <subcommand>`
+  - `config show` - Display current configuration
+  - `config edit` - Open config in editor
+  - `config set <key> <value>` - Change settings
+  - `config validate` - Validate configuration
+  - `config migrate` - Migrate from domains.json to config.json
+  - `config sync` - Sync with NextDNS (with deprecation of root `sync`)
+- **Automatic timezone detection**: System timezone saved to config.json during init
+- **Migration support**: `config migrate` converts legacy domains.json to new config.json format
+
+### Changed
+- `.env` now only contains API credentials (API_KEY, PROFILE_ID)
+- `init` creates `config.json` instead of `domains.json`
+- Root `sync` and `validate` commands show deprecation warnings
+
+### Removed
+- Remote domains fetching via URL
+- Domain caching for remote URLs
+- `--url` flag from `init` command
+- `--domains-url` flag from `sync` command
+- `DOMAINS_URL` and `DOMAINS_HASH_URL` environment variables
+
 ## [5.4.0] - 2025-12-14
 
 ### Added

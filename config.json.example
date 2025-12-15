@@ -1,8 +1,14 @@
 {
-  "domains": [
+  "version": "1.0",
+  "settings": {
+    "editor": null,
+    "timezone": null
+  },
+  "blocklist": [
     {
       "domain": "example.com",
       "description": "Example with different schedule per day",
+      "unblock_delay": "0",
       "schedule": {
         "available_hours": [
           {
@@ -53,6 +59,7 @@
     {
       "domain": "reddit.com",
       "description": "Social media - only available during lunch and after work",
+      "unblock_delay": "4h",
       "schedule": {
         "available_hours": [
           {
@@ -74,6 +81,7 @@
     {
       "domain": "twitter.com",
       "description": "Social media - only evenings",
+      "unblock_delay": "1h",
       "schedule": {
         "available_hours": [
           {
@@ -86,47 +94,21 @@
       }
     },
     {
-      "domain": "my.nextdns.io",
-      "description": "NextDNS config - only weekends",
-      "schedule": {
-        "available_hours": [
-          {
-            "days": ["saturday", "sunday"],
-            "time_ranges": [
-              {"start": "00:00", "end": "23:59"}
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "domain": "youtube.com",
-      "description": "Video streaming - limited to evenings and weekends",
-      "schedule": {
-        "available_hours": [
-          {
-            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
-            "time_ranges": [
-              {"start": "20:00", "end": "23:00"}
-            ]
-          },
-          {
-            "days": ["saturday", "sunday"],
-            "time_ranges": [
-              {"start": "08:00", "end": "23:00"}
-            ]
-          }
-        ]
-      }
+      "domain": "tinder.com",
+      "description": "Dating app - never unblockable",
+      "unblock_delay": "never",
+      "schedule": null
     },
     {
       "domain": "facebook.com",
       "description": "Always blocked (no schedule = always blocked)",
+      "unblock_delay": "24h",
       "schedule": null
     },
     {
       "domain": "amazon.com",
       "description": "E-commerce - blocked with exceptions via allowlist",
+      "unblock_delay": "0",
       "schedule": {
         "available_hours": [
           {
