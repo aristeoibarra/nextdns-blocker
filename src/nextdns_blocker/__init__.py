@@ -1,6 +1,6 @@
 """NextDNS Blocker - Automated domain blocking with per-domain scheduling."""
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("nextdns-blocker")
