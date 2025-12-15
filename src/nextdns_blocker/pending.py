@@ -126,7 +126,7 @@ def get_pending_action(action_id: str) -> Optional[dict[str, Any]]:
     data = _load_pending_data()
     pending_actions: list[dict[str, Any]] = data.get("pending_actions", [])
     for action in pending_actions:
-        if action["id"] == action_id:
+        if action.get("id") == action_id:
             return action
     return None
 
@@ -153,7 +153,7 @@ def get_pending_for_domain(domain: str) -> Optional[dict[str, Any]]:
     data = _load_pending_data()
     pending_actions: list[dict[str, Any]] = data.get("pending_actions", [])
     for action in pending_actions:
-        if action["domain"] == domain and action["status"] == "pending":
+        if action.get("domain") == domain and action.get("status") == "pending":
             return action
     return None
 
@@ -170,7 +170,7 @@ def cancel_pending_action(action_id: str) -> bool:
     """
     data = _load_pending_data()
     for i, action in enumerate(data["pending_actions"]):
-        if action["id"] == action_id:
+        if action.get("id") == action_id:
             if action.get("status") != "pending":
                 return False
             # Remove the action entirely
@@ -192,9 +192,11 @@ def get_ready_actions() -> list[dict[str, Any]]:
         if action.get("status") != "pending":
             continue
         try:
-            execute_at = datetime.fromisoformat(action["execute_at"])
-            if execute_at <= now:
-                ready.append(action)
+            execute_at_str = action.get("execute_at", "")
+            if execute_at_str:
+                execute_at = datetime.fromisoformat(execute_at_str)
+                if execute_at <= now:
+                    ready.append(action)
         except (ValueError, KeyError):
             logger.warning(f"Invalid action: {action.get('id')}")
     return ready

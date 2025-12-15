@@ -54,14 +54,14 @@ def cmd_list(show_all: bool) -> None:
                 time_str = "[green]READY[/green]"
 
             # Truncate ID for display (show last 12 chars)
-            display_id = action["id"][-12:]
+            display_id = action.get("id", "-")[-12:] if action.get("id") else "-"
 
             table.add_row(
                 display_id,
-                action["domain"],
-                action["delay"],
+                action.get("domain", "-"),
+                action.get("delay", "-"),
                 time_str,
-                action["status"],
+                action.get("status", "-"),
             )
         except (KeyError, ValueError):
             # Skip malformed actions
@@ -87,7 +87,7 @@ def cmd_show(action_id: str) -> None:
     if len(matching) > 1:
         console.print("\n  [yellow]Multiple matches found. Please be more specific:[/yellow]")
         for a in matching:
-            console.print(f"    {a['id']}")
+            console.print(f"    {a.get('id', '-')}")
         console.print()
         return
 
@@ -108,14 +108,16 @@ def cmd_show(action_id: str) -> None:
     if action.get("status") == "pending":
         try:
             now = datetime.now()
-            execute_at = datetime.fromisoformat(action["execute_at"])
-            remaining = execute_at - now
-            if remaining.total_seconds() > 0:
-                hours, remainder = divmod(int(remaining.total_seconds()), 3600)
-                minutes = remainder // 60
-                console.print(f"\n  [yellow]Time remaining: {hours}h {minutes}m[/yellow]")
-            else:
-                console.print("\n  [green]Ready for execution[/green]")
+            execute_at_str = action.get("execute_at", "")
+            if execute_at_str:
+                execute_at = datetime.fromisoformat(execute_at_str)
+                remaining = execute_at - now
+                if remaining.total_seconds() > 0:
+                    hours, remainder = divmod(int(remaining.total_seconds()), 3600)
+                    minutes = remainder // 60
+                    console.print(f"\n  [yellow]Time remaining: {hours}h {minutes}m[/yellow]")
+                else:
+                    console.print("\n  [green]Ready for execution[/green]")
         except (ValueError, KeyError):
             # Invalid datetime format
             pass
