@@ -3,6 +3,7 @@
 import contextlib
 import logging
 import plistlib
+import random
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -897,8 +898,6 @@ def _process_pending_actions() -> None:
                 logger.error(f"Error processing pending action {action_id}: {e}")
 
     # Periodic cleanup of old actions
-    import random
-
     if random.random() < 0.01:  # ~1% chance per run
         cleanup_old_actions(max_age_days=7)
 

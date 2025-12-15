@@ -79,11 +79,12 @@ def create_pending_action(
 
     Args:
         domain: Domain to unblock
-        delay: Delay value ('24h', '4h', '30m', '0')
+        delay: Delay value ('24h', '4h', '30m', '0', 'never').
+            - If 'never' is passed, no pending action will be created and the function returns None.
         requested_by: Origin of request ('cli', 'sync')
 
     Returns:
-        Created action dict or None on failure
+        Created action dict, or None on failure or if delay is 'never'
     """
     delay_seconds = UNBLOCK_DELAY_SECONDS.get(delay)
     if delay_seconds is None:  # 'never' or invalid
@@ -108,7 +109,7 @@ def create_pending_action(
     # Check for duplicate pending action for same domain
     pending_actions: list[dict[str, Any]] = data["pending_actions"]
     for existing in pending_actions:
-        if existing["domain"] == domain and existing["status"] == "pending":
+        if existing.get("domain") == domain and existing.get("status") == "pending":
             logger.warning(f"Pending action already exists for {domain}")
             return existing
 
@@ -123,7 +124,7 @@ def create_pending_action(
 def get_pending_action(action_id: str) -> Optional[dict[str, Any]]:
     """Get a pending action by ID."""
     data = _load_pending_data()
-    pending_actions: list[dict[str, Any]] = data["pending_actions"]
+    pending_actions: list[dict[str, Any]] = data.get("pending_actions", [])
     for action in pending_actions:
         if action["id"] == action_id:
             return action
@@ -150,7 +151,7 @@ def get_pending_actions(status: Optional[str] = None) -> list[dict[str, Any]]:
 def get_pending_for_domain(domain: str) -> Optional[dict[str, Any]]:
     """Get pending action for a specific domain."""
     data = _load_pending_data()
-    pending_actions: list[dict[str, Any]] = data["pending_actions"]
+    pending_actions: list[dict[str, Any]] = data.get("pending_actions", [])
     for action in pending_actions:
         if action["domain"] == domain and action["status"] == "pending":
             return action
@@ -170,10 +171,10 @@ def cancel_pending_action(action_id: str) -> bool:
     data = _load_pending_data()
     for i, action in enumerate(data["pending_actions"]):
         if action["id"] == action_id:
-            if action["status"] != "pending":
+            if action.get("status") != "pending":
                 return False
             # Remove the action entirely
-            domain = action["domain"]
+            domain = action.get("domain", "unknown")
             del data["pending_actions"][i]
             if _save_pending_data(data):
                 audit_log("PENDING_CANCEL", f"{action_id} {domain}")
@@ -188,7 +189,7 @@ def get_ready_actions() -> list[dict[str, Any]]:
     data = _load_pending_data()
     ready = []
     for action in data["pending_actions"]:
-        if action["status"] != "pending":
+        if action.get("status") != "pending":
             continue
         try:
             execute_at = datetime.fromisoformat(action["execute_at"])
@@ -204,7 +205,7 @@ def mark_action_executed(action_id: str) -> bool:
     data = _load_pending_data()
     for i, action in enumerate(data["pending_actions"]):
         if action["id"] == action_id:
-            domain = action["domain"]
+            domain = action.get("domain", "unknown")
             del data["pending_actions"][i]
             if _save_pending_data(data):
                 audit_log("PENDING_EXECUTE", f"{action_id} {domain}")
