@@ -206,7 +206,7 @@ def mark_action_executed(action_id: str) -> bool:
     """Mark an action as executed and remove it from the file."""
     data = _load_pending_data()
     for i, action in enumerate(data["pending_actions"]):
-        if action["id"] == action_id:
+        if action.get("id") == action_id:
             domain = action.get("domain", "unknown")
             del data["pending_actions"][i]
             if _save_pending_data(data):
