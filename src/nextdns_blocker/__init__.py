@@ -1,6 +1,11 @@
 """NextDNS Blocker - Automated domain blocking with per-domain scheduling."""
 
-__version__ = "5.2.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("nextdns-blocker")
+except PackageNotFoundError:
+    __version__ = "0.0.0"  # Development without install
 
 from .client import NextDNSClient
 from .config import (
