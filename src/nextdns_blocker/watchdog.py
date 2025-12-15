@@ -872,10 +872,15 @@ def _process_pending_actions() -> None:
         return
 
     for action in ready_actions:
-        domain = action["domain"]
-        action_id = action["id"]
+        domain = action.get("domain")
+        action_id = action.get("id")
+        action_type = action.get("action")
 
-        if action["action"] == "unblock":
+        if domain is None or action_id is None or action_type is None:
+            logger.warning(f"Skipping malformed pending action: {action}")
+            continue
+
+        if action_type == "unblock":
             try:
                 if client.unblock(domain):
                     mark_action_executed(action_id)
