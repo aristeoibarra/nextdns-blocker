@@ -1,0 +1,20 @@
+name: Register Cloudflare Deployment
+
+on:
+  push:
+    branches: [main, prod]
+    paths:
+      - 'docs/**'
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    permissions:
+      deployments: write
+    steps:
+      - name: Create GitHub Deployment
+        uses: chrnorm/deployment-action@v2
+        with:
+          token: ${{ github.token }}
+          environment: ${{ github.ref_name == 'prod' && 'docs-production' || 'docs-preview' }}
+          environment-url: ${{ github.ref_name == 'prod' && 'https://nextdns-blocker.pages.dev' || 'https://main.nextdns-blocker.pages.dev' }}
