@@ -13,7 +13,7 @@ from .common import (
     read_secure_file,
     write_secure_file,
 )
-from .config import get_data_dir, UNBLOCK_DELAY_SECONDS
+from .config import UNBLOCK_DELAY_SECONDS, get_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -225,9 +225,7 @@ def cleanup_old_actions(max_age_days: int = 7) -> int:
     original_count = len(data["pending_actions"])
 
     data["pending_actions"] = [
-        a
-        for a in data["pending_actions"]
-        if datetime.fromisoformat(a["created_at"]) > cutoff
+        a for a in data["pending_actions"] if datetime.fromisoformat(a["created_at"]) > cutoff
     ]
 
     removed = original_count - len(data["pending_actions"])

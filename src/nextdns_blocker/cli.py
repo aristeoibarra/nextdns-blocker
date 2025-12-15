@@ -23,7 +23,6 @@ from .common import (
 from .config import (
     DEFAULT_PAUSE_MINUTES,
     get_config_dir,
-    get_protected_domains,
     load_config,
     load_domains,
     validate_allowlist_config,

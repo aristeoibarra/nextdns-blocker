@@ -5,8 +5,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from nextdns_blocker.pending import (
     _load_pending_data,
     _save_pending_data,
@@ -14,9 +12,7 @@ from nextdns_blocker.pending import (
     cleanup_old_actions,
     create_pending_action,
     generate_action_id,
-    get_pending_action,
     get_pending_actions,
-    get_pending_file,
     get_pending_for_domain,
     get_ready_actions,
     mark_action_executed,
@@ -48,7 +44,9 @@ class TestPendingDataIO:
 
     def test_load_empty_file(self, tmp_path: Path):
         """Loading non-existent file returns default structure."""
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=tmp_path / "pending.json"):
+        with patch(
+            "nextdns_blocker.pending.get_pending_file", return_value=tmp_path / "pending.json"
+        ):
             data = _load_pending_data()
             assert data["version"] == "1.0"
             assert data["pending_actions"] == []

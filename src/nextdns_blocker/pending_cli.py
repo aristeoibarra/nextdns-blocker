@@ -10,7 +10,6 @@ from rich.table import Table
 
 from .pending import (
     cancel_pending_action,
-    get_pending_action,
     get_pending_actions,
 )
 
