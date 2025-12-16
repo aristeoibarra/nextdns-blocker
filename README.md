@@ -223,6 +223,45 @@ nextdns-blocker update
 nextdns-blocker update -y
 ```
 
+### Pending Actions Commands
+
+```bash
+# List all pending unblock actions
+nextdns-blocker pending list
+
+# Show details of a specific pending action
+nextdns-blocker pending show <action-id>
+
+# Cancel a pending unblock action
+nextdns-blocker pending cancel <action-id>
+
+# Cancel without confirmation
+nextdns-blocker pending cancel <action-id> -y
+```
+
+### Config Commands
+
+```bash
+# Show current configuration
+nextdns-blocker config show
+
+# Edit config in your editor ($EDITOR)
+nextdns-blocker config edit
+
+# Set a configuration value
+nextdns-blocker config set timezone America/New_York
+nextdns-blocker config set editor vim
+
+# Validate configuration syntax and structure
+nextdns-blocker config validate
+
+# Migrate from legacy domains.json to config.json
+nextdns-blocker config migrate
+
+# Sync domains (same as root sync, but preferred)
+nextdns-blocker config sync
+```
+
 ### Watchdog Commands
 
 ```bash
@@ -348,8 +387,42 @@ Edit `config.json` to configure which domains to manage and their availability s
 |-------|----------|-------------|
 | `domain` | Yes | Domain name to manage |
 | `description` | No | Human-readable description |
-| `unblock_delay` | No | `"0"` = instant unblock, `"never"` = cannot unblock manually |
+| `unblock_delay` | No | Cooldown before unblock executes (see below) |
 | `schedule` | No | Availability schedule (null = always blocked) |
+
+#### Unblock Delay Options
+
+The `unblock_delay` field creates friction against impulsive unblocking:
+
+| Value | Behavior |
+|-------|----------|
+| `"0"` | Instant unblock (no protection) |
+| `"30m"` | Unblock queued, executes in 30 minutes |
+| `"4h"` | Unblock queued, executes in 4 hours |
+| `"24h"` | Unblock queued, executes in 24 hours |
+| `"never"` | Cannot unblock (fully protected) |
+
+When a delay is set, attempting to unblock creates a **pending action**:
+
+```bash
+$ nextdns-blocker unblock bumble.com
+
+Unblock scheduled for 'bumble.com'
+Delay: 24h
+Execute at: 2025-12-16T03:45:00
+ID: pnd_20251215_034500_a1b2c3
+
+Use 'pending list' to view or 'pending cancel' to abort
+```
+
+You can cancel the pending action before it executes:
+
+```bash
+$ nextdns-blocker pending cancel a1b2c3
+Cancelled pending unblock for bumble.com
+```
+
+This is based on research showing that cravings typically fade within 20-30 minutes. The delay creates space for better decisions.
 
 Changes take effect on next sync (every 2 minutes).
 
