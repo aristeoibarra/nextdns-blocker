@@ -758,6 +758,89 @@ def test_notifications(config_dir: Optional[Path]) -> None:
 
 
 @main.command()
+@click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
+def uninstall(yes: bool) -> None:
+    """Completely remove NextDNS Blocker and all its data.
+
+    This command will:
+    - Remove all scheduled jobs (launchd/cron/Task Scheduler)
+    - Delete configuration files (.env, config.json)
+    - Delete all logs, cache, and data files
+
+    After running this command, you will need to reinstall the package
+    using your package manager (pip, pipx, or brew).
+    """
+    import shutil
+
+    from .config import get_config_dir, get_data_dir
+    from .watchdog import (
+        _uninstall_cron_jobs,
+        _uninstall_launchd_jobs,
+        _uninstall_windows_tasks,
+    )
+
+    config_dir = get_config_dir()
+    data_dir = get_data_dir()
+
+    # Collect unique directories to remove
+    dirs_to_remove: list[tuple[str, Path]] = []
+    dirs_to_remove.append(("Config", config_dir))
+    if data_dir != config_dir:
+        dirs_to_remove.append(("Data", data_dir))
+
+    console.print("\n  [bold red]NextDNS Blocker Uninstall[/bold red]")
+    console.print("  [bold red]-------------------------[/bold red]")
+    console.print("\n  This will permanently delete:")
+    console.print("    • Scheduled jobs (watchdog)")
+    for name, path in dirs_to_remove:
+        console.print(f"    • {name}: [yellow]{path}[/yellow]")
+    console.print()
+
+    if not yes:
+        if not click.confirm("  Are you sure you want to continue?", default=False):
+            console.print("\n  [green]Uninstall cancelled.[/green]\n")
+            return
+
+    console.print("\n  [bold]Removing...[/bold]")
+
+    total_steps = 1 + len(dirs_to_remove)
+    step = 1
+
+    # Step 1: Remove scheduled jobs
+    console.print(f"    [{step}/{total_steps}] Removing scheduled jobs...")
+    try:
+        if is_macos():
+            _uninstall_launchd_jobs()
+        elif is_windows():
+            _uninstall_windows_tasks()
+        else:
+            _uninstall_cron_jobs()
+        console.print("          [green]Done[/green]")
+    except Exception as e:
+        console.print(f"          [yellow]Warning: {e}[/yellow]")
+
+    # Remove directories
+    for name, path in dirs_to_remove:
+        step += 1
+        console.print(f"    [{step}/{total_steps}] Removing {name.lower()} directory...")
+        try:
+            if path.exists():
+                shutil.rmtree(path)
+                console.print("          [green]Done[/green]")
+            else:
+                console.print("          [yellow]Already removed[/yellow]")
+        except Exception as e:
+            console.print(f"          [red]Error: {e}[/red]")
+
+    console.print("\n  [green]Uninstall complete![/green]")
+    console.print("  To remove the package itself, run:")
+    console.print("    [yellow]brew uninstall nextdns-blocker[/yellow]  (Homebrew)")
+    console.print("    [yellow]pipx uninstall nextdns-blocker[/yellow]  (pipx)")
+    console.print("    [yellow]pip uninstall nextdns-blocker[/yellow]   (pip)")
+    console.print()
+
+
+@main.command()
 def stats() -> None:
     """Show usage statistics from audit log."""
     console.print("\n  [bold]Statistics[/bold]")

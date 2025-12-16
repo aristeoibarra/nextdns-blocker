@@ -1304,3 +1304,148 @@ class TestValidateCommand:
 
         assert result.exit_code == 1
         assert "no domains" in result.output.lower()
+
+
+class TestUninstallCommand:
+    """Tests for the uninstall command."""
+
+    def test_uninstall_help(self, runner):
+        """Test that uninstall --help works."""
+        result = runner.invoke(main, ["uninstall", "--help"])
+        assert result.exit_code == 0
+        assert "Completely remove NextDNS Blocker" in result.output
+        assert "--yes" in result.output
+
+    def test_uninstall_cancelled(self, runner):
+        """Test that uninstall can be cancelled."""
+        result = runner.invoke(main, ["uninstall"], input="n\n")
+        assert result.exit_code == 0
+        assert "cancelled" in result.output.lower()
+
+    @patch("nextdns_blocker.watchdog._uninstall_launchd_jobs")
+    @patch("nextdns_blocker.cli.is_macos", return_value=True)
+    @patch("nextdns_blocker.config.get_data_dir")
+    @patch("nextdns_blocker.config.get_config_dir")
+    def test_uninstall_macos(
+        self, mock_config_dir, mock_data_dir, mock_is_macos, mock_uninstall, runner, tmp_path
+    ):
+        """Test uninstall on macOS."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / ".env").write_text("TEST=1")
+
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        (data_dir / "logs").mkdir()
+
+        mock_config_dir.return_value = config_dir
+        mock_data_dir.return_value = data_dir
+
+        result = runner.invoke(main, ["uninstall", "-y"])
+
+        assert result.exit_code == 0
+        assert "complete" in result.output.lower()
+        mock_uninstall.assert_called_once()
+        assert not config_dir.exists()
+        assert not data_dir.exists()
+
+    @patch("nextdns_blocker.watchdog._uninstall_windows_tasks")
+    @patch("nextdns_blocker.cli.is_windows", return_value=True)
+    @patch("nextdns_blocker.cli.is_macos", return_value=False)
+    @patch("nextdns_blocker.config.get_data_dir")
+    @patch("nextdns_blocker.config.get_config_dir")
+    def test_uninstall_windows(
+        self,
+        mock_config_dir,
+        mock_data_dir,
+        mock_is_macos,
+        mock_is_windows,
+        mock_uninstall,
+        runner,
+        tmp_path,
+    ):
+        """Test uninstall on Windows."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / ".env").write_text("TEST=1")
+
+        mock_config_dir.return_value = config_dir
+        mock_data_dir.return_value = config_dir  # Same dir on Windows
+
+        result = runner.invoke(main, ["uninstall", "-y"])
+
+        assert result.exit_code == 0
+        assert "complete" in result.output.lower()
+        mock_uninstall.assert_called_once()
+
+    @patch("nextdns_blocker.watchdog._uninstall_cron_jobs")
+    @patch("nextdns_blocker.cli.is_windows", return_value=False)
+    @patch("nextdns_blocker.cli.is_macos", return_value=False)
+    @patch("nextdns_blocker.config.get_data_dir")
+    @patch("nextdns_blocker.config.get_config_dir")
+    def test_uninstall_linux(
+        self,
+        mock_config_dir,
+        mock_data_dir,
+        mock_is_macos,
+        mock_is_windows,
+        mock_uninstall,
+        runner,
+        tmp_path,
+    ):
+        """Test uninstall on Linux."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+
+        mock_config_dir.return_value = config_dir
+        mock_data_dir.return_value = data_dir
+
+        result = runner.invoke(main, ["uninstall", "-y"])
+
+        assert result.exit_code == 0
+        assert "complete" in result.output.lower()
+        mock_uninstall.assert_called_once()
+        assert not config_dir.exists()
+        assert not data_dir.exists()
+
+    @patch("nextdns_blocker.watchdog._uninstall_launchd_jobs")
+    @patch("nextdns_blocker.cli.is_macos", return_value=True)
+    @patch("nextdns_blocker.config.get_data_dir")
+    @patch("nextdns_blocker.config.get_config_dir")
+    def test_uninstall_already_removed(
+        self, mock_config_dir, mock_data_dir, mock_is_macos, mock_uninstall, runner, tmp_path
+    ):
+        """Test uninstall when directories already removed."""
+        config_dir = tmp_path / "nonexistent_config"
+        data_dir = tmp_path / "nonexistent_data"
+
+        mock_config_dir.return_value = config_dir
+        mock_data_dir.return_value = data_dir
+
+        result = runner.invoke(main, ["uninstall", "-y"])
+
+        assert result.exit_code == 0
+        assert "Already removed" in result.output
+
+    @patch("nextdns_blocker.watchdog._uninstall_launchd_jobs", side_effect=Exception("Job error"))
+    @patch("nextdns_blocker.cli.is_macos", return_value=True)
+    @patch("nextdns_blocker.config.get_data_dir")
+    @patch("nextdns_blocker.config.get_config_dir")
+    def test_uninstall_watchdog_error_continues(
+        self, mock_config_dir, mock_data_dir, mock_is_macos, mock_uninstall, runner, tmp_path
+    ):
+        """Test uninstall continues even if watchdog uninstall fails."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        mock_config_dir.return_value = config_dir
+        mock_data_dir.return_value = config_dir
+
+        result = runner.invoke(main, ["uninstall", "-y"])
+
+        assert result.exit_code == 0
+        assert "Warning" in result.output
+        assert "complete" in result.output.lower()
