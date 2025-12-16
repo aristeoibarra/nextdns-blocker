@@ -5,6 +5,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/nextdns-blocker)](https://pypi.org/project/nextdns-blocker/)
 [![License](https://img.shields.io/github/license/aristeoibarra/nextdns-blocker)](LICENSE)
 [![CI](https://github.com/aristeoibarra/nextdns-blocker/actions/workflows/ci.yml/badge.svg)](https://github.com/aristeoibarra/nextdns-blocker/actions/workflows/ci.yml)
+[![Homebrew](https://img.shields.io/badge/homebrew-tap-blue)](https://github.com/aristeoibarra/homebrew-tap)
 
 
 Automated system to control domain access with per-domain schedule configuration using the NextDNS API.
@@ -35,7 +36,20 @@ Automated system to control domain access with per-domain schedule configuration
 
 ## Installation
 
-### Option 1: Install from PyPI (Recommended)
+### Option 1: Homebrew (macOS/Linux)
+
+```bash
+brew tap aristeoibarra/tap
+brew install nextdns-blocker
+```
+
+Then run the setup wizard:
+
+```bash
+nextdns-blocker init
+```
+
+### Option 2: Install from PyPI
 
 ```bash
 pip install nextdns-blocker
@@ -47,7 +61,7 @@ Then run the setup wizard:
 nextdns-blocker init
 ```
 
-### Option 2: Install from Source
+### Option 3: Install from Source
 
 ```bash
 git clone https://github.com/aristeoibarra/nextdns-blocker.git
@@ -56,7 +70,7 @@ pip install -e .
 nextdns-blocker init
 ```
 
-### Windows Installation
+### Option 4: Windows Installation
 
 On Windows, you can also use the PowerShell installer:
 

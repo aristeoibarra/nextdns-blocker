@@ -179,3 +179,21 @@ jobs:
           generate_release_notes: true
           files: |
             dist/*
+
+  notify-homebrew:
+    name: Notify Homebrew Tap
+    needs: github-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Trigger Homebrew tap update
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.TAP_REPO_TOKEN }}
+          repository: aristeoibarra/homebrew-tap
+          event-type: nextdns-blocker-release
+          client-payload: '{"version": "${{ steps.version.outputs.version }}"}'
