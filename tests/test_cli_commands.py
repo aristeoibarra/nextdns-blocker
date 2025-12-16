@@ -596,47 +596,6 @@ class TestReadSecureFile:
         assert result is None
 
 
-class TestSyncWithDomainsUrl:
-    """Tests for sync command with --domains-url flag."""
-
-    @responses.activate
-    def test_sync_with_domains_url_flag(self, runner, mock_pause_file, tmp_path):
-        """Test sync uses --domains-url flag to fetch remote domains."""
-        remote_url = "https://example.com/domains.json"
-
-        responses.add(
-            responses.GET,
-            remote_url,
-            json={"domains": [{"domain": "remote.com"}], "allowlist": []},
-            status=200,
-        )
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/testprofile/denylist",
-            json={"data": []},
-            status=200,
-        )
-        responses.add(
-            responses.POST,
-            f"{API_URL}/profiles/testprofile/denylist",
-            json={"success": True},
-            status=200,
-        )
-
-        env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-
-        with patch(
-            "nextdns_blocker.config.get_domains_cache_file", return_value=tmp_path / "cache.json"
-        ):
-            result = runner.invoke(
-                main,
-                ["sync", "--config-dir", str(tmp_path), "--domains-url", remote_url, "--dry-run"],
-            )
-
-        assert result.exit_code == 0
-
-
 class TestAllowCommand:
     """Tests for allow CLI command."""
 
@@ -1160,3 +1119,188 @@ class TestStatusCommandEdgeCases:
 
         assert result.exit_code == 0
         assert "protected.com" in result.output
+
+
+class TestValidateCommand:
+    """Tests for validate CLI command."""
+
+    def test_validate_valid_config(self, runner, tmp_path):
+        """Should validate a correct configuration successfully."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text(
+            '{"domains": [{"domain": "example.com"}, {"domain": "test.org"}], "allowlist": []}'
+        )
+
+        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "Configuration OK" in result.output
+        assert "2 domains" in result.output
+
+    def test_validate_with_protected_domains(self, runner, tmp_path):
+        """Should count protected domains."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text(
+            '{"domains": [{"domain": "example.com", "protected": true}, '
+            '{"domain": "test.org", "protected": true}], "allowlist": []}'
+        )
+
+        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "2 protected" in result.output
+
+    def test_validate_with_allowlist(self, runner, tmp_path):
+        """Should count allowlist entries."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text(
+            '{"domains": [{"domain": "example.com"}], '
+            '"allowlist": [{"domain": "allowed.com"}, {"domain": "safe.org"}]}'
+        )
+
+        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "2 entries" in result.output
+
+    def test_validate_with_schedules(self, runner, tmp_path):
+        """Should validate and count schedules."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text(
+            '{"domains": [{"domain": "example.com", "schedule": {'
+            '"available_hours": [{"days": ["monday"], "time_ranges": [{"start": "09:00", "end": "17:00"}]}]'
+            "}}]}"
+        )
+
+        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "schedule" in result.output.lower()
+
+    def test_validate_missing_domains_file(self, runner, tmp_path):
+        """Should fail when domains.json is missing."""
+        # No domains.json file created
+
+        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 1
+        assert "not found" in result.output.lower() or "failed" in result.output.lower()
+
+    def test_validate_invalid_json(self, runner, tmp_path):
+        """Should fail on invalid JSON syntax."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text("{invalid json}")
+
+        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 1
+        assert "invalid" in result.output.lower() or "error" in result.output.lower()
+
+    def test_validate_invalid_domain_format(self, runner, tmp_path):
+        """Should fail on invalid domain format."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text('{"domains": [{"domain": "invalid domain.com"}]}')
+
+        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 1
+        assert "invalid" in result.output.lower()
+
+    def test_validate_invalid_schedule_time(self, runner, tmp_path):
+        """Should fail on invalid schedule time format."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text(
+            '{"domains": [{"domain": "example.com", "schedule": {'
+            '"available_hours": [{"days": ["monday"], "time_ranges": [{"start": "25:00", "end": "17:00"}]}]'
+            "}}]}"
+        )
+
+        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 1
+        assert "invalid" in result.output.lower() or "error" in result.output.lower()
+
+    def test_validate_denylist_allowlist_conflict(self, runner, tmp_path):
+        """Should fail when domain is in both denylist and allowlist."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text(
+            '{"domains": [{"domain": "example.com"}], "allowlist": [{"domain": "example.com"}]}'
+        )
+
+        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 1
+        assert "conflict" in result.output.lower() or "both" in result.output.lower()
+
+    def test_validate_json_output(self, runner, tmp_path):
+        """Should output JSON when --json flag is used."""
+        import json
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text('{"domains": [{"domain": "example.com"}], "allowlist": []}')
+
+        result = runner.invoke(main, ["validate", "--json", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 0
+        # Should be valid JSON
+        output = json.loads(result.output)
+        assert output["valid"] is True
+        assert "checks" in output
+        assert "summary" in output
+
+    def test_validate_json_output_with_errors(self, runner, tmp_path):
+        """Should output JSON with errors when validation fails."""
+        import json
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text('{"domains": [{"domain": "invalid domain"}]}')
+
+        result = runner.invoke(main, ["validate", "--json", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 1
+        output = json.loads(result.output)
+        assert output["valid"] is False
+        assert len(output["errors"]) > 0
+
+    def test_validate_empty_domains(self, runner, tmp_path):
+        """Should fail when no domains are configured."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+
+        domains_file = tmp_path / "domains.json"
+        domains_file.write_text('{"domains": []}')
+
+        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+
+        assert result.exit_code == 1
+        assert "no domains" in result.output.lower()

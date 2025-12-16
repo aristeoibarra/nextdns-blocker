@@ -5,6 +5,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/nextdns-blocker)](https://pypi.org/project/nextdns-blocker/)
 [![License](https://img.shields.io/github/license/aristeoibarra/nextdns-blocker)](LICENSE)
 [![CI](https://github.com/aristeoibarra/nextdns-blocker/actions/workflows/ci.yml/badge.svg)](https://github.com/aristeoibarra/nextdns-blocker/actions/workflows/ci.yml)
+[![Homebrew](https://img.shields.io/badge/homebrew-tap-blue)](https://github.com/aristeoibarra/homebrew-tap)
 
 
 Automated system to control domain access with per-domain schedule configuration using the NextDNS API.
@@ -35,7 +36,20 @@ Automated system to control domain access with per-domain schedule configuration
 
 ## Installation
 
-### Option 1: Install from PyPI (Recommended)
+### Option 1: Homebrew (macOS/Linux)
+
+```bash
+brew tap aristeoibarra/tap
+brew install nextdns-blocker
+```
+
+Then run the setup wizard:
+
+```bash
+nextdns-blocker init
+```
+
+### Option 2: Install from PyPI
 
 ```bash
 pip install nextdns-blocker
@@ -47,7 +61,7 @@ Then run the setup wizard:
 nextdns-blocker init
 ```
 
-### Option 2: Install from Source
+### Option 3: Install from Source
 
 ```bash
 git clone https://github.com/aristeoibarra/nextdns-blocker.git
@@ -56,7 +70,7 @@ pip install -e .
 nextdns-blocker init
 ```
 
-### Windows Installation
+### Option 4: Windows Installation
 
 On Windows, you can also use the PowerShell installer:
 
@@ -90,12 +104,16 @@ nextdns-blocker init
 The wizard will prompt for:
 - API Key
 - Profile ID
-- Timezone (auto-detected from system)
-- Option to create sample domains.json
+
+Timezone is automatically detected from your system and saved to `config.json`.
 
 ### 3. Configure Domains and Schedules
 
-Edit `domains.json` in your config directory to configure your domains and their availability schedules.
+Edit `config.json` in your config directory to configure your domains and their availability schedules:
+
+```bash
+nextdns-blocker config edit
+```
 
 See [SCHEDULE_GUIDE.md](SCHEDULE_GUIDE.md) for detailed schedule configuration examples.
 
@@ -128,8 +146,8 @@ nano .env  # Add your API key, profile ID, and timezone
 ### 2. Configure Domains
 
 ```bash
-cp domains.json.example domains.json
-nano domains.json  # Configure your domains and schedules
+cp config.json.example config.json
+nano config.json  # Configure your domains and schedules
 ```
 
 ### 3. Run with Docker Compose
@@ -166,8 +184,7 @@ docker compose exec nextdns-blocker python nextdns_blocker.py status
 |----------|----------|---------|-------------|
 | `NEXTDNS_API_KEY` | Yes | - | Your NextDNS API key |
 | `NEXTDNS_PROFILE_ID` | Yes | - | Your NextDNS profile ID |
-| `DOMAINS_URL` | No | - | URL to fetch domains.json remotely |
-| `TZ` | No | `America/Mexico_City` | Container timezone |
+| `TZ` | No | `UTC` | Container timezone |
 
 ## Commands
 
@@ -204,6 +221,45 @@ nextdns-blocker update
 
 # Update without confirmation prompt
 nextdns-blocker update -y
+```
+
+### Pending Actions Commands
+
+```bash
+# List all pending unblock actions
+nextdns-blocker pending list
+
+# Show details of a specific pending action
+nextdns-blocker pending show <action-id>
+
+# Cancel a pending unblock action
+nextdns-blocker pending cancel <action-id>
+
+# Cancel without confirmation
+nextdns-blocker pending cancel <action-id> -y
+```
+
+### Config Commands
+
+```bash
+# Show current configuration
+nextdns-blocker config show
+
+# Edit config in your editor ($EDITOR)
+nextdns-blocker config edit
+
+# Set a configuration value
+nextdns-blocker config set timezone America/New_York
+nextdns-blocker config set editor vim
+
+# Validate configuration syntax and structure
+nextdns-blocker config validate
+
+# Migrate from legacy domains.json to config.json
+nextdns-blocker config migrate
+
+# Sync domains (same as root sync, but preferred)
+nextdns-blocker config sync
 ```
 
 ### Watchdog Commands
@@ -255,12 +311,12 @@ crontab -l
 |----------|----------|---------|-------------|
 | `NEXTDNS_API_KEY` | Yes | - | Your NextDNS API key |
 | `NEXTDNS_PROFILE_ID` | Yes | - | Your NextDNS profile ID |
-| `TIMEZONE` | No | Auto-detected | Timezone for schedule evaluation (auto-detected during init) |
 | `API_TIMEOUT` | No | `10` | API request timeout in seconds |
 | `API_RETRIES` | No | `3` | Number of retry attempts |
-| `DOMAINS_URL` | No | - | URL to fetch domains.json from |
 | `DISCORD_WEBHOOK_URL` | No | - | Discord webhook URL for notifications |
 | `DISCORD_NOTIFICATIONS_ENABLED` | No | `false` | Enable Discord notifications (`true`/`false`) |
+
+> **Note:** Timezone is now configured in `config.json` under `settings.timezone` and is auto-detected during setup.
 
 ### Discord Notifications
 
@@ -282,15 +338,20 @@ Notifications show:
 
 ### Domain Schedules
 
-Edit `domains.json` to configure which domains to manage and their availability schedules:
+Edit `config.json` to configure which domains to manage and their availability schedules:
 
 ```json
 {
-  "domains": [
+  "version": "1.0",
+  "settings": {
+    "timezone": "America/New_York",
+    "editor": null
+  },
+  "blocklist": [
     {
       "domain": "reddit.com",
       "description": "Social media",
-      "protected": false,
+      "unblock_delay": "0",
       "schedule": {
         "available_hours": [
           {
@@ -312,10 +373,11 @@ Edit `domains.json` to configure which domains to manage and their availability 
     {
       "domain": "gambling-site.com",
       "description": "Always blocked",
-      "protected": true,
+      "unblock_delay": "never",
       "schedule": null
     }
-  ]
+  ],
+  "allowlist": []
 }
 ```
 
@@ -325,8 +387,42 @@ Edit `domains.json` to configure which domains to manage and their availability 
 |-------|----------|-------------|
 | `domain` | Yes | Domain name to manage |
 | `description` | No | Human-readable description |
-| `protected` | No | If `true`, domain cannot be manually unblocked |
+| `unblock_delay` | No | Cooldown before unblock executes (see below) |
 | `schedule` | No | Availability schedule (null = always blocked) |
+
+#### Unblock Delay Options
+
+The `unblock_delay` field creates friction against impulsive unblocking:
+
+| Value | Behavior |
+|-------|----------|
+| `"0"` | Instant unblock (no protection) |
+| `"30m"` | Unblock queued, executes in 30 minutes |
+| `"4h"` | Unblock queued, executes in 4 hours |
+| `"24h"` | Unblock queued, executes in 24 hours |
+| `"never"` | Cannot unblock (fully protected) |
+
+When a delay is set, attempting to unblock creates a **pending action**:
+
+```bash
+$ nextdns-blocker unblock bumble.com
+
+Unblock scheduled for 'bumble.com'
+Delay: 24h
+Execute at: 2025-12-16T03:45:00
+ID: pnd_20251215_034500_a1b2c3
+
+Use 'pending list' to view or 'pending cancel' to abort
+```
+
+You can cancel the pending action before it executes:
+
+```bash
+$ nextdns-blocker pending cancel a1b2c3
+Cancelled pending unblock for bumble.com
+```
+
+This is based on research showing that cravings typically fade within 20-30 minutes. The delay creates space for better decisions.
 
 Changes take effect on next sync (every 2 minutes).
 
@@ -385,10 +481,10 @@ The timezone is auto-detected during `init` based on your system settings:
 - **Windows**: Uses `tzutil /g` command
 - **Fallback**: `TZ` environment variable or `UTC`
 
-To override, edit `.env`:
+Timezone is stored in `config.json` under `settings.timezone`. To change it:
 
 ```bash
-TIMEZONE=America/New_York
+nextdns-blocker config set timezone America/New_York
 ```
 
 See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
@@ -401,16 +497,17 @@ See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_z
 - Test manually: `nextdns-blocker sync`
 - Validate JSON: `python3 -m json.tool domains.json`
 
-**Domains.json errors?**
+**Config.json errors?**
 - Ensure valid JSON syntax (use [jsonlint.com](https://jsonlint.com))
 - Check time format is HH:MM (24-hour)
 - Check day names are lowercase (monday, tuesday, etc.)
 - Domain names must be valid (no spaces, special characters)
-- See `domains.json.example` for reference
+- Validate with: `nextdns-blocker config validate`
+- See `config.json.example` for reference
 
 **Wrong timezone?**
-- Re-run `nextdns-blocker init` (timezone is auto-detected)
-- Or manually update `TIMEZONE` in `.env`
+- Change with: `nextdns-blocker config set timezone America/New_York`
+- Or re-run `nextdns-blocker init` (timezone is auto-detected)
 - Check logs to verify timezone is being used
 
 **API timeouts?**
@@ -542,7 +639,7 @@ The codebase follows these practices:
   - `social-media.json` - Social networks management
   - `parental-control.json` - Protected content blocking
   - `study-mode.json` - Student-focused scheduling for distraction-free studying
-- [domains.json.example](domains.json.example) - Example configuration file
+- [config.json.example](config.json.example) - Example configuration file
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 
 ## Security

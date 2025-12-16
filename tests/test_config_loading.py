@@ -5,7 +5,6 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-import responses
 
 from nextdns_blocker.common import (
     parse_env_value,
@@ -176,43 +175,6 @@ class TestLoadDomains:
             load_domains(str(temp_dir))
 
         assert "must be a JSON object" in str(exc_info.value)
-
-    @responses.activate
-    def test_load_domains_from_url(self, domains_json_content):
-        """Test loading domains from URL."""
-        test_url = "https://example.com/domains.json"
-        responses.add(responses.GET, test_url, json=domains_json_content, status=200)
-
-        domains, allowlist = load_domains("/tmp", domains_url=test_url)
-
-        assert len(domains) == 2
-        assert domains[0]["domain"] == "example.com"
-        assert allowlist == []
-
-    @responses.activate
-    def test_load_domains_url_error(self):
-        """Test that URL errors raise ConfigurationError when cache disabled."""
-        test_url = "https://example.com/domains.json"
-        responses.add(responses.GET, test_url, status=500)
-
-        with pytest.raises(ConfigurationError) as exc_info:
-            load_domains("/tmp", domains_url=test_url, use_cache=False)
-
-        assert "Failed to load" in str(exc_info.value)
-
-    @responses.activate
-    def test_load_domains_url_invalid_json(self):
-        """Test that invalid JSON from URL raises ConfigurationError."""
-        test_url = "https://example.com/domains.json"
-        responses.add(
-            responses.GET, test_url, body="{ invalid }", status=200, content_type="application/json"
-        )
-
-        with pytest.raises(ConfigurationError) as exc_info:
-            load_domains("/tmp", domains_url=test_url)
-
-        # Error message contains JSON parsing error from requests
-        assert "Failed to load" in str(exc_info.value) or "JSON" in str(exc_info.value)
 
 
 class TestDomainConfigValidation:
@@ -392,37 +354,6 @@ TIMEZONE=UTC
             config = load_config(config_dir=temp_dir)
             assert config["api_key"] == "bomkey12345"
             assert config["profile_id"] == "bomprofile"
-
-    def test_load_config_invalid_domains_url(self, temp_dir):
-        """Test that invalid DOMAINS_URL raises ConfigurationError."""
-        env_content = """
-NEXTDNS_API_KEY=testkey12345
-NEXTDNS_PROFILE_ID=testprofile
-TIMEZONE=UTC
-DOMAINS_URL=not_a_valid_url
-"""
-        env_file = temp_dir / ".env"
-        env_file.write_text(env_content)
-
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ConfigurationError) as exc_info:
-                load_config(config_dir=temp_dir)
-            assert "Invalid DOMAINS_URL" in str(exc_info.value)
-
-    def test_load_config_valid_domains_url(self, temp_dir):
-        """Test that valid DOMAINS_URL is accepted."""
-        env_content = """
-NEXTDNS_API_KEY=testkey12345
-NEXTDNS_PROFILE_ID=testprofile
-TIMEZONE=UTC
-DOMAINS_URL=https://example.com/domains.json
-"""
-        env_file = temp_dir / ".env"
-        env_file.write_text(env_content)
-
-        with patch.dict(os.environ, {}, clear=True):
-            config = load_config(config_dir=temp_dir)
-            assert config["domains_url"] == "https://example.com/domains.json"
 
 
 class TestValidateUrl:

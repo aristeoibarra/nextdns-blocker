@@ -5,19 +5,23 @@
 repos:
   # General hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^(docs|examples)/
       - id: end-of-file-fixer
+        exclude: ^(docs|examples)/
       - id: check-yaml
+        exclude: ^(docs|examples)/
       - id: check-json
+        exclude: ^(docs|examples)/
       - id: check-added-large-files
       - id: check-merge-conflict
       - id: detect-private-key
 
   # Python code formatting with Black
-  - repo: https://github.com/psf/black
-    rev: 24.10.0
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 25.12.0
     hooks:
       - id: black
         language_version: python3
@@ -25,32 +29,33 @@ repos:
 
   # Python linting with Ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.2
+    rev: v0.14.9
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
 
   # Type checking with mypy
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
+    rev: v1.19.1
     hooks:
       - id: mypy
         additional_dependencies:
           - types-requests>=2.28.0
-        args: [--strict, --ignore-missing-imports]
+          - types-click>=7.1.0
+        args: [--strict, --ignore-missing-imports, --allow-untyped-decorators, --disable-error-code=type-var]
         files: ^src/
 
   # Security scanning with bandit
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.0
+    rev: 1.9.2
     hooks:
       - id: bandit
         args: [-r, src/, -ll, -c, pyproject.toml]
-        files: ^src/
+        pass_filenames: false
 
 # Configuration
 default_language_version:
-  python: python3.9
+  python: python3
 
 ci:
   autofix_commit_msg: "style: auto-fix by pre-commit hooks"

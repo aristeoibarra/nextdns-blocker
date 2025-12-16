@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] - 2025-12-15
+
+### Breaking Changes
+- **Removed remote URL support**: `DOMAINS_URL` and `DOMAINS_HASH_URL` environment variables no longer supported
+- **New configuration format**: `config.json` replaces `domains.json`
+  - `domains` key renamed to `blocklist`
+  - `protected` field replaced with `unblock_delay` (`"0"` = instant, `"never"` = protected)
+  - Settings (timezone, editor) now in `settings` object
+- **Timezone moved to config.json**: No longer in `.env`, stored in `config.json` under `settings.timezone`
+- **init wizard simplified**: No longer prompts for timezone (auto-detected) or remote URL
+- **Version via importlib.metadata**: `__version__` now uses `importlib.metadata` as single source of truth
+
+### Added
+- **Pending actions with cooldown delays** (#106): Protection against impulsive unblocking
+  - New `unblock_delay` field: `"never"`, `"24h"`, `"4h"`, `"30m"`, `"0"`
+  - Pending command group: `nextdns-blocker pending <subcommand>`
+    - `pending list` - Show all pending unblock actions
+    - `pending show <id>` - Show details of a pending action
+    - `pending cancel <id>` - Cancel a pending unblock
+  - Watchdog automatically executes pending actions when ready
+  - Discord notifications for pending/cancel events
+  - Audit logging for all pending action states
+- **Config command group** (#104): `nextdns-blocker config <subcommand>`
+  - `config show` - Display current configuration
+  - `config edit` - Open config in editor (`$EDITOR`)
+  - `config set <key> <value>` - Change settings (editor, timezone)
+  - `config validate` - Validate configuration (JSON syntax, domain formats, schedules)
+  - `config migrate` - Migrate from domains.json to config.json format
+  - `config sync` - Sync with NextDNS (deprecates root `sync`)
+- **Homebrew tap integration** (#105): Install via Homebrew
+  - `brew tap aristeoibarra/tap && brew install nextdns-blocker`
+  - Automated formula updates on new releases
+  - All Python dependencies bundled
+- **Automatic timezone detection**: System timezone saved to config.json during init
+- **Migration support**: `config migrate` converts legacy domains.json to new config.json format
+- **Validate command** (#102): Pre-deployment configuration verification
+- **Colored CLI output** (#101): Rich terminal output with colors and formatting (thanks @Jacques-Murray)
+- **PR template**: Standardized pull request template (thanks @niloymajumder)
+
+### Changed
+- `.env` now only contains API credentials (API_KEY, PROFILE_ID)
+- `init` creates `config.json` instead of `domains.json`
+- Root `sync` and `validate` commands show deprecation warnings
+- CI: Updated GitHub Actions (upload-artifact v6, download-artifact v7)
+- CI: Linting moved to pre-commit.ci for faster feedback
+- Version is now dynamically read from package metadata (no manual sync needed)
+
+### Removed
+- Remote domains fetching via URL
+- Domain caching for remote URLs
+- `--url` flag from `init` command
+- `--domains-url` flag from `sync` command
+- `DOMAINS_URL` and `DOMAINS_HASH_URL` environment variables
+- Hardcoded `__version__` string in `__init__.py`
+
+### Contributors
+- @Jacques-Murray - Colored CLI output (#101)
+- @niloymajumder - PR template (#103)
+
 ## [5.4.0] - 2025-12-14
 
 ### Added
@@ -342,6 +401,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[6.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.4.0...v6.0.0
+[5.4.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.3.0...v5.4.0
 [5.3.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.2.0...v5.3.0
 [5.2.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.0.2...v5.1.0

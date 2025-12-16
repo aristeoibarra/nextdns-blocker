@@ -358,7 +358,7 @@ class TestStatusScheduler:
 
 
 class TestStatusProtectedDomains:
-    """Tests for status showing protected domains."""
+    """Tests for status showing protected domains (unblock_delay indicators)."""
 
     @responses.activate
     def test_status_shows_protected_flag(
@@ -366,7 +366,7 @@ class TestStatusProtectedDomains:
         runner: CliRunner,
         tmp_path: Path,
     ) -> None:
-        """Test that status shows protected domain indicator."""
+        """Test that status shows unblock_delay indicator for protected domains."""
         config_dir = tmp_path / "config"
         log_dir = tmp_path / "logs"
         config_dir.mkdir(parents=True)
@@ -402,7 +402,8 @@ class TestStatusProtectedDomains:
 
         assert result.exit_code == 0
         assert "gambling.com" in result.output
-        assert "protected" in result.output.lower()
+        # Now shows [never] instead of [protected] for backward compatibility
+        assert "[never]" in result.output.lower()
 
 
 class TestStatusErrors:

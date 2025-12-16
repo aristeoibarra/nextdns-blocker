@@ -11,12 +11,9 @@ from click.testing import CliRunner
 from nextdns_blocker.cli import main
 from nextdns_blocker.init import (
     NEXTDNS_API_URL,
+    create_config_file,
     create_env_file,
-    create_sample_domains,
-    detect_existing_config,
     detect_system_timezone,
-    handle_domains_migration,
-    prompt_domains_migration,
     run_initial_sync,
     run_interactive_wizard,
     run_non_interactive,
@@ -207,31 +204,17 @@ class TestCreateEnvFile:
 
     def test_creates_env_file(self, tmp_path):
         """Should create .env file with correct content."""
-        env_file = create_env_file(tmp_path, "test_api_key", "test_profile_id", "America/New_York")
+        env_file = create_env_file(tmp_path, "test_api_key", "test_profile_id")
 
         assert env_file.exists()
         content = env_file.read_text()
         assert "NEXTDNS_API_KEY=test_api_key" in content
         assert "NEXTDNS_PROFILE_ID=test_profile_id" in content
-        assert "TIMEZONE=America/New_York" in content
-
-    def test_creates_env_file_with_domains_url(self, tmp_path):
-        """Should include DOMAINS_URL when provided."""
-        env_file = create_env_file(
-            tmp_path,
-            "test_key",
-            "test_profile",
-            "UTC",
-            domains_url="https://example.com/domains.json",
-        )
-
-        content = env_file.read_text()
-        assert "DOMAINS_URL=https://example.com/domains.json" in content
 
     def test_creates_parent_directory(self, tmp_path):
         """Should create parent directories if needed."""
         nested_dir = tmp_path / "nested" / "config"
-        env_file = create_env_file(nested_dir, "key", "profile", "UTC")
+        env_file = create_env_file(nested_dir, "key", "profile")
 
         assert env_file.exists()
         assert nested_dir.exists()
@@ -239,44 +222,44 @@ class TestCreateEnvFile:
     @skip_on_windows
     def test_secure_permissions(self, tmp_path):
         """Should create file with secure permissions (0o600)."""
-        env_file = create_env_file(tmp_path, "key", "profile", "UTC")
+        env_file = create_env_file(tmp_path, "key", "profile")
 
         mode = env_file.stat().st_mode & 0o777
         assert mode == 0o600
 
 
-class TestCreateSampleDomains:
-    """Tests for create_sample_domains function."""
+class TestCreateConfigFile:
+    """Tests for create_config_file function."""
 
-    def test_creates_domains_file(self, tmp_path):
-        """Should create domains.json file."""
-        domains_file = create_sample_domains(tmp_path)
+    def test_creates_config_file(self, tmp_path):
+        """Should create config.json file."""
+        config_file = create_config_file(tmp_path, "UTC")
 
-        assert domains_file.exists()
-        assert domains_file.name == "domains.json"
+        assert config_file.exists()
+        assert config_file.name == "config.json"
 
     def test_valid_json_content(self, tmp_path):
         """Should create valid JSON content."""
         import json
 
-        domains_file = create_sample_domains(tmp_path)
-        content = json.loads(domains_file.read_text())
+        config_file = create_config_file(tmp_path, "America/New_York")
+        content = json.loads(config_file.read_text())
 
-        assert "domains" in content
-        assert isinstance(content["domains"], list)
-        assert len(content["domains"]) > 0
-        assert "domain" in content["domains"][0]
+        assert "version" in content
+        assert "settings" in content
+        assert "blocklist" in content
+        assert "allowlist" in content
+        assert content["settings"]["timezone"] == "America/New_York"
 
-    def test_contains_schedule(self, tmp_path):
-        """Should contain schedule configuration."""
+    def test_contains_empty_blocklist(self, tmp_path):
+        """Should contain empty blocklist."""
         import json
 
-        domains_file = create_sample_domains(tmp_path)
-        content = json.loads(domains_file.read_text())
+        config_file = create_config_file(tmp_path, "UTC")
+        content = json.loads(config_file.read_text())
 
-        domain_config = content["domains"][0]
-        assert "schedule" in domain_config
-        assert "available_hours" in domain_config["schedule"]
+        assert content["blocklist"] == []
+        assert content["allowlist"] == []
 
 
 class TestRunNonInteractive:
@@ -398,36 +381,6 @@ class TestInitCommand:
 
         assert result.exit_code == 1
 
-    @responses.activate
-    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
-    def test_init_with_domains_url(self, mock_sync, runner, tmp_path):
-        """Should accept domains URL option."""
-        responses.add(
-            responses.GET,
-            f"{NEXTDNS_API_URL}/profiles/testprofile/denylist",
-            json={"data": []},
-            status=200,
-        )
-
-        env = {"NEXTDNS_API_KEY": "testkey12345", "NEXTDNS_PROFILE_ID": "testprofile"}
-
-        with patch.dict(os.environ, env, clear=False):
-            result = runner.invoke(
-                main,
-                [
-                    "init",
-                    "--non-interactive",
-                    "--config-dir",
-                    str(tmp_path),
-                    "--url",
-                    "https://example.com/domains.json",
-                ],
-            )
-
-        assert result.exit_code == 0
-        content = (tmp_path / ".env").read_text()
-        assert "DOMAINS_URL=https://example.com/domains.json" in content
-
 
 class TestInteractiveWizard:
     """Tests for interactive wizard flow."""
@@ -435,27 +388,24 @@ class TestInteractiveWizard:
     @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
     @patch("nextdns_blocker.init.requests.get")
     def test_wizard_creates_files(self, mock_get, mock_sync, tmp_path):
-        """Should create .env and optionally domains.json."""
+        """Should create .env and config.json."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_get.return_value = mock_response
 
         # Mock click prompts
         with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            with patch("nextdns_blocker.init.click.confirm", return_value=True):
-                # Set up prompt responses
-                mock_prompt.side_effect = [
-                    "testapikey123",  # API key (must be at least 8 chars)
-                    "testprofile",  # Profile ID
-                    "UTC",  # Timezone
-                    "",  # Domains URL (skip)
-                ]
+            # Set up prompt responses (only API key and profile ID now)
+            mock_prompt.side_effect = [
+                "testapikey123",  # API key (must be at least 8 chars)
+                "testprofile",  # Profile ID
+            ]
 
-                result = run_interactive_wizard(tmp_path)
+            result = run_interactive_wizard(tmp_path)
 
         assert result is True
         assert (tmp_path / ".env").exists()
-        assert (tmp_path / "domains.json").exists()
+        assert (tmp_path / "config.json").exists()
 
     @patch("nextdns_blocker.init.requests.get")
     def test_wizard_invalid_credentials(self, mock_get, tmp_path):
@@ -465,16 +415,7 @@ class TestInteractiveWizard:
         mock_get.return_value = mock_response
 
         with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            mock_prompt.side_effect = ["badkey12345", "badprofile", "UTC", ""]
-
-            result = run_interactive_wizard(tmp_path)
-
-        assert result is False
-
-    def test_wizard_invalid_timezone(self, tmp_path):
-        """Should fail with invalid timezone."""
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            mock_prompt.side_effect = ["testkey12345", "testprofile", "Invalid/Timezone"]
+            mock_prompt.side_effect = ["badkey12345", "badprofile"]
 
             result = run_interactive_wizard(tmp_path)
 
@@ -483,389 +424,11 @@ class TestInteractiveWizard:
     def test_wizard_empty_api_key(self, tmp_path):
         """Should fail with empty API key."""
         with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            mock_prompt.side_effect = ["", "testprofile", "UTC"]  # Empty API key
+            mock_prompt.side_effect = ["", "testprofile"]  # Empty API key
 
             result = run_interactive_wizard(tmp_path)
 
         assert result is False
-
-    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
-    @patch("nextdns_blocker.init.requests.get")
-    def test_wizard_skips_domains_creation(self, mock_get, mock_sync, tmp_path):
-        """Should skip domains.json when user declines."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            with patch("nextdns_blocker.init.click.confirm", return_value=False):
-                mock_prompt.side_effect = ["testapikey123", "testprofile", "UTC", ""]
-
-                result = run_interactive_wizard(tmp_path)
-
-        assert result is True
-        assert (tmp_path / ".env").exists()
-        assert not (tmp_path / "domains.json").exists()
-
-    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
-    @patch("nextdns_blocker.init.requests.get")
-    def test_wizard_with_domains_url(self, mock_get, mock_sync, tmp_path):
-        """Should save DOMAINS_URL when provided interactively."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            with patch("nextdns_blocker.init.click.confirm", return_value=False):
-                mock_prompt.side_effect = [
-                    "testapikey123",
-                    "testprofile",
-                    "UTC",
-                    "https://example.com/domains.json",  # Valid URL
-                ]
-
-                result = run_interactive_wizard(tmp_path)
-
-        assert result is True
-        env_content = (tmp_path / ".env").read_text()
-        assert "DOMAINS_URL=https://example.com/domains.json" in env_content
-
-    def test_wizard_invalid_url(self, tmp_path):
-        """Should fail with invalid URL format."""
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            mock_prompt.side_effect = [
-                "testapikey123",
-                "testprofile",
-                "UTC",
-                "not-a-valid-url",  # Invalid URL
-            ]
-
-            result = run_interactive_wizard(tmp_path)
-
-        assert result is False
-
-
-class TestDetectExistingConfig:
-    """Tests for detect_existing_config function."""
-
-    def test_no_existing_config(self, tmp_path):
-        """Should detect no existing configuration."""
-        result = detect_existing_config(tmp_path)
-
-        assert result["has_local"] is False
-        assert result["has_url"] is False
-        assert result["url"] is None
-        assert result["local_path"] == tmp_path / "domains.json"
-
-    def test_local_domains_only(self, tmp_path):
-        """Should detect local domains.json only."""
-        (tmp_path / "domains.json").write_text('{"domains": []}')
-
-        result = detect_existing_config(tmp_path)
-
-        assert result["has_local"] is True
-        assert result["has_url"] is False
-
-    def test_url_only(self, tmp_path):
-        """Should detect DOMAINS_URL from .env."""
-        env_content = """NEXTDNS_API_KEY=testkey
-DOMAINS_URL=https://example.com/domains.json
-"""
-        (tmp_path / ".env").write_text(env_content)
-
-        result = detect_existing_config(tmp_path)
-
-        assert result["has_local"] is False
-        assert result["has_url"] is True
-        assert result["url"] == "https://example.com/domains.json"
-
-    def test_url_with_double_quotes(self, tmp_path):
-        """Should handle DOMAINS_URL with double quotes."""
-        env_content = 'DOMAINS_URL="https://example.com/domains.json"\n'
-        (tmp_path / ".env").write_text(env_content)
-
-        result = detect_existing_config(tmp_path)
-
-        assert result["has_url"] is True
-        assert result["url"] == "https://example.com/domains.json"
-
-    def test_url_with_single_quotes(self, tmp_path):
-        """Should handle DOMAINS_URL with single quotes."""
-        env_content = "DOMAINS_URL='https://example.com/domains.json'\n"
-        (tmp_path / ".env").write_text(env_content)
-
-        result = detect_existing_config(tmp_path)
-
-        assert result["has_url"] is True
-        assert result["url"] == "https://example.com/domains.json"
-
-    def test_both_local_and_url(self, tmp_path):
-        """Should detect both local and URL config."""
-        (tmp_path / "domains.json").write_text('{"domains": []}')
-        env_content = "DOMAINS_URL=https://example.com/domains.json\n"
-        (tmp_path / ".env").write_text(env_content)
-
-        result = detect_existing_config(tmp_path)
-
-        assert result["has_local"] is True
-        assert result["has_url"] is True
-
-    def test_empty_url_value(self, tmp_path):
-        """Should handle empty DOMAINS_URL."""
-        env_content = "DOMAINS_URL=\n"
-        (tmp_path / ".env").write_text(env_content)
-
-        result = detect_existing_config(tmp_path)
-
-        assert result["has_url"] is False
-        assert result["url"] is None
-
-    def test_commented_url(self, tmp_path):
-        """Should ignore commented DOMAINS_URL."""
-        env_content = "#DOMAINS_URL=https://example.com/domains.json\n"
-        (tmp_path / ".env").write_text(env_content)
-
-        result = detect_existing_config(tmp_path)
-
-        assert result["has_url"] is False
-
-
-class TestHandleDomainsMigration:
-    """Tests for handle_domains_migration function."""
-
-    def test_url_choice_deletes_local(self, tmp_path):
-        """Should delete local file when switching to URL."""
-        (tmp_path / "domains.json").write_text('{"domains": []}')
-
-        url, should_create = handle_domains_migration(
-            tmp_path, "url", "https://example.com/domains.json"
-        )
-
-        assert url == "https://example.com/domains.json"
-        assert should_create is False
-        assert not (tmp_path / "domains.json").exists()
-
-    def test_local_choice(self, tmp_path):
-        """Should keep local file and no URL."""
-        url, should_create = handle_domains_migration(tmp_path, "local", None)
-
-        assert url is None
-        assert should_create is True  # Should create if doesn't exist
-
-    def test_local_choice_exists(self, tmp_path):
-        """Should not create local if already exists."""
-        (tmp_path / "domains.json").write_text('{"domains": []}')
-
-        url, should_create = handle_domains_migration(tmp_path, "local", None)
-
-        assert should_create is False
-
-    def test_keep_url_choice(self, tmp_path):
-        """Should keep existing URL."""
-        url, should_create = handle_domains_migration(
-            tmp_path, "keep_url", "https://example.com/domains.json"
-        )
-
-        assert url == "https://example.com/domains.json"
-        assert should_create is False
-
-    def test_both_choice(self, tmp_path):
-        """Should keep both URL and local."""
-        url, should_create = handle_domains_migration(
-            tmp_path, "both", "https://example.com/domains.json"
-        )
-
-        assert url == "https://example.com/domains.json"
-        assert should_create is False
-
-    def test_none_choice(self, tmp_path):
-        """Should return None for no existing config."""
-        url, should_create = handle_domains_migration(tmp_path, "none", None)
-
-        assert url is None
-        assert should_create is False
-
-
-class TestPromptDomainsMigration:
-    """Tests for prompt_domains_migration function."""
-
-    def test_both_local_and_url_keep(self, tmp_path):
-        """Should return keep_url when user selects option 1."""
-        existing = {
-            "has_local": True,
-            "has_url": True,
-            "url": "https://example.com/domains.json",
-            "local_path": tmp_path / "domains.json",
-        }
-
-        with patch("nextdns_blocker.init.click.prompt", return_value="1"):
-            with patch("nextdns_blocker.init.click.echo"):
-                choice, url = prompt_domains_migration(existing)
-
-        assert choice == "keep_url"
-        assert url == "https://example.com/domains.json"
-
-    def test_both_local_and_url_switch_to_local(self, tmp_path):
-        """Should return local when user selects option 2."""
-        existing = {
-            "has_local": True,
-            "has_url": True,
-            "url": "https://example.com/domains.json",
-            "local_path": tmp_path / "domains.json",
-        }
-
-        with patch("nextdns_blocker.init.click.prompt", return_value="2"):
-            with patch("nextdns_blocker.init.click.echo"):
-                choice, url = prompt_domains_migration(existing)
-
-        assert choice == "local"
-        assert url is None
-
-    def test_both_local_and_url_change_url(self, tmp_path):
-        """Should return new URL when user selects option 3."""
-        existing = {
-            "has_local": True,
-            "has_url": True,
-            "url": "https://example.com/domains.json",
-            "local_path": tmp_path / "domains.json",
-        }
-
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            mock_prompt.side_effect = ["3", "https://new.example.com/domains.json"]
-            with patch("nextdns_blocker.init.click.echo"):
-                choice, url = prompt_domains_migration(existing)
-
-        assert choice == "url"
-        assert url == "https://new.example.com/domains.json"
-
-    def test_both_keep_both(self, tmp_path):
-        """Should return both when user selects option 4."""
-        existing = {
-            "has_local": True,
-            "has_url": True,
-            "url": "https://example.com/domains.json",
-            "local_path": tmp_path / "domains.json",
-        }
-
-        with patch("nextdns_blocker.init.click.prompt", return_value="4"):
-            with patch("nextdns_blocker.init.click.echo"):
-                choice, url = prompt_domains_migration(existing)
-
-        assert choice == "both"
-        assert url == "https://example.com/domains.json"
-
-    def test_local_only_keep(self, tmp_path):
-        """Should return local when user keeps local file."""
-        existing = {
-            "has_local": True,
-            "has_url": False,
-            "url": None,
-            "local_path": tmp_path / "domains.json",
-        }
-
-        with patch("nextdns_blocker.init.click.prompt", return_value="1"):
-            with patch("nextdns_blocker.init.click.echo"):
-                choice, url = prompt_domains_migration(existing)
-
-        assert choice == "local"
-        assert url is None
-
-    def test_local_only_switch_to_url(self, tmp_path):
-        """Should return url when user switches from local."""
-        existing = {
-            "has_local": True,
-            "has_url": False,
-            "url": None,
-            "local_path": tmp_path / "domains.json",
-        }
-
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            mock_prompt.side_effect = ["2", "https://example.com/domains.json"]
-            with patch("nextdns_blocker.init.click.echo"):
-                choice, url = prompt_domains_migration(existing)
-
-        assert choice == "url"
-        assert url == "https://example.com/domains.json"
-
-    def test_url_only_keep(self, tmp_path):
-        """Should return keep_url when user keeps URL."""
-        existing = {
-            "has_local": False,
-            "has_url": True,
-            "url": "https://example.com/domains.json",
-            "local_path": tmp_path / "domains.json",
-        }
-
-        with patch("nextdns_blocker.init.click.prompt", return_value="1"):
-            with patch("nextdns_blocker.init.click.echo"):
-                choice, url = prompt_domains_migration(existing)
-
-        assert choice == "keep_url"
-        assert url == "https://example.com/domains.json"
-
-    def test_url_only_switch_to_local(self, tmp_path):
-        """Should return local when user switches from URL."""
-        existing = {
-            "has_local": False,
-            "has_url": True,
-            "url": "https://example.com/domains.json",
-            "local_path": tmp_path / "domains.json",
-        }
-
-        with patch("nextdns_blocker.init.click.prompt", return_value="2"):
-            with patch("nextdns_blocker.init.click.echo"):
-                choice, url = prompt_domains_migration(existing)
-
-        assert choice == "local"
-        assert url is None
-
-    def test_url_only_change_url(self, tmp_path):
-        """Should return new URL when user changes URL."""
-        existing = {
-            "has_local": False,
-            "has_url": True,
-            "url": "https://example.com/domains.json",
-            "local_path": tmp_path / "domains.json",
-        }
-
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            mock_prompt.side_effect = ["3", "https://new.example.com/domains.json"]
-            with patch("nextdns_blocker.init.click.echo"):
-                choice, url = prompt_domains_migration(existing)
-
-        assert choice == "url"
-        assert url == "https://new.example.com/domains.json"
-
-    def test_no_existing_config(self, tmp_path):
-        """Should return none when no existing config."""
-        existing = {
-            "has_local": False,
-            "has_url": False,
-            "url": None,
-            "local_path": tmp_path / "domains.json",
-        }
-
-        choice, url = prompt_domains_migration(existing)
-
-        assert choice == "none"
-        assert url is None
-
-    def test_invalid_url_fallback(self, tmp_path):
-        """Should keep current URL when new URL is invalid."""
-        existing = {
-            "has_local": True,
-            "has_url": True,
-            "url": "https://example.com/domains.json",
-            "local_path": tmp_path / "domains.json",
-        }
-
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            mock_prompt.side_effect = ["3", "not-a-valid-url"]
-            with patch("nextdns_blocker.init.click.echo"):
-                choice, url = prompt_domains_migration(existing)
-
-        assert choice == "keep_url"
-        assert url == "https://example.com/domains.json"
 
 
 class TestPlatformDetection:
@@ -1266,7 +829,7 @@ class TestCreateEnvFileEdgeCases:
         """Should raise OSError when file creation fails."""
         with patch("os.open", side_effect=OSError("Permission denied")):
             with pytest.raises(OSError):
-                create_env_file(tmp_path, "key", "profile", "UTC")
+                create_env_file(tmp_path, "key", "profile")
 
 
 class TestInteractiveWizardEdgeCases:
@@ -1280,72 +843,6 @@ class TestInteractiveWizardEdgeCases:
             result = run_interactive_wizard(tmp_path)
 
         assert result is False
-
-    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
-    @patch("nextdns_blocker.init.requests.get")
-    def test_wizard_with_url_flag_deletes_local(self, mock_get, mock_sync, tmp_path):
-        """Should delete local file when URL provided via flag."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-
-        # Create existing local file
-        (tmp_path / "domains.json").write_text('{"domains": []}')
-
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            with patch("nextdns_blocker.init.click.confirm", return_value=True):
-                mock_prompt.side_effect = ["testapikey123", "testprofile", "UTC"]
-
-                result = run_interactive_wizard(
-                    tmp_path, domains_url="https://example.com/domains.json"
-                )
-
-        assert result is True
-        # Local file should be deleted
-        assert not (tmp_path / "domains.json").exists()
-
-    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
-    @patch("nextdns_blocker.init.requests.get")
-    def test_wizard_with_url_flag_keep_local(self, mock_get, mock_sync, tmp_path):
-        """Should keep local file when user declines deletion."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-
-        # Create existing local file
-        (tmp_path / "domains.json").write_text('{"domains": []}')
-
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            with patch("nextdns_blocker.init.click.confirm", return_value=False):
-                mock_prompt.side_effect = ["testapikey123", "testprofile", "UTC"]
-
-                result = run_interactive_wizard(
-                    tmp_path, domains_url="https://example.com/domains.json"
-                )
-
-        assert result is True
-        # Local file should still exist
-        assert (tmp_path / "domains.json").exists()
-
-    @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
-    @patch("nextdns_blocker.init.requests.get")
-    def test_wizard_existing_config_migration(self, mock_get, mock_sync, tmp_path):
-        """Should handle existing config migration."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-
-        # Create existing URL config
-        (tmp_path / ".env").write_text("DOMAINS_URL=https://old.example.com/domains.json\n")
-
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            with patch("nextdns_blocker.init.click.confirm", return_value=False):
-                # Prompts: api_key, profile, timezone, then migration choice "1" (keep url)
-                mock_prompt.side_effect = ["testapikey123", "testprofile", "UTC", "1"]
-
-                result = run_interactive_wizard(tmp_path)
-
-        assert result is True
 
 
 class TestNonInteractiveEdgeCases:

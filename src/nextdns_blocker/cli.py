@@ -4,9 +4,10 @@ import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import click
+from rich.console import Console
 
 from . import __version__
 from .client import NextDNSClient
@@ -21,11 +22,14 @@ from .common import (
 )
 from .config import (
     DEFAULT_PAUSE_MINUTES,
-    get_cache_status,
-    get_protected_domains,
+    get_config_dir,
     load_config,
     load_domains,
+    validate_allowlist_config,
+    validate_domain_config,
+    validate_no_overlap,
 )
+from .config_cli import register_config
 from .exceptions import ConfigurationError, DomainValidationError
 from .init import run_interactive_wizard, run_non_interactive
 from .notifications import send_discord_notification
@@ -90,6 +94,7 @@ def setup_logging(verbose: bool = False) -> None:
 
 
 logger = logging.getLogger(__name__)
+console = Console(highlight=False)
 
 
 # =============================================================================
@@ -171,11 +176,15 @@ def clear_pause() -> bool:
 
 @click.group(invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="nextdns-blocker")
+@click.option("--no-color", is_flag=True, help="Disable colored output")
 @click.pass_context
-def main(ctx: click.Context) -> None:
+def main(ctx: click.Context, no_color: bool) -> None:
     """NextDNS Blocker - Domain blocking with per-domain scheduling."""
+    if no_color:
+        console.no_color = True
+
     if ctx.invoked_subcommand is None:
-        click.echo(ctx.get_help())
+        console.print(ctx.get_help())
 
 
 @main.command()
@@ -184,11 +193,10 @@ def main(ctx: click.Context) -> None:
     type=click.Path(file_okay=False, path_type=Path),
     help="Config directory (default: XDG config dir)",
 )
-@click.option("--url", "domains_url", help="URL for remote domains.json")
 @click.option(
     "--non-interactive", is_flag=True, help="Use environment variables instead of prompts"
 )
-def init(config_dir: Optional[Path], domains_url: Optional[str], non_interactive: bool) -> None:
+def init(config_dir: Optional[Path], non_interactive: bool) -> None:
     """Initialize NextDNS Blocker configuration.
 
     Runs an interactive wizard to configure API credentials and create
@@ -198,9 +206,9 @@ def init(config_dir: Optional[Path], domains_url: Optional[str], non_interactive
     and NEXTDNS_PROFILE_ID environment variables).
     """
     if non_interactive:
-        success = run_non_interactive(config_dir, domains_url)
+        success = run_non_interactive(config_dir)
     else:
-        success = run_interactive_wizard(config_dir, domains_url)
+        success = run_interactive_wizard(config_dir)
 
     if not success:
         sys.exit(1)
@@ -212,17 +220,17 @@ def pause(minutes: int) -> None:
     """Pause blocking for MINUTES (default: 30)."""
     set_pause(minutes)
     pause_until = datetime.now() + timedelta(minutes=minutes)
-    click.echo(f"\n  Blocking paused for {minutes} minutes")
-    click.echo(f"  Resumes at: {pause_until.strftime('%H:%M')}\n")
+    console.print(f"\n  [yellow]Blocking paused for {minutes} minutes[/yellow]")
+    console.print(f"  Resumes at: [bold]{pause_until.strftime('%H:%M')}[/bold]\n")
 
 
 @main.command()
 def resume() -> None:
     """Resume blocking immediately."""
     if clear_pause():
-        click.echo("\n  Blocking resumed\n")
+        console.print("\n  [green]Blocking resumed[/green]\n")
     else:
-        click.echo("\n  Not currently paused\n")
+        console.print("\n  [yellow]Not currently paused[/yellow]\n")
 
 
 @main.command()
@@ -232,21 +240,73 @@ def resume() -> None:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Config directory (default: auto-detect)",
 )
-def unblock(domain: str, config_dir: Optional[Path]) -> None:
+@click.option("--force", is_flag=True, help="Skip delay and unblock immediately")
+def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
     """Manually unblock a DOMAIN."""
+    from .config import get_unblock_delay, parse_unblock_delay_seconds
+    from .pending import create_pending_action, get_pending_for_domain
+
     try:
         config = load_config(config_dir)
-        domains, _ = load_domains(config["script_dir"], config.get("domains_url"))
-        protected = get_protected_domains(domains)
+        domains, _ = load_domains(config["script_dir"])
 
         if not validate_domain(domain):
-            click.echo(f"\n  Error: Invalid domain format '{domain}'\n", err=True)
+            console.print(
+                f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False
+            )
             sys.exit(1)
 
-        if domain in protected:
-            click.echo(f"\n  Error: '{domain}' is protected and cannot be unblocked\n", err=True)
+        # Get unblock_delay setting for this domain
+        unblock_delay = get_unblock_delay(domains, domain)
+
+        # Handle 'never' - cannot unblock
+        if unblock_delay == "never":
+            console.print(
+                f"\n  [blue]Error: '{domain}' cannot be unblocked "
+                f"(unblock_delay: never)[/blue]\n",
+                highlight=False,
+            )
             sys.exit(1)
 
+        # Check for existing pending action
+        existing = get_pending_for_domain(domain)
+        if existing and not force:
+            execute_at = existing["execute_at"]
+            console.print(
+                f"\n  [yellow]Pending unblock already scheduled for '{domain}'[/yellow]"
+                f"\n  Execute at: {execute_at}"
+                f"\n  ID: {existing['id']}"
+                f"\n  Use 'pending cancel {existing['id'][-12:]}' to cancel\n"
+            )
+            return
+
+        # Handle delay (if set and not forcing)
+        delay_seconds = parse_unblock_delay_seconds(unblock_delay or "0")
+
+        if delay_seconds and delay_seconds > 0 and not force:
+            # Create pending action
+            # At this point, unblock_delay is guaranteed to be a valid non-None string
+            # because delay_seconds is > 0
+            assert unblock_delay is not None  # Type assertion for mypy
+            action = create_pending_action(domain, unblock_delay, requested_by="cli")
+            if action:
+                send_discord_notification(
+                    domain=f"{domain} (scheduled)",
+                    event_type="pending",
+                    webhook_url=config.get("discord_webhook_url"),
+                )
+                execute_at = action["execute_at"]
+                console.print(f"\n  [yellow]Unblock scheduled for '{domain}'[/yellow]")
+                console.print(f"  Delay: {unblock_delay}")
+                console.print(f"  Execute at: {execute_at}")
+                console.print(f"  ID: {action['id']}")
+                console.print("\n  Use 'pending list' to view or 'pending cancel' to abort\n")
+            else:
+                console.print("\n  [red]Error: Failed to schedule unblock[/red]\n")
+                sys.exit(1)
+            return
+
+        # Immediate unblock (no delay, delay=0, or --force)
         client = NextDNSClient(
             config["api_key"], config["profile_id"], config["timeout"], config["retries"]
         )
@@ -256,16 +316,16 @@ def unblock(domain: str, config_dir: Optional[Path]) -> None:
             send_discord_notification(
                 domain, "unblock", webhook_url=config.get("discord_webhook_url")
             )
-            click.echo(f"\n  Unblocked: {domain}\n")
+            console.print(f"\n  [green]Unblocked: {domain}[/green]\n")
         else:
-            click.echo(f"\n  Error: Failed to unblock '{domain}'\n", err=True)
+            console.print(f"\n  [red]Error: Failed to unblock '{domain}'[/red]\n", highlight=False)
             sys.exit(1)
 
     except ConfigurationError as e:
-        click.echo(f"\n  Config error: {e}\n", err=True)
+        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
         sys.exit(1)
     except DomainValidationError as e:
-        click.echo(f"\n  Error: {e}\n", err=True)
+        console.print(f"\n  [red]Error: {e}[/red]\n", highlight=False)
         sys.exit(1)
 
 
@@ -277,15 +337,21 @@ def unblock(domain: str, config_dir: Optional[Path]) -> None:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Config directory (default: auto-detect)",
 )
-@click.option(
-    "--domains-url",
-    "domains_url_override",
-    help="URL for remote domains.json (overrides DOMAINS_URL from config)",
-)
+@click.option("--_from_config_group", is_flag=True, hidden=True)
 def sync(
-    dry_run: bool, verbose: bool, config_dir: Optional[Path], domains_url_override: Optional[str]
+    dry_run: bool,
+    verbose: bool,
+    config_dir: Optional[Path],
+    _from_config_group: bool = False,
 ) -> None:
     """Synchronize domain blocking with schedules."""
+    # Show deprecation warning if called directly
+    if not _from_config_group:
+        console.print(
+            "\n  [yellow]⚠ Deprecated:[/yellow] Use 'nextdns-blocker config sync' instead.\n",
+            highlight=False,
+        )
+
     setup_logging(verbose)
 
     # Check pause state
@@ -295,11 +361,11 @@ def sync(
         return
 
     try:
+        from .config import get_unblock_delay, parse_unblock_delay_seconds
+        from .pending import create_pending_action, get_pending_for_domain
+
         config = load_config(config_dir)
-        # CLI flag overrides config file
-        domains_url = domains_url_override or config.get("domains_url")
-        domains, allowlist = load_domains(config["script_dir"], domains_url)
-        protected = get_protected_domains(domains)
+        domains, allowlist = load_domains(config["script_dir"])
 
         client = NextDNSClient(
             config["api_key"], config["profile_id"], config["timeout"], config["retries"]
@@ -307,7 +373,7 @@ def sync(
         evaluator = ScheduleEvaluator(config["timezone"])
 
         if dry_run:
-            click.echo("\n  DRY RUN MODE - No changes will be made\n")
+            console.print("\n  [yellow]DRY RUN MODE - No changes will be made[/yellow]\n")
 
         # Sync denylist domains
         blocked_count = 0
@@ -320,7 +386,7 @@ def sync(
 
             if should_block and not is_blocked:
                 if dry_run:
-                    click.echo(f"  Would BLOCK: {domain}")
+                    console.print(f"  [yellow]Would BLOCK: {domain}[/yellow]")
                 else:
                     if client.block(domain):
                         audit_log("BLOCK", domain)
@@ -329,14 +395,44 @@ def sync(
                         )
                         blocked_count += 1
             elif not should_block and is_blocked:
-                # Don't unblock protected domains
-                if domain in protected:
+                # Check unblock_delay for this domain
+                domain_delay = get_unblock_delay(domains, domain)
+
+                # Handle 'never' - cannot unblock
+                if domain_delay == "never":
                     if verbose:
-                        click.echo(f"  Protected (skip unblock): {domain}")
+                        console.print(f"  [blue]Cannot unblock (never): {domain}[/blue]")
                     continue
 
+                delay_seconds = parse_unblock_delay_seconds(domain_delay or "0")
+
+                if delay_seconds and delay_seconds > 0:
+                    # Check if already pending
+                    existing = get_pending_for_domain(domain)
+                    if existing:
+                        if verbose:
+                            console.print(f"  [yellow]Already pending: {domain}[/yellow]")
+                        continue
+
+                    if dry_run:
+                        console.print(
+                            f"  [yellow]Would schedule UNBLOCK: {domain} "
+                            f"(delay: {domain_delay})[/yellow]"
+                        )
+                    else:
+                        # At this point, domain_delay is guaranteed to be a valid non-None string
+                        # because delay_seconds is > 0
+                        assert domain_delay is not None  # Type assertion for mypy
+                        action = create_pending_action(domain, domain_delay, requested_by="sync")
+                        if action and verbose:
+                            console.print(
+                                f"  [yellow]Scheduled unblock: {domain} ({domain_delay})[/yellow]"
+                            )
+                    continue
+
+                # Immediate unblock (no delay)
                 if dry_run:
-                    click.echo(f"  Would UNBLOCK: {domain}")
+                    console.print(f"  [green]Would UNBLOCK: {domain}[/green]")
                 else:
                     if client.unblock(domain):
                         audit_log("UNBLOCK", domain)
@@ -350,19 +446,21 @@ def sync(
             domain = allowlist_config["domain"]
             if not client.is_allowed(domain):
                 if dry_run:
-                    click.echo(f"  Would ADD to allowlist: {domain}")
+                    console.print(f"  [green]Would ADD to allowlist: {domain}[/green]")
                 else:
                     if client.allow(domain):
                         audit_log("ALLOW", domain)
 
         if not dry_run:
             if blocked_count or unblocked_count:
-                click.echo(f"  Sync: {blocked_count} blocked, {unblocked_count} unblocked")
+                console.print(
+                    f"  Sync: [red]{blocked_count} blocked[/red], [green]{unblocked_count} unblocked[/green]"
+                )
             elif verbose:
-                click.echo("  Sync: No changes needed")
+                console.print("  Sync: [green]No changes needed[/green]")
 
     except ConfigurationError as e:
-        click.echo(f"  Config error: {e}", err=True)
+        console.print(f"  [red]Config error: {e}[/red]", highlight=False)
         sys.exit(1)
 
 
@@ -376,87 +474,102 @@ def status(config_dir: Optional[Path]) -> None:
     """Show current blocking status."""
     try:
         config = load_config(config_dir)
-        domains, allowlist = load_domains(config["script_dir"], config.get("domains_url"))
-        protected = get_protected_domains(domains)
+        domains, allowlist = load_domains(config["script_dir"])
 
         client = NextDNSClient(
             config["api_key"], config["profile_id"], config["timeout"], config["retries"]
         )
         evaluator = ScheduleEvaluator(config["timezone"])
 
-        click.echo("\n  NextDNS Blocker Status")
-        click.echo("  ----------------------")
-        click.echo(f"  Profile: {config['profile_id']}")
-        click.echo(f"  Timezone: {config['timezone']}")
+        console.print("\n  [bold]NextDNS Blocker Status[/bold]")
+        console.print("  [bold]----------------------[/bold]")
+        console.print(f"  Profile: {config['profile_id']}")
+        console.print(f"  Timezone: {config['timezone']}")
 
         # Pause state
         if is_paused():
             remaining = get_pause_remaining()
-            click.echo(f"  Pause: ACTIVE ({remaining})")
+            console.print(f"  Pause: [yellow]ACTIVE ({remaining})[/yellow]")
         else:
-            click.echo("  Pause: inactive")
+            console.print("  Pause: [green]inactive[/green]")
 
-        click.echo(f"\n  Domains ({len(domains)}):")
+        console.print(f"\n  [bold]Domains ({len(domains)}):[/bold]")
 
         for domain_config in domains:
             domain = domain_config["domain"]
             should_block = evaluator.should_block_domain(domain_config)
             is_blocked = client.is_blocked(domain)
-            is_protected = domain in protected
 
-            status_icon = "🔒" if is_blocked else "🔓"
+            if is_blocked:
+                status_icon = "🔴"
+                status_text = "[red]blocked[/red]"
+            else:
+                status_icon = "🟢"
+                status_text = "[green]active[/green]"
+
             expected = "block" if should_block else "allow"
-            actual = "blocked" if is_blocked else "allowed"
-            match = "✓" if (should_block == is_blocked) else "✗ MISMATCH"
-            protected_flag = " [protected]" if is_protected else ""
+            match = "[green]✓[/green]" if (should_block == is_blocked) else "[red]✗ MISMATCH[/red]"
 
-            click.echo(
-                f"    {status_icon} {domain}: {actual} (should: {expected}) {match}{protected_flag}"
+            # Show unblock_delay setting
+            domain_delay = domain_config.get("unblock_delay")
+            # Backward compatibility: protected=true -> never
+            if domain_config.get("protected", False):
+                domain_delay = "never"
+            if domain_delay == "never":
+                delay_flag = " [blue]\\[never][/blue]"
+            elif domain_delay and domain_delay != "0":
+                delay_flag = f" [cyan]\\[{domain_delay}][/cyan]"
+            else:
+                delay_flag = ""
+
+            # Pad domain for alignment
+            console.print(
+                f"    {status_icon} {domain:<20} {status_text} (should: {expected}) {match}{delay_flag}"
             )
 
         if allowlist:
-            click.echo(f"\n  Allowlist ({len(allowlist)}):")
+            console.print(f"\n  [bold]Allowlist ({len(allowlist)}):[/bold]")
             for item in allowlist:
                 domain = item["domain"]
                 is_allowed = client.is_allowed(domain)
-                status_icon = "✓" if is_allowed else "✗"
-                click.echo(f"    {status_icon} {domain}")
+                status_icon = "[green]✓[/green]" if is_allowed else "[red]✗[/red]"
+                console.print(f"    {status_icon} {domain}")
 
         # Scheduler status
-        click.echo("\n  Scheduler:")
+        console.print("\n  [bold]Scheduler:[/bold]")
         if is_macos():
             sync_ok = is_launchd_job_loaded(LAUNCHD_SYNC_LABEL)
             wd_ok = is_launchd_job_loaded(LAUNCHD_WATCHDOG_LABEL)
-            sync_status = "ok" if sync_ok else "NOT RUNNING"
-            wd_status = "ok" if wd_ok else "NOT RUNNING"
-            click.echo(f"    sync:     {sync_status}")
-            click.echo(f"    watchdog: {wd_status}")
+            sync_status = "[green]ok[/green]" if sync_ok else "[red]NOT RUNNING[/red]"
+            wd_status = "[green]ok[/green]" if wd_ok else "[red]NOT RUNNING[/red]"
+            console.print(f"    sync:     {sync_status}")
+            console.print(f"    watchdog: {wd_status}")
             if not sync_ok or not wd_ok:
-                click.echo("    Run: nextdns-blocker watchdog install")
+                console.print("    Run: [yellow]nextdns-blocker watchdog install[/yellow]")
         elif is_windows():
             sync_ok = has_windows_task(WINDOWS_TASK_SYNC_NAME)
             wd_ok = has_windows_task(WINDOWS_TASK_WATCHDOG_NAME)
-            sync_status = "ok" if sync_ok else "NOT RUNNING"
-            wd_status = "ok" if wd_ok else "NOT RUNNING"
-            click.echo(f"    sync:     {sync_status}")
-            click.echo(f"    watchdog: {wd_status}")
+            sync_status = "[green]ok[/green]" if sync_ok else "[red]NOT RUNNING[/red]"
+            wd_status = "[green]ok[/green]" if wd_ok else "[red]NOT RUNNING[/red]"
+            console.print(f"    sync:     {sync_status}")
+            console.print(f"    watchdog: {wd_status}")
             if not sync_ok or not wd_ok:
-                click.echo("    Run: nextdns-blocker watchdog install")
+                console.print("    Run: [yellow]nextdns-blocker watchdog install[/yellow]")
         else:
             crontab = get_crontab()
             has_sync = "nextdns-blocker" in crontab and "sync" in crontab
             has_wd = "nextdns-blocker" in crontab and "watchdog" in crontab
-            sync_status = "ok" if has_sync else "NOT FOUND"
-            wd_status = "ok" if has_wd else "NOT FOUND"
-            click.echo(f"    sync:     {sync_status}")
-            click.echo(f"    watchdog: {wd_status}")
+            sync_status = "[green]ok[/green]" if has_sync else "[red]NOT FOUND[/red]"
+            wd_status = "[green]ok[/green]" if has_wd else "[red]NOT FOUND[/red]"
+            console.print(f"    sync:     {sync_status}")
+            console.print(f"    watchdog: {wd_status}")
             if not has_sync or not has_wd:
-                click.echo("    Run: nextdns-blocker watchdog install")
+                console.print("    Run: [yellow]nextdns-blocker watchdog install[/yellow]")
 
-        click.echo()
+        console.print()
 
     except ConfigurationError as e:
-        click.echo(f"\n  Config error: {e}\n", err=True)
+        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
         sys.exit(1)
 
 
@@ -471,7 +584,9 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
     """Add DOMAIN to allowlist."""
     try:
         if not validate_domain(domain):
-            click.echo(f"\n  Error: Invalid domain format '{domain}'\n", err=True)
+            console.print(
+                f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False
+            )
             sys.exit(1)
 
         config = load_config(config_dir)
@@ -481,20 +596,22 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
 
         # Warn if domain is in denylist
         if client.is_blocked(domain):
-            click.echo(f"  Warning: '{domain}' is currently blocked in denylist")
+            console.print(
+                f"  [yellow]Warning: '{domain}' is currently blocked in denylist[/yellow]"
+            )
 
         if client.allow(domain):
             audit_log("ALLOW", domain)
-            click.echo(f"\n  Added to allowlist: {domain}\n")
+            console.print(f"\n  [green]Added to allowlist: {domain}[/green]\n")
         else:
-            click.echo("\n  Error: Failed to add to allowlist\n", err=True)
+            console.print("\n  [red]Error: Failed to add to allowlist[/red]\n", highlight=False)
             sys.exit(1)
 
     except ConfigurationError as e:
-        click.echo(f"\n  Config error: {e}\n", err=True)
+        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
         sys.exit(1)
     except DomainValidationError as e:
-        click.echo(f"\n  Error: {e}\n", err=True)
+        console.print(f"\n  [red]Error: {e}[/red]\n", highlight=False)
         sys.exit(1)
 
 
@@ -509,7 +626,9 @@ def disallow(domain: str, config_dir: Optional[Path]) -> None:
     """Remove DOMAIN from allowlist."""
     try:
         if not validate_domain(domain):
-            click.echo(f"\n  Error: Invalid domain format '{domain}'\n", err=True)
+            console.print(
+                f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False
+            )
             sys.exit(1)
 
         config = load_config(config_dir)
@@ -519,16 +638,18 @@ def disallow(domain: str, config_dir: Optional[Path]) -> None:
 
         if client.disallow(domain):
             audit_log("DISALLOW", domain)
-            click.echo(f"\n  Removed from allowlist: {domain}\n")
+            console.print(f"\n  [green]Removed from allowlist: {domain}[/green]\n")
         else:
-            click.echo("\n  Error: Failed to remove from allowlist\n", err=True)
+            console.print(
+                "\n  [red]Error: Failed to remove from allowlist[/red]\n", highlight=False
+            )
             sys.exit(1)
 
     except ConfigurationError as e:
-        click.echo(f"\n  Config error: {e}\n", err=True)
+        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
         sys.exit(1)
     except DomainValidationError as e:
-        click.echo(f"\n  Error: {e}\n", err=True)
+        console.print(f"\n  [red]Error: {e}[/red]\n", highlight=False)
         sys.exit(1)
 
 
@@ -543,41 +664,30 @@ def health(config_dir: Optional[Path]) -> None:
     checks_passed = 0
     checks_total = 0
 
-    click.echo("\n  Health Check")
-    click.echo("  ------------")
+    console.print("\n  [bold]Health Check[/bold]")
+    console.print("  [bold]------------[/bold]")
 
     # Check config
     checks_total += 1
     try:
         config = load_config(config_dir)
-        click.echo("  [✓] Configuration loaded")
+        console.print("  [green][✓][/green] Configuration loaded")
         checks_passed += 1
     except ConfigurationError as e:
-        click.echo(f"  [✗] Configuration: {e}")
+        console.print(f"  [red][✗][/red] Configuration: {e}")
         sys.exit(1)
 
     # Check domains.json
     checks_total += 1
     try:
-        domains, allowlist = load_domains(config["script_dir"], config.get("domains_url"))
-        click.echo(f"  [✓] Domains loaded ({len(domains)} domains, {len(allowlist)} allowlist)")
+        domains, allowlist = load_domains(config["script_dir"])
+        console.print(
+            f"  [green][✓][/green] Domains loaded ({len(domains)} domains, {len(allowlist)} allowlist)"
+        )
         checks_passed += 1
     except ConfigurationError as e:
-        click.echo(f"  [✗] Domains: {e}")
+        console.print(f"  [red][✗][/red] Domains: {e}")
         sys.exit(1)
-
-    # Check remote domains cache (informational only, doesn't affect pass/fail)
-    if config.get("domains_url"):
-        cache_status = get_cache_status()
-        if cache_status.get("exists"):
-            if cache_status.get("corrupted"):
-                click.echo("  [!] Remote domains cache: corrupted")
-            else:
-                age_mins = cache_status.get("age_seconds", 0) // 60
-                expired = "expired" if cache_status.get("expired") else "valid"
-                click.echo(f"  [i] Remote domains cache: {expired} (age: {age_mins}m)")
-        else:
-            click.echo("  [i] Remote domains cache: not present")
 
     # Check API connectivity
     checks_total += 1
@@ -586,10 +696,10 @@ def health(config_dir: Optional[Path]) -> None:
     )
     denylist = client.get_denylist()
     if denylist is not None:
-        click.echo(f"  [✓] API connectivity ({len(denylist)} items in denylist)")
+        console.print(f"  [green][✓][/green] API connectivity ({len(denylist)} items in denylist)")
         checks_passed += 1
     else:
-        click.echo("  [✗] API connectivity failed")
+        console.print("  [red][✗][/red] API connectivity failed")
 
     # Check log directory
     checks_total += 1
@@ -597,19 +707,19 @@ def health(config_dir: Optional[Path]) -> None:
         ensure_log_dir()
         log_dir = get_log_dir()
         if log_dir.exists() and log_dir.is_dir():
-            click.echo(f"  [✓] Log directory: {log_dir}")
+            console.print(f"  [green][✓][/green] Log directory: {log_dir}")
             checks_passed += 1
         else:
-            click.echo("  [✗] Log directory not accessible")
+            console.print("  [red][✗][/red] Log directory not accessible")
     except (OSError, PermissionError) as e:
-        click.echo(f"  [✗] Log directory: {e}")
+        console.print(f"  [red][✗][/red] Log directory: {e}")
 
     # Summary
-    click.echo(f"\n  Result: {checks_passed}/{checks_total} checks passed")
+    console.print(f"\n  Result: {checks_passed}/{checks_total} checks passed")
     if checks_passed == checks_total:
-        click.echo("  Status: HEALTHY\n")
+        console.print("  Status: [green]HEALTHY[/green]\n")
     else:
-        click.echo("  Status: DEGRADED\n")
+        console.print("  Status: [red]DEGRADED[/red]\n")
         sys.exit(1)
 
 
@@ -626,33 +736,36 @@ def test_notifications(config_dir: Optional[Path]) -> None:
         webhook_url = config.get("discord_webhook_url")
 
         if not webhook_url:
-            click.echo("\n  [✗] Error: DISCORD_WEBHOOK_URL is not set in configuration.", err=True)
-            click.echo("      Please add it to your .env file.\n", err=True)
+            console.print(
+                "\n  [red]Error: DISCORD_WEBHOOK_URL is not set in configuration.[/red]",
+                highlight=False,
+            )
+            console.print("      Please add it to your .env file.\n", highlight=False)
             sys.exit(1)
 
-        click.echo("\n  Sending test notification...")
+        console.print("\n  Sending test notification...")
 
         # We pass the loaded webhook_url explicitly
         send_discord_notification(
             event_type="test", domain="Test Connection", webhook_url=webhook_url
         )
 
-        click.echo(" Notification sent! Check your Discord channel.\n")
+        console.print(" [green]Notification sent! Check your Discord channel.[/green]\n")
 
     except ConfigurationError as e:
-        click.echo(f"\n  Config error: {e}\n", err=True)
+        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
         sys.exit(1)
 
 
 @main.command()
 def stats() -> None:
     """Show usage statistics from audit log."""
-    click.echo("\n  Statistics")
-    click.echo("  ----------")
+    console.print("\n  [bold]Statistics[/bold]")
+    console.print("  [bold]----------[/bold]")
 
     audit_file = get_audit_log_file()
     if not audit_file.exists():
-        click.echo("  No audit log found\n")
+        console.print("  No audit log found\n")
         return
 
     try:
@@ -671,14 +784,14 @@ def stats() -> None:
 
         if actions:
             for action, count in sorted(actions.items()):
-                click.echo(f"    {action}: {count}")
+                console.print(f"    {action}: [bold]{count}[/bold]")
         else:
-            click.echo("  No actions recorded")
+            console.print("  No actions recorded")
 
-        click.echo(f"\n  Total entries: {len(lines)}\n")
+        console.print(f"\n  Total entries: {len(lines)}\n")
 
     except (OSError, ValueError) as e:
-        click.echo(f"  Error reading stats: {e}\n", err=True)
+        console.print(f"  [red]Error reading stats: {e}[/red]\n", highlight=False)
 
 
 @main.command()
@@ -690,30 +803,30 @@ def fix() -> None:
     click.echo("  -------------------\n")
 
     # Step 1: Verify config
-    click.echo("  [1/4] Checking configuration...")
+    console.print("  [bold][1/4] Checking configuration...[/bold]")
     try:
         load_config()  # Validates config exists and is valid
-        click.echo("        Config: OK")
+        console.print("        Config: [green]OK[/green]")
     except ConfigurationError as e:
-        click.echo(f"        Config: FAILED - {e}")
-        click.echo("\n  Run 'nextdns-blocker init' to set up configuration.\n")
+        console.print(f"        Config: [red]FAILED - {e}[/red]")
+        console.print("\n  Run 'nextdns-blocker init' to set up configuration.\n")
         sys.exit(1)
 
     # Step 2: Find executable
-    click.echo("  [2/4] Detecting installation...")
+    console.print("  [bold][2/4] Detecting installation...[/bold]")
     detected_path = get_executable_path()
     exe_cmd: Optional[str] = detected_path
     # Detect installation type
     if "-m nextdns_blocker" in detected_path:
-        click.echo("        Type: module")
+        console.print("        Type: module")
         exe_cmd = None  # Use module invocation
     elif ".local" in detected_path or "pipx" in detected_path.lower():
-        click.echo("        Type: pipx")
+        console.print("        Type: pipx")
     else:
-        click.echo("        Type: system")
+        console.print("        Type: system")
 
     # Step 3: Reinstall scheduler
-    click.echo("  [3/4] Reinstalling scheduler...")
+    console.print("  [bold][3/4] Reinstalling scheduler...[/bold]")
     try:
         if is_macos():
             # Uninstall launchd jobs
@@ -759,16 +872,16 @@ def fix() -> None:
             )
 
         if result.returncode == 0:
-            click.echo("        Scheduler: OK")
+            console.print("        Scheduler: [green]OK[/green]")
         else:
-            click.echo(f"        Scheduler: FAILED - {result.stderr}")
+            console.print(f"        Scheduler: [red]FAILED - {result.stderr}[/red]")
             sys.exit(1)
     except Exception as e:
-        click.echo(f"        Scheduler: FAILED - {e}")
+        console.print(f"        Scheduler: [red]FAILED - {e}[/red]")
         sys.exit(1)
 
     # Step 4: Run sync
-    click.echo("  [4/4] Running sync...")
+    console.print("  [bold][4/4] Running sync...[/bold]")
     try:
         if exe_cmd:
             result = subprocess.run(
@@ -786,15 +899,15 @@ def fix() -> None:
             )
 
         if result.returncode == 0:
-            click.echo("        Sync: OK")
+            console.print("        Sync: [green]OK[/green]")
         else:
-            click.echo(f"        Sync: FAILED - {result.stderr}")
+            console.print(f"        Sync: [red]FAILED - {result.stderr}[/red]")
     except subprocess.TimeoutExpired:
-        click.echo("        Sync: TIMEOUT")
+        console.print("        Sync: [red]TIMEOUT[/red]")
     except Exception as e:
-        click.echo(f"        Sync: FAILED - {e}")
+        console.print(f"        Sync: [red]FAILED - {e}[/red]")
 
-    click.echo("\n  Fix complete!\n")
+    console.print("\n  [green]Fix complete![/green]\n")
 
 
 @main.command()
@@ -805,7 +918,7 @@ def update(yes: bool) -> None:
     import subprocess
     import urllib.request
 
-    click.echo("\n  Checking for updates...")
+    console.print("\n  Checking for updates...")
 
     current_version = __version__
 
@@ -816,15 +929,15 @@ def update(yes: bool) -> None:
             data = json.loads(response.read().decode())
             latest_version = data["info"]["version"]
     except Exception as e:
-        click.echo(f"  Error checking PyPI: {e}\n", err=True)
+        console.print(f"  [red]Error checking PyPI: {e}[/red]\n", highlight=False)
         sys.exit(1)
 
-    click.echo(f"  Current version: {current_version}")
-    click.echo(f"  Latest version:  {latest_version}")
+    console.print(f"  Current version: {current_version}")
+    console.print(f"  Latest version:  {latest_version}")
 
     # Compare versions
     if current_version == latest_version:
-        click.echo("\n  You are already on the latest version.\n")
+        console.print("\n  [green]You are already on the latest version.[/green]\n")
         return
 
     # Parse versions for comparison
@@ -840,15 +953,15 @@ def update(yes: bool) -> None:
         latest_tuple = (1,)
 
     if current_tuple >= latest_tuple:
-        click.echo("\n  You are already on the latest version.\n")
+        console.print("\n  [green]You are already on the latest version.[/green]\n")
         return
 
-    click.echo(f"\n  A new version is available: {latest_version}")
+    console.print(f"\n  [yellow]A new version is available: {latest_version}[/yellow]")
 
     # Ask for confirmation unless --yes flag is provided
     if not yes:
         if not click.confirm("  Do you want to update?"):
-            click.echo("  Update cancelled.\n")
+            console.print("  Update cancelled.\n")
             return
 
     # Detect if installed via pipx (cross-platform)
@@ -861,10 +974,10 @@ def update(yes: bool) -> None:
     )
 
     # Perform the update
-    click.echo("\n  Updating...")
+    console.print("\n  Updating...")
     try:
         if is_pipx_install:
-            click.echo("  (detected pipx installation)")
+            console.print("  (detected pipx installation)")
             result = subprocess.run(
                 ["pipx", "upgrade", "nextdns-blocker"],
                 capture_output=True,
@@ -877,14 +990,210 @@ def update(yes: bool) -> None:
                 text=True,
             )
         if result.returncode == 0:
-            click.echo(f"  Successfully updated to version {latest_version}")
-            click.echo("  Please restart the application to use the new version.\n")
+            console.print(f"  [green]Successfully updated to version {latest_version}[/green]")
+            console.print("  Please restart the application to use the new version.\n")
         else:
-            click.echo(f"  Update failed: {result.stderr}\n", err=True)
+            console.print(f"  [red]Update failed: {result.stderr}[/red]\n", highlight=False)
             sys.exit(1)
     except Exception as e:
-        click.echo(f"  Update failed: {e}\n", err=True)
+        console.print(f"  [red]Update failed: {e}[/red]\n", highlight=False)
         sys.exit(1)
+
+
+@main.command()
+@click.option("--json", "output_json", is_flag=True, help="Output in JSON format")
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Config directory (default: auto-detect)",
+)
+@click.option("--_from_config_group", is_flag=True, hidden=True)
+def validate(
+    output_json: bool, config_dir: Optional[Path], _from_config_group: bool = False
+) -> None:
+    """Validate configuration files before deployment.
+
+    Checks domains.json for:
+    - Valid JSON syntax
+    - Valid domain formats
+    - Valid schedule time formats (HH:MM)
+    - No denylist/allowlist conflicts
+    """
+    # Show deprecation warning if called directly (but not for JSON output)
+    if not _from_config_group and not output_json:
+        console.print(
+            "\n  [yellow]⚠ Deprecated:[/yellow] Use 'nextdns-blocker config validate' instead.\n",
+            highlight=False,
+        )
+
+    import json as json_module
+
+    # Determine config directory
+    if config_dir is None:
+        config_dir = get_config_dir()
+
+    results: dict[str, Any] = {
+        "valid": True,
+        "checks": [],
+        "errors": [],
+        "warnings": [],
+        "summary": {},
+    }
+
+    def add_check(name: str, passed: bool, detail: str = "") -> None:
+        results["checks"].append({"name": name, "passed": passed, "detail": detail})
+        if not passed:
+            results["valid"] = False
+
+    def add_error(message: str) -> None:
+        results["errors"].append(message)
+        results["valid"] = False
+
+    def add_warning(message: str) -> None:
+        results["warnings"].append(message)
+
+    # Check 1: config file exists and has valid JSON syntax
+    # Support both new config.json and legacy domains.json
+    config_file = config_dir / "config.json"
+    legacy_file = config_dir / "domains.json"
+    domains_data = None
+    config_filename = None
+
+    if config_file.exists():
+        config_filename = "config.json"
+        try:
+            with open(config_file, encoding="utf-8") as f:
+                domains_data = json_module.load(f)
+            add_check(config_filename, True, "valid JSON syntax")
+        except json_module.JSONDecodeError as e:
+            add_check(config_filename, False, f"invalid JSON: {e}")
+            add_error(f"JSON syntax error: {e}")
+    elif legacy_file.exists():
+        config_filename = "domains.json"
+        try:
+            with open(legacy_file, encoding="utf-8") as f:
+                domains_data = json_module.load(f)
+            add_check(config_filename, True, "valid JSON syntax (legacy format)")
+        except json_module.JSONDecodeError as e:
+            add_check(config_filename, False, f"invalid JSON: {e}")
+            add_error(f"JSON syntax error: {e}")
+    else:
+        add_check("config", False, "file not found")
+        add_error(f"Config file not found. Expected: {config_file} or {legacy_file}")
+
+    if domains_data is None:
+        # Cannot proceed without valid domains data
+        if output_json:
+            console.print(json_module.dumps(results, indent=2))
+        else:
+            console.print("\n  [red]❌ Configuration validation failed[/red]")
+            for error in results["errors"]:
+                console.print(f"  [red]✗[/red] {error}")
+            console.print()
+        sys.exit(1)
+
+    # Check 2: Validate structure
+    if not isinstance(domains_data, dict):
+        add_error("Configuration must be a JSON object")
+    elif "blocklist" not in domains_data and "domains" not in domains_data:
+        add_error("Missing 'blocklist' or 'domains' array in configuration")
+
+    # Support both "blocklist" (new) and "domains" (legacy) keys
+    domains_list: list[dict[str, Any]] = []
+    allowlist_list: list[dict[str, Any]] = []
+    if isinstance(domains_data, dict):
+        domains_list = domains_data.get("blocklist") or domains_data.get("domains") or []
+        allowlist_list = domains_data.get("allowlist") or []
+
+    # Update summary
+    results["summary"]["domains_count"] = len(domains_list)
+    results["summary"]["allowlist_count"] = len(allowlist_list)
+
+    # Check 3: Count and validate domains
+    if domains_list:
+        add_check("domains configured", True, f"{len(domains_list)} domains")
+    else:
+        add_check("domains configured", False, "no domains found")
+
+    # Check 4: Count allowlist entries
+    if allowlist_list:
+        add_check("allowlist entries", True, f"{len(allowlist_list)} entries")
+
+    # Check 5: Count protected domains
+    protected_domains = [d for d in domains_list if d.get("protected", False)]
+    results["summary"]["protected_count"] = len(protected_domains)
+    if protected_domains:
+        add_check("protected domains", True, f"{len(protected_domains)} protected")
+
+    # Check 6: Validate each domain configuration
+    domain_errors: list[str] = []
+    schedule_count = 0
+
+    for idx, domain_config in enumerate(domains_list):
+        errors = validate_domain_config(domain_config, idx)
+        domain_errors.extend(errors)
+        if domain_config.get("schedule"):
+            schedule_count += 1
+
+    results["summary"]["schedules_count"] = schedule_count
+
+    # Check 7: Validate allowlist entries
+    for idx, allowlist_config in enumerate(allowlist_list):
+        errors = validate_allowlist_config(allowlist_config, idx)
+        domain_errors.extend(errors)
+
+    if domain_errors:
+        add_check("domain formats", False, f"{len(domain_errors)} error(s)")
+        for error in domain_errors:
+            add_error(error)
+    else:
+        add_check("domain formats", True, "all valid")
+
+    # Check 8: Validate schedules
+    if schedule_count > 0:
+        # Schedule validation is done as part of validate_domain_config
+        # If we got here without errors, schedules are valid
+        if not domain_errors:
+            add_check("schedules", True, f"{schedule_count} schedule(s) valid")
+
+    # Check 9: Check for denylist/allowlist conflicts
+    overlap_errors = validate_no_overlap(domains_list, allowlist_list)
+    if overlap_errors:
+        add_check("no conflicts", False, f"{len(overlap_errors)} conflict(s)")
+        for error in overlap_errors:
+            add_error(error)
+    else:
+        add_check("no conflicts", True, "no denylist/allowlist conflicts")
+
+    # Output results
+    if output_json:
+        console.print(json_module.dumps(results, indent=2))
+    else:
+        console.print()
+        for check in results["checks"]:
+            if check["passed"]:
+                console.print(f"  [green]✓[/green] {check['name']}: {check['detail']}")
+            else:
+                console.print(f"  [red]✗[/red] {check['name']}: {check['detail']}")
+
+        if results["errors"]:
+            console.print(f"\n  [red]❌ Configuration has {len(results['errors'])} error(s)[/red]")
+            for error in results["errors"]:
+                console.print(f"    • {error}")
+        else:
+            console.print("\n  [green]✅ Configuration OK[/green]")
+
+        console.print()
+
+    sys.exit(0 if results["valid"] else 1)
+
+
+# =============================================================================
+# REGISTER COMMAND GROUPS
+# =============================================================================
+
+# Register config command group
+register_config(main)
 
 
 if __name__ == "__main__":
