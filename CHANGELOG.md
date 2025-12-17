@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.1] - 2025-12-17
+
+### Fixed
+- **Homebrew executable detection in scheduler**: `get_executable_path()` and `get_executable_args()` now check Homebrew paths as fallback
+  - Fixes launchd plist using `python -m nextdns_blocker` instead of `/opt/homebrew/bin/nextdns-blocker`
+  - Checks: `/opt/homebrew/bin/nextdns-blocker` (macOS ARM), `/usr/local/bin/nextdns-blocker` (macOS Intel), `/home/linuxbrew/.linuxbrew/bin/nextdns-blocker` (Linuxbrew)
+  - Users should run `nextdns-blocker watchdog uninstall && nextdns-blocker watchdog install` to regenerate plists
+
 ## [6.1.0] - 2025-12-17
 
 ### Added
@@ -422,6 +430,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[6.1.1]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.1.0...v6.1.1
 [6.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.0.0...v6.1.0
 [6.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.4.0...v6.0.0
 [5.4.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.3.0...v5.4.0
