@@ -996,7 +996,11 @@ def fix() -> None:
 @main.command()
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
 def update(yes: bool) -> None:
-    """Check for updates and upgrade to the latest version."""
+    """Check for updates and upgrade to the latest version.
+
+    Automatically detects installation method (Homebrew, pipx, or pip)
+    and uses the appropriate upgrade command.
+    """
     import json
     import subprocess
     import urllib.request
@@ -1047,8 +1051,12 @@ def update(yes: bool) -> None:
             console.print("  Update cancelled.\n")
             return
 
-    # Detect if installed via pipx (cross-platform)
+    # Detect installation method (cross-platform)
     exe_path = get_executable_path()
+
+    # Check for Homebrew installation (macOS/Linux)
+    is_homebrew_install = "/homebrew/" in exe_path.lower() or "/cellar/" in exe_path.lower()
+
     # Check multiple indicators for pipx installation
     pipx_venv_unix = Path.home() / ".local" / "pipx" / "venvs" / "nextdns-blocker"
     pipx_venv_win = Path.home() / "pipx" / "venvs" / "nextdns-blocker"
@@ -1059,7 +1067,14 @@ def update(yes: bool) -> None:
     # Perform the update
     console.print("\n  Updating...")
     try:
-        if is_pipx_install:
+        if is_homebrew_install:
+            console.print("  (detected Homebrew installation)")
+            result = subprocess.run(
+                ["brew", "upgrade", "nextdns-blocker"],
+                capture_output=True,
+                text=True,
+            )
+        elif is_pipx_install:
             console.print("  (detected pipx installation)")
             result = subprocess.run(
                 ["pipx", "upgrade", "nextdns-blocker"],
@@ -1067,6 +1082,7 @@ def update(yes: bool) -> None:
                 text=True,
             )
         else:
+            console.print("  (detected pip installation)")
             result = subprocess.run(
                 [sys.executable, "-m", "pip", "install", "--upgrade", "nextdns-blocker"],
                 capture_output=True,
