@@ -893,7 +893,12 @@ class TestUpdateCommandEdgeCases:
         with patch("urllib.request.urlopen", return_value=mock_response):
             with patch("nextdns_blocker.cli.Path.home", return_value=tmp_path):
                 with patch("subprocess.run", return_value=mock_subprocess) as mock_run:
-                    result = runner.invoke(main, ["update", "-y"])
+                    # Mock get_executable_path to return a non-homebrew path
+                    with patch(
+                        "nextdns_blocker.cli.get_executable_path",
+                        return_value=str(pipx_venv / "bin" / "nextdns-blocker"),
+                    ):
+                        result = runner.invoke(main, ["update", "-y"])
 
         assert result.exit_code == 0
         assert "pipx" in result.output.lower()
@@ -916,9 +921,15 @@ class TestUpdateCommandEdgeCases:
         with patch("urllib.request.urlopen", return_value=mock_response):
             with patch("nextdns_blocker.cli.Path.home", return_value=tmp_path):
                 with patch("subprocess.run", return_value=mock_subprocess) as mock_run:
-                    result = runner.invoke(main, ["update", "-y"])
+                    # Mock get_executable_path to return a non-homebrew path
+                    with patch(
+                        "nextdns_blocker.cli.get_executable_path",
+                        return_value="/usr/local/bin/nextdns-blocker",
+                    ):
+                        result = runner.invoke(main, ["update", "-y"])
 
         assert result.exit_code == 0
+        assert "pip" in result.output.lower()
         # Verify pip was called
         call_args = mock_run.call_args[0][0]
         assert "pip" in call_args
