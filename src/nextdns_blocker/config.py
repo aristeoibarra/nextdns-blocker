@@ -427,8 +427,7 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
 
     if not config_file.exists():
         raise ConfigurationError(
-            f"Config file not found: {config_file}\n"
-            "Run 'nextdns-blocker init' to create one."
+            f"Config file not found: {config_file}\n" "Run 'nextdns-blocker init' to create one."
         )
 
     try:

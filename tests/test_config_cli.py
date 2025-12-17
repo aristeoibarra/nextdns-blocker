@@ -9,7 +9,6 @@ from click.testing import CliRunner
 # Import main from cli and register config command group
 from nextdns_blocker.cli import main
 from nextdns_blocker.config_cli import (
-    CONFIG_VERSION,
     NEW_CONFIG_FILE,
     register_config,
 )

@@ -1150,8 +1150,7 @@ def validate(
     else:
         add_check("config.json", False, "file not found")
         add_error(
-            f"Config file not found: {config_file}\n"
-            "Run 'nextdns-blocker init' to create one."
+            f"Config file not found: {config_file}\n" "Run 'nextdns-blocker init' to create one."
         )
 
     if domains_data is None:
