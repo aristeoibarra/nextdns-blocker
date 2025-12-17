@@ -266,8 +266,9 @@ class TestGetExecutablePath:
     ) -> None:
         """Test fallback to sys.executable module invocation."""
         with patch.object(Path, "home", return_value=tmp_path):
-            # No pipx installation
-            result = get_executable_path()
+            # Mock all paths as not existing to force module fallback
+            with patch.object(Path, "exists", return_value=False):
+                result = get_executable_path()
 
         assert sys.executable in result
         assert "-m nextdns_blocker" in result
@@ -313,7 +314,9 @@ class TestGetExecutableArgs:
     ) -> None:
         """Test executable args fallback to module invocation."""
         with patch.object(Path, "home", return_value=tmp_path):
-            result = get_executable_args()
+            # Mock all paths as not existing to force module fallback
+            with patch.object(Path, "exists", return_value=False):
+                result = get_executable_args()
 
         assert result == [sys.executable, "-m", "nextdns_blocker"]
 

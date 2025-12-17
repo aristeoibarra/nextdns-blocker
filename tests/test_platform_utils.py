@@ -1,6 +1,10 @@
 """Tests for platform_utils module."""
 
+import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from nextdns_blocker.platform_utils import (
     get_config_base_dir,
@@ -244,8 +248,36 @@ class TestGetExecutablePath:
         with patch("shutil.which", return_value=None):
             with patch("nextdns_blocker.platform_utils.sys.platform", "linux"):
                 with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
+                    # Mock all paths as not existing to force module fallback
+                    with patch.object(Path, "exists", return_value=False):
+                        result = get_executable_path()
+                        assert "-m nextdns_blocker" in result
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Homebrew only on macOS/Linux")
+    def test_get_executable_path_homebrew_arm_fallback(self, tmp_path):
+        """Should check Homebrew ARM location on macOS if which and pipx fail."""
+        with patch("shutil.which", return_value=None):
+            with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
+
+                def mock_path_exists(path_self):
+                    return "/opt/homebrew/bin/nextdns-blocker" in str(path_self)
+
+                with patch.object(Path, "exists", mock_path_exists):
                     result = get_executable_path()
-                    assert "-m nextdns_blocker" in result
+                    assert result == "/opt/homebrew/bin/nextdns-blocker"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Homebrew only on macOS/Linux")
+    def test_get_executable_path_homebrew_intel_fallback(self, tmp_path):
+        """Should check Homebrew Intel location on macOS if ARM not found."""
+        with patch("shutil.which", return_value=None):
+            with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
+
+                def mock_path_exists(path_self):
+                    return "/usr/local/bin/nextdns-blocker" in str(path_self)
+
+                with patch.object(Path, "exists", mock_path_exists):
+                    result = get_executable_path()
+                    assert result == "/usr/local/bin/nextdns-blocker"
 
 
 class TestGetExecutableArgs:
@@ -271,9 +303,37 @@ class TestGetExecutableArgs:
         with patch("shutil.which", return_value=None):
             with patch("nextdns_blocker.platform_utils.sys.platform", "linux"):
                 with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
+                    # Mock all paths as not existing to force module fallback
+                    with patch.object(Path, "exists", return_value=False):
+                        args = get_executable_args()
+                        assert "-m" in args
+                        assert "nextdns_blocker" in args
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Homebrew only on macOS/Linux")
+    def test_get_executable_args_homebrew_arm_fallback(self, tmp_path):
+        """Should check Homebrew ARM location on macOS if which and pipx fail."""
+        with patch("shutil.which", return_value=None):
+            with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
+
+                def mock_path_exists(path_self):
+                    return "/opt/homebrew/bin/nextdns-blocker" in str(path_self)
+
+                with patch.object(Path, "exists", mock_path_exists):
                     args = get_executable_args()
-                    assert "-m" in args
-                    assert "nextdns_blocker" in args
+                    assert args == ["/opt/homebrew/bin/nextdns-blocker"]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Homebrew only on macOS/Linux")
+    def test_get_executable_args_homebrew_intel_fallback(self, tmp_path):
+        """Should check Homebrew Intel location on macOS if ARM not found."""
+        with patch("shutil.which", return_value=None):
+            with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
+
+                def mock_path_exists(path_self):
+                    return "/usr/local/bin/nextdns-blocker" in str(path_self)
+
+                with patch.object(Path, "exists", mock_path_exists):
+                    args = get_executable_args()
+                    assert args == ["/usr/local/bin/nextdns-blocker"]
 
 
 class TestGetConfigBaseDir:

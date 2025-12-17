@@ -977,9 +977,11 @@ class TestGetExecutablePath:
         """Should return python module invocation when binary not found anywhere."""
         with patch("shutil.which", return_value=None):
             with patch("nextdns_blocker.watchdog.Path.home", return_value=tmp_path):
-                result = watchdog.get_executable_path()
-                assert sys.executable in result
-                assert "-m nextdns_blocker" in result
+                # Mock all paths as not existing to force module fallback
+                with patch.object(Path, "exists", return_value=False):
+                    result = watchdog.get_executable_path()
+                    assert sys.executable in result
+                    assert "-m nextdns_blocker" in result
 
     def test_get_executable_path_pipx_fallback(self, tmp_path):
         """Should use pipx executable when shutil.which fails but pipx exe exists."""
@@ -1009,11 +1011,13 @@ class TestGetExecutableArgs:
         """Should return python module invocation when binary not found anywhere."""
         with patch("shutil.which", return_value=None):
             with patch("nextdns_blocker.watchdog.Path.home", return_value=tmp_path):
-                result = watchdog.get_executable_args()
-                assert len(result) == 3
-                assert result[0] == sys.executable
-                assert result[1] == "-m"
-                assert result[2] == "nextdns_blocker"
+                # Mock all paths as not existing to force module fallback
+                with patch.object(Path, "exists", return_value=False):
+                    result = watchdog.get_executable_args()
+                    assert len(result) == 3
+                    assert result[0] == sys.executable
+                    assert result[1] == "-m"
+                    assert result[2] == "nextdns_blocker"
 
     def test_get_executable_args_pipx_fallback(self, tmp_path):
         """Should use pipx executable when shutil.which fails but pipx exe exists."""
