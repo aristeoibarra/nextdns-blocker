@@ -106,9 +106,9 @@ def mock_env_vars():
 
 @pytest.fixture
 def domains_json_content():
-    """Sample domains.json content."""
+    """Sample config.json content."""
     return {
-        "domains": [
+        "blocklist": [
             {
                 "domain": "example.com",
                 "description": "Test domain",
@@ -129,9 +129,9 @@ def domains_json_content():
 
 @pytest.fixture
 def invalid_domains_json():
-    """Invalid domains.json content for error testing."""
+    """Invalid config.json content for error testing."""
     return {
-        "domains": [
+        "blocklist": [
             {"domain": ""},  # Empty domain
             {"description": "Missing domain"},  # No domain field
             {"domain": "bad-schedule.com", "schedule": "not a dict"},  # Invalid schedule type

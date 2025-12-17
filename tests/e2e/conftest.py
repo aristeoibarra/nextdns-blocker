@@ -82,10 +82,10 @@ def setup_env_file(e2e_config_dir: Path) -> Path:
 
 @pytest.fixture
 def setup_domains_file(e2e_config_dir: Path) -> Path:
-    """Create a basic domains.json file."""
-    domains_file = e2e_config_dir / "domains.json"
+    """Create a basic config.json file."""
+    domains_file = e2e_config_dir / "config.json"
     domains_data = {
-        "domains": [
+        "blocklist": [
             {
                 "domain": "youtube.com",
                 "description": "Video streaming",

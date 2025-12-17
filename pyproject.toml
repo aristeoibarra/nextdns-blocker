@@ -81,7 +81,7 @@ include = [
     "/README.md",
     "/CHANGELOG.md",
     "/LICENSE",
-    "/domains.json.example",
+    "/config.json.example",
     "/.env.example",
 ]
 

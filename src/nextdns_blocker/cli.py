@@ -677,7 +677,7 @@ def health(config_dir: Optional[Path]) -> None:
         console.print(f"  [red][✗][/red] Configuration: {e}")
         sys.exit(1)
 
-    # Check domains.json
+    # Check config.json
     checks_total += 1
     try:
         domains, allowlist = load_domains(config["script_dir"])
@@ -1096,7 +1096,7 @@ def validate(
 ) -> None:
     """Validate configuration files before deployment.
 
-    Checks domains.json for:
+    Checks config.json for:
     - Valid JSON syntax
     - Valid domain formats
     - Valid schedule time formats (HH:MM)
@@ -1135,34 +1135,24 @@ def validate(
     def add_warning(message: str) -> None:
         results["warnings"].append(message)
 
-    # Check 1: config file exists and has valid JSON syntax
-    # Support both new config.json and legacy domains.json
+    # Check 1: config.json exists and has valid JSON syntax
     config_file = config_dir / "config.json"
-    legacy_file = config_dir / "domains.json"
     domains_data = None
-    config_filename = None
 
     if config_file.exists():
-        config_filename = "config.json"
         try:
             with open(config_file, encoding="utf-8") as f:
                 domains_data = json_module.load(f)
-            add_check(config_filename, True, "valid JSON syntax")
+            add_check("config.json", True, "valid JSON syntax")
         except json_module.JSONDecodeError as e:
-            add_check(config_filename, False, f"invalid JSON: {e}")
-            add_error(f"JSON syntax error: {e}")
-    elif legacy_file.exists():
-        config_filename = "domains.json"
-        try:
-            with open(legacy_file, encoding="utf-8") as f:
-                domains_data = json_module.load(f)
-            add_check(config_filename, True, "valid JSON syntax (legacy format)")
-        except json_module.JSONDecodeError as e:
-            add_check(config_filename, False, f"invalid JSON: {e}")
+            add_check("config.json", False, f"invalid JSON: {e}")
             add_error(f"JSON syntax error: {e}")
     else:
-        add_check("config", False, "file not found")
-        add_error(f"Config file not found. Expected: {config_file} or {legacy_file}")
+        add_check("config.json", False, "file not found")
+        add_error(
+            f"Config file not found: {config_file}\n"
+            "Run 'nextdns-blocker init' to create one."
+        )
 
     if domains_data is None:
         # Cannot proceed without valid domains data
@@ -1178,15 +1168,14 @@ def validate(
     # Check 2: Validate structure
     if not isinstance(domains_data, dict):
         add_error("Configuration must be a JSON object")
-    elif "blocklist" not in domains_data and "domains" not in domains_data:
-        add_error("Missing 'blocklist' or 'domains' array in configuration")
+    elif "blocklist" not in domains_data:
+        add_error("Missing 'blocklist' array in configuration")
 
-    # Support both "blocklist" (new) and "domains" (legacy) keys
     domains_list: list[dict[str, Any]] = []
     allowlist_list: list[dict[str, Any]] = []
     if isinstance(domains_data, dict):
-        domains_list = domains_data.get("blocklist") or domains_data.get("domains") or []
-        allowlist_list = domains_data.get("allowlist") or []
+        domains_list = domains_data.get("blocklist", [])
+        allowlist_list = domains_data.get("allowlist", [])
 
     # Update summary
     results["summary"]["domains_count"] = len(domains_list)

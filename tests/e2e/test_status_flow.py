@@ -50,14 +50,14 @@ class TestStatusBasic:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "youtube.com",
                     "schedule": None,
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
         add_allowlist_mock(responses, domains=[])
@@ -94,12 +94,12 @@ class TestStatusBasic:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {"domain": "youtube.com", "schedule": None},
                 {"domain": "twitter.com", "schedule": None},
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # youtube is blocked, twitter is not
         add_denylist_mock(responses, domains=["youtube.com"])
@@ -137,14 +137,14 @@ class TestStatusBasic:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {"domain": "youtube.com", "schedule": None},
             ],
             "allowlist": [
                 {"domain": "trusted-site.com"},
             ],
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
         add_allowlist_mock(responses, domains=["trusted-site.com"])
@@ -184,8 +184,8 @@ class TestStatusPauseState:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
         add_allowlist_mock(responses, domains=[])
@@ -224,8 +224,8 @@ class TestStatusPauseState:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
         add_allowlist_mock(responses, domains=[])
@@ -265,8 +265,8 @@ class TestStatusScheduler:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
         add_allowlist_mock(responses, domains=[])
@@ -301,8 +301,8 @@ class TestStatusScheduler:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
         add_allowlist_mock(responses, domains=[])
@@ -339,8 +339,8 @@ class TestStatusScheduler:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
         add_allowlist_mock(responses, domains=[])
@@ -379,7 +379,7 @@ class TestStatusProtectedDomains:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "gambling.com",
                     "protected": True,
@@ -387,7 +387,7 @@ class TestStatusProtectedDomains:
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=["gambling.com"])
         add_allowlist_mock(responses, domains=[])

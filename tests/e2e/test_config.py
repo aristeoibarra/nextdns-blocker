@@ -94,23 +94,42 @@ class TestGetConfigDir:
         result = get_config_dir(override)
         assert result == override
 
-    def test_with_cwd_env_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test config dir uses CWD when .env exists."""
+    def test_with_cwd_both_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test config dir uses CWD when both .env AND config.json exist."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("TEST=value")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+        monkeypatch.chdir(tmp_path)
+
+        result = get_config_dir()
+        assert result == tmp_path
+
+    def test_with_cwd_env_only_uses_system_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test config dir uses system dir when only .env exists (no config file)."""
         env_file = tmp_path / ".env"
         env_file.write_text("TEST=value")
         monkeypatch.chdir(tmp_path)
 
         result = get_config_dir()
-        assert result == tmp_path
+        # Should NOT use CWD, should fall back to system config dir
+        assert result != tmp_path
+        assert "nextdns-blocker" in str(result)
 
-    def test_with_cwd_domains_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test config dir uses CWD when domains.json exists."""
-        domains_file = tmp_path / "domains.json"
-        domains_file.write_text('{"domains": []}')
+    def test_with_cwd_config_only_uses_system_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test config dir uses system dir when only config.json exists (no .env)."""
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
         monkeypatch.chdir(tmp_path)
 
         result = get_config_dir()
-        assert result == tmp_path
+        # Should NOT use CWD, should fall back to system config dir
+        assert result != tmp_path
+        assert "nextdns-blocker" in str(result)
 
 
 class TestGetDataDir:
@@ -326,11 +345,11 @@ class TestLoadDomains:
 
     def test_load_from_local_file(self, tmp_path: Path) -> None:
         """Test loading domains from local file."""
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
             json.dumps(
                 {
-                    "domains": [{"domain": "example.com"}],
+                    "blocklist": [{"domain": "example.com"}],
                     "allowlist": [],
                 }
             )
@@ -348,7 +367,7 @@ class TestLoadDomains:
 
     def test_load_invalid_json(self, tmp_path: Path) -> None:
         """Test loading invalid JSON file."""
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text("not valid json")
 
         with pytest.raises(ConfigurationError, match="Invalid JSON"):
@@ -356,8 +375,8 @@ class TestLoadDomains:
 
     def test_load_no_domains(self, tmp_path: Path) -> None:
         """Test loading file with no domains."""
-        domains_file = tmp_path / "domains.json"
-        domains_file.write_text(json.dumps({"domains": []}))
+        domains_file = tmp_path / "config.json"
+        domains_file.write_text(json.dumps({"blocklist": []}))
 
         with pytest.raises(ConfigurationError, match="No domains configured"):
             load_domains(str(tmp_path))

@@ -50,11 +50,11 @@ class TestHealthBasic:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {"domain": "youtube.com", "schedule": None},
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
 
@@ -90,7 +90,7 @@ class TestHealthBasic:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {"domain": "youtube.com", "schedule": None},
                 {"domain": "twitter.com", "schedule": None},
                 {"domain": "facebook.com", "schedule": None},
@@ -99,7 +99,7 @@ class TestHealthBasic:
                 {"domain": "trusted.com"},
             ],
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
 
@@ -144,8 +144,8 @@ class TestHealthConfigErrors:
         config_dir.mkdir(parents=True)
 
         # No .env file created
-        domains_data = {"domains": []}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": []}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         result = runner.invoke(
             main,
@@ -160,7 +160,7 @@ class TestHealthConfigErrors:
         runner: CliRunner,
         tmp_path: Path,
     ) -> None:
-        """Test that health fails when domains.json is missing."""
+        """Test that health fails when config.json is missing."""
         config_dir = tmp_path / "config"
         config_dir.mkdir(parents=True)
 
@@ -170,7 +170,7 @@ class TestHealthConfigErrors:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        # No domains.json file created
+        # No config.json file created
 
         result = runner.invoke(
             main,
@@ -201,8 +201,8 @@ class TestHealthAPIConnectivity:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # API returns error
         responses.add(
@@ -240,8 +240,8 @@ class TestHealthAPIConnectivity:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # API returns 5 blocked domains
         add_denylist_mock(
@@ -281,8 +281,8 @@ class TestHealthLogDirectory:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
 
@@ -319,8 +319,8 @@ class TestHealthSummary:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
 

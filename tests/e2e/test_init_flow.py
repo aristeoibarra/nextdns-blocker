@@ -3,7 +3,7 @@
 Tests the complete setup wizard including:
 - Creating configuration files
 - Validating API credentials
-- Creating sample domains.json
+- Creating sample config.json
 - Verifying sync works after init
 """
 
@@ -186,7 +186,7 @@ class TestInitThenSync:
         tmp_path: Path,
         clean_env: None,
     ) -> None:
-        """Test that sync command works after init when domains.json exists."""
+        """Test that sync command works after init when config.json exists."""
         config_dir = tmp_path / "config"
         config_dir.mkdir(parents=True)
         log_dir = tmp_path / "logs"
@@ -273,20 +273,20 @@ class TestInitIdempotent:
     """Tests for re-running init on existing configuration."""
 
     @responses.activate
-    def test_init_preserves_existing_domains_json(
+    def test_init_preserves_existing_config_json(
         self,
         runner: CliRunner,
         tmp_path: Path,
         clean_env: None,
     ) -> None:
-        """Test that running init again doesn't overwrite existing domains.json."""
+        """Test that running init again doesn't overwrite existing config.json."""
         config_dir = tmp_path / "config"
         config_dir.mkdir(parents=True)
 
-        # Create existing domains.json with custom content
-        custom_domains = {"domains": [{"domain": "custom-domain.com", "schedule": None}]}
-        domains_file = config_dir / "domains.json"
-        domains_file.write_text(json.dumps(custom_domains))
+        # Create existing config.json with custom content
+        custom_config = {"blocklist": [{"domain": "custom-domain.com", "schedule": None}]}
+        config_file = config_dir / "config.json"
+        config_file.write_text(json.dumps(custom_config))
 
         # Mock API
         responses.add(
@@ -312,6 +312,6 @@ class TestInitIdempotent:
 
         assert result.exit_code == 0
 
-        # Verify domains.json still has custom content
-        final_domains = json.loads(domains_file.read_text())
-        assert final_domains["domains"][0]["domain"] == "custom-domain.com"
+        # Verify config.json still has custom content
+        final_config = json.loads(config_file.read_text())
+        assert final_config["blocklist"][0]["domain"] == "custom-domain.com"

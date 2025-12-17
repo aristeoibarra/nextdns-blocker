@@ -193,9 +193,9 @@ class TestUnblockCommand:
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "example.com", "schedule": null}], "allowlist": []}'
+            '{"blocklist": [{"domain": "example.com", "schedule": null}], "allowlist": []}'
         )
 
         with patch("nextdns_blocker.cli.audit_log"):
@@ -208,9 +208,9 @@ class TestUnblockCommand:
         """Test unblock command fails for invalid domain."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
+            '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
         result = runner.invoke(main, ["unblock", "invalid domain!", "--config-dir", str(tmp_path)])
@@ -252,9 +252,9 @@ class TestSyncCommand:
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
+            '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
         result = runner.invoke(main, ["sync", "--dry-run", "--config-dir", str(tmp_path)])
@@ -273,9 +273,9 @@ class TestSyncCommand:
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
+            '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
         result = runner.invoke(main, ["sync", "-v", "--config-dir", str(tmp_path)])
@@ -299,9 +299,9 @@ class TestSyncCommand:
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "block-me.com", "schedule": null}], "allowlist": []}'
+            '{"blocklist": [{"domain": "block-me.com", "schedule": null}], "allowlist": []}'
         )
 
         with patch("nextdns_blocker.cli.audit_log"):
@@ -331,9 +331,9 @@ class TestStatusCommand:
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "example.com", "schedule": null}], "allowlist": []}'
+            '{"blocklist": [{"domain": "example.com", "schedule": null}], "allowlist": []}'
         )
 
         result = runner.invoke(main, ["status", "--config-dir", str(tmp_path)])
@@ -425,9 +425,9 @@ class TestHealthCommand:
         """Test health command when everything is healthy."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
+            '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
         mock_client = mock_client_cls.return_value
@@ -444,9 +444,9 @@ class TestHealthCommand:
         """Test health command when API fails."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=badkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
+            '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
         mock_client = mock_client_cls.return_value
@@ -1045,9 +1045,9 @@ class TestSyncCommandEdgeCases:
             "NEXTDNS_PROFILE_ID=testprofile\n"
             "DISCORD_WEBHOOK=https://discord.com/api/webhooks/test\n"
         )
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
+            '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
         with patch("nextdns_blocker.cli.audit_log"):
@@ -1068,10 +1068,10 @@ class TestHealthCommandEdgeCases:
 
     @patch("nextdns_blocker.cli.NextDNSClient")
     def test_health_missing_domains_file(self, mock_client_cls, runner, mock_pause_file, tmp_path):
-        """Should show warning for missing domains.json."""
+        """Should show warning for missing config.json."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        # No domains.json file
+        # No config.json file
 
         mock_client = mock_client_cls.return_value
         mock_client.get_denylist.return_value = []
@@ -1079,7 +1079,7 @@ class TestHealthCommandEdgeCases:
         with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
             result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
 
-        # Should fail due to missing domains.json
+        # Should fail due to missing config.json
         assert result.exit_code == 1
 
 
@@ -1110,9 +1110,9 @@ class TestStatusCommandEdgeCases:
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "protected.com", "protected": true}], "allowlist": []}'
+            '{"blocklist": [{"domain": "protected.com", "protected": true}], "allowlist": []}'
         )
 
         result = runner.invoke(main, ["status", "--config-dir", str(tmp_path)])
@@ -1129,9 +1129,9 @@ class TestValidateCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "example.com"}, {"domain": "test.org"}], "allowlist": []}'
+            '{"blocklist": [{"domain": "example.com"}, {"domain": "test.org"}], "allowlist": []}'
         )
 
         result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
@@ -1145,9 +1145,9 @@ class TestValidateCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "example.com", "protected": true}, '
+            '{"blocklist": [{"domain": "example.com", "protected": true}, '
             '{"domain": "test.org", "protected": true}], "allowlist": []}'
         )
 
@@ -1161,9 +1161,9 @@ class TestValidateCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "example.com"}], '
+            '{"blocklist": [{"domain": "example.com"}], '
             '"allowlist": [{"domain": "allowed.com"}, {"domain": "safe.org"}]}'
         )
 
@@ -1177,9 +1177,9 @@ class TestValidateCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "example.com", "schedule": {'
+            '{"blocklist": [{"domain": "example.com", "schedule": {'
             '"available_hours": [{"days": ["monday"], "time_ranges": [{"start": "09:00", "end": "17:00"}]}]'
             "}}]}"
         )
@@ -1190,8 +1190,8 @@ class TestValidateCommand:
         assert "schedule" in result.output.lower()
 
     def test_validate_missing_domains_file(self, runner, tmp_path):
-        """Should fail when domains.json is missing."""
-        # No domains.json file created
+        """Should fail when config.json is missing."""
+        # No config.json file created
 
         result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
 
@@ -1203,7 +1203,7 @@ class TestValidateCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text("{invalid json}")
 
         result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
@@ -1216,8 +1216,8 @@ class TestValidateCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        domains_file = tmp_path / "domains.json"
-        domains_file.write_text('{"domains": [{"domain": "invalid domain.com"}]}')
+        domains_file = tmp_path / "config.json"
+        domains_file.write_text('{"blocklist": [{"domain": "invalid domain.com"}]}')
 
         result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
 
@@ -1229,9 +1229,9 @@ class TestValidateCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "example.com", "schedule": {'
+            '{"blocklist": [{"domain": "example.com", "schedule": {'
             '"available_hours": [{"days": ["monday"], "time_ranges": [{"start": "25:00", "end": "17:00"}]}]'
             "}}]}"
         )
@@ -1246,9 +1246,9 @@ class TestValidateCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "example.com"}], "allowlist": [{"domain": "example.com"}]}'
+            '{"blocklist": [{"domain": "example.com"}], "allowlist": [{"domain": "example.com"}]}'
         )
 
         result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
@@ -1263,8 +1263,8 @@ class TestValidateCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        domains_file = tmp_path / "domains.json"
-        domains_file.write_text('{"domains": [{"domain": "example.com"}], "allowlist": []}')
+        domains_file = tmp_path / "config.json"
+        domains_file.write_text('{"blocklist": [{"domain": "example.com"}], "allowlist": []}')
 
         result = runner.invoke(main, ["validate", "--json", "--config-dir", str(tmp_path)])
 
@@ -1282,8 +1282,8 @@ class TestValidateCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        domains_file = tmp_path / "domains.json"
-        domains_file.write_text('{"domains": [{"domain": "invalid domain"}]}')
+        domains_file = tmp_path / "config.json"
+        domains_file.write_text('{"blocklist": [{"domain": "invalid domain"}]}')
 
         result = runner.invoke(main, ["validate", "--json", "--config-dir", str(tmp_path)])
 
@@ -1297,8 +1297,8 @@ class TestValidateCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        domains_file = tmp_path / "domains.json"
-        domains_file.write_text('{"domains": []}')
+        domains_file = tmp_path / "config.json"
+        domains_file.write_text('{"blocklist": []}')
 
         result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
 

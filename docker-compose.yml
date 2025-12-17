@@ -21,8 +21,8 @@ services:
       # Optional: Timezone (default: America/Mexico_City)
       - TZ=${TZ:-America/Mexico_City}
     volumes:
-      # Mount domains.json for local configuration (optional if using DOMAINS_URL)
-      - ./domains.json:/app/domains.json:ro
+      # Mount config.json for local configuration (optional if using DOMAINS_URL)
+      - ./config.json:/app/config.json:ro
       # Persist logs
       - nextdns-logs:/home/blocker/.local/share/nextdns-blocker/logs
     # Run watchdog which manages sync cron jobs

@@ -150,7 +150,7 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
 
     Resolution order:
     1. Override path if provided
-    2. Current working directory if .env or domains.json exists (backwards compatible)
+    2. Current working directory if .env AND config.json exist
     3. XDG config directory (~/.config/nextdns-blocker on Linux,
        ~/Library/Application Support/nextdns-blocker on macOS)
 
@@ -163,12 +163,11 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
     if override:
         return Path(override)
 
-    # Backwards compatibility: check CWD for existing configs
-    # Require .env AND a domain config file to use CWD (fixes #124)
-    # This avoids false positives from unrelated .env or domains.json files
+    # Require .env AND config.json to use CWD (fixes #124)
+    # This avoids false positives from unrelated .env files
     cwd = Path.cwd()
     has_env = (cwd / ".env").exists()
-    has_config = (cwd / "domains.json").exists() or (cwd / "config.json").exists()
+    has_config = (cwd / "config.json").exists()
     if has_env and has_config:
         return cwd
 
@@ -412,13 +411,10 @@ def validate_no_overlap(
 
 def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
-    Load domain configurations from local file.
-
-    Supports both legacy format (domains.json with "domains" key) and
-    new format (config.json with "blocklist" key).
+    Load domain configurations from config.json.
 
     Args:
-        script_dir: Directory containing the config files
+        script_dir: Directory containing config.json
 
     Returns:
         Tuple of (denylist domains, allowlist domains)
@@ -426,33 +422,29 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
     Raises:
         ConfigurationError: If loading or validation fails
     """
-    # Check for new config.json first, then legacy domains.json
     script_path = Path(script_dir)
     config_file = script_path / "config.json"
-    legacy_file = script_path / "domains.json"
 
-    if config_file.exists():
-        json_file = config_file
-    elif legacy_file.exists():
-        json_file = legacy_file
-    else:
-        raise ConfigurationError(f"Config file not found. Expected: {config_file} or {legacy_file}")
+    if not config_file.exists():
+        raise ConfigurationError(
+            f"Config file not found: {config_file}\n"
+            "Run 'nextdns-blocker init' to create one."
+        )
 
     try:
-        with open(json_file, encoding="utf-8") as f:
+        with open(config_file, encoding="utf-8") as f:
             config = json.load(f)
-        logger.info(f"Loaded domains from {json_file.name}")
+        logger.info(f"Loaded domains from {config_file.name}")
     except json.JSONDecodeError as e:
-        raise ConfigurationError(f"Invalid JSON in {json_file.name}: {e}")
+        raise ConfigurationError(f"Invalid JSON in {config_file.name}: {e}")
 
     # Validate structure
     if not isinstance(config, dict):
-        raise ConfigurationError("Config must be a JSON object with 'blocklist' or 'domains' array")
+        raise ConfigurationError("Config must be a JSON object with 'blocklist' array")
 
-    # Support both "blocklist" (new) and "domains" (legacy) keys
-    domains = config.get("blocklist", config.get("domains", []))
+    domains = config.get("blocklist", [])
     if not domains:
-        raise ConfigurationError("No domains configured (missing 'blocklist' or 'domains' array)")
+        raise ConfigurationError("No domains configured (missing 'blocklist' array)")
 
     # Load allowlist (optional, defaults to empty)
     allowlist = config.get("allowlist", [])

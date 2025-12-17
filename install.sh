@@ -124,12 +124,9 @@ else
     exit 0
 fi
 
-# Check for config.json (new format) or domains.json (legacy)
+# Check for config.json
 if [ -f "$CONFIG_DIR/config.json" ]; then
     echo "         using local: $CONFIG_DIR/config.json"
-elif [ -f "$CONFIG_DIR/domains.json" ]; then
-    echo "         using legacy: $CONFIG_DIR/domains.json"
-    echo "         tip: run 'nextdns-blocker config migrate' to upgrade"
 elif [ -f "$SCRIPT_DIR/config.json" ]; then
     echo "         copying: $SCRIPT_DIR/config.json -> $CONFIG_DIR/config.json"
     cp "$SCRIPT_DIR/config.json" "$CONFIG_DIR/config.json"
