@@ -253,7 +253,7 @@ class TestGetExecutablePath:
     def test_get_executable_path_homebrew_arm_fallback(self, tmp_path):
         """Should check Homebrew ARM location on macOS if which and pipx fail."""
         with patch("shutil.which", return_value=None):
-            with patch("nextdns_blocker.platform_utils.sys.platform", "darwin"):
+            with patch("nextdns_blocker.platform_utils.is_windows", return_value=False):
                 with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
 
                     def mock_path_exists(path_self):
@@ -266,7 +266,7 @@ class TestGetExecutablePath:
     def test_get_executable_path_homebrew_intel_fallback(self, tmp_path):
         """Should check Homebrew Intel location on macOS if ARM not found."""
         with patch("shutil.which", return_value=None):
-            with patch("nextdns_blocker.platform_utils.sys.platform", "darwin"):
+            with patch("nextdns_blocker.platform_utils.is_windows", return_value=False):
                 with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
 
                     def mock_path_exists(path_self):
@@ -309,7 +309,7 @@ class TestGetExecutableArgs:
     def test_get_executable_args_homebrew_arm_fallback(self, tmp_path):
         """Should check Homebrew ARM location on macOS if which and pipx fail."""
         with patch("shutil.which", return_value=None):
-            with patch("nextdns_blocker.platform_utils.sys.platform", "darwin"):
+            with patch("nextdns_blocker.platform_utils.is_windows", return_value=False):
                 with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
 
                     def mock_path_exists(path_self):
@@ -324,7 +324,7 @@ class TestGetExecutableArgs:
     def test_get_executable_args_homebrew_intel_fallback(self, tmp_path):
         """Should check Homebrew Intel location on macOS if ARM not found."""
         with patch("shutil.which", return_value=None):
-            with patch("nextdns_blocker.platform_utils.sys.platform", "darwin"):
+            with patch("nextdns_blocker.platform_utils.is_windows", return_value=False):
                 with patch("nextdns_blocker.platform_utils.Path.home", return_value=tmp_path):
 
                     def mock_path_exists(path_self):
