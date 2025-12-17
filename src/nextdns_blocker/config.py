@@ -164,8 +164,12 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
         return Path(override)
 
     # Backwards compatibility: check CWD for existing configs
+    # Require .env AND a domain config file to use CWD (fixes #124)
+    # This avoids false positives from unrelated .env or domains.json files
     cwd = Path.cwd()
-    if (cwd / ".env").exists() or (cwd / "domains.json").exists():
+    has_env = (cwd / ".env").exists()
+    has_config = (cwd / "domains.json").exists() or (cwd / "config.json").exists()
+    if has_env and has_config:
         return cwd
 
     return Path(user_config_dir(APP_NAME))

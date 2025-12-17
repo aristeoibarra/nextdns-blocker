@@ -100,11 +100,13 @@ class TestLoadConfig:
 
     def test_load_config_missing_profile_id(self, temp_dir):
         """Test that missing profile ID raises ConfigurationError."""
-        with patch.dict(os.environ, {"NEXTDNS_API_KEY": "testkey12345"}, clear=True):
-            os.environ.pop("NEXTDNS_PROFILE_ID", None)
+        # Create .env with only API key (no profile ID)
+        env_file = temp_dir / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\n")
 
+        with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ConfigurationError) as exc_info:
-                load_config()
+                load_config(config_dir=temp_dir)
 
             assert "NEXTDNS_PROFILE_ID" in str(exc_info.value)
 
