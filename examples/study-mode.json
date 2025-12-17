@@ -1,16 +1,19 @@
-{
-  "domains": [
+ {
+  "version": "1.0",
+  "settings": {
+    "timezone": "Asia/Kolkata",
+    "editor": null
+  },
+  "blocklist": [
     {
       "domain": "tiktok.com",
       "description": "Short-form video platform that heavily disrupts study focus.",
-      "protected": false,
+      "unblock_delay": "0",
       "schedule": {
         "available_hours": [
           {
             "days": ["saturday", "sunday"],
-            "time_ranges": [
-              { "start": "00:00", "end": "23:59" }
-            ]
+            "time_ranges": [{ "start": "00:00", "end": "23:59" }]
           },
           {
             "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
@@ -25,14 +28,12 @@
     {
       "domain": "instagram.com",
       "description": "Photo and video sharing platform that encourages endless scrolling.",
-      "protected": false,
+      "unblock_delay": "0",
       "schedule": {
         "available_hours": [
           {
             "days": ["saturday", "sunday"],
-            "time_ranges": [
-              { "start": "00:00", "end": "23:59" }
-            ]
+            "time_ranges": [{ "start": "00:00", "end": "23:59" }]
           },
           {
             "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
@@ -47,14 +48,12 @@
     {
       "domain": "twitter.com",
       "description": "News and updates feed that can cause frequent distractions.",
-      "protected": false,
+      "unblock_delay": "0",
       "schedule": {
         "available_hours": [
           {
             "days": ["saturday", "sunday"],
-            "time_ranges": [
-              { "start": "00:00", "end": "23:59" }
-            ]
+            "time_ranges": [{ "start": "00:00", "end": "23:59" }]
           },
           {
             "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
@@ -69,14 +68,12 @@
     {
       "domain": "snapchat.com",
       "description": "Messaging app with snaps and stories; mostly used to chat with friends",
-      "protected": false,
+      "unblock_delay": "0",
       "schedule": {
         "available_hours": [
           {
             "days": ["saturday", "sunday"],
-            "time_ranges": [
-              { "start": "00:00", "end": "23:59" }
-            ]
+            "time_ranges": [{ "start": "00:00", "end": "23:59" }]
           },
           {
             "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
@@ -91,14 +88,12 @@
     {
       "domain": "youtube.com",
       "description": "Video platform where recommended videos can consume hours unintentionally.",
-      "protected": false,
+      "unblock_delay": "0",
       "schedule": {
         "available_hours": [
           {
             "days": ["saturday", "sunday"],
-            "time_ranges": [
-              { "start": "00:00", "end": "23:59" }
-            ]
+            "time_ranges": [{ "start": "00:00", "end": "23:59" }]
           },
           {
             "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
@@ -113,14 +108,12 @@
     {
       "domain": "netflix.com",
       "description": "Streaming service for movies and shows; commonly used for leisure in free time",
-      "protected": false,
+      "unblock_delay": "0",
       "schedule": {
         "available_hours": [
           {
             "days": ["saturday", "sunday"],
-            "time_ranges": [
-              { "start": "00:00", "end": "23:59" }
-            ]
+            "time_ranges": [{ "start": "00:00", "end": "23:59" }]
           },
           {
             "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
@@ -135,14 +128,12 @@
     {
       "domain": "twitch.tv",
       "description": "Live streaming platform popular with gaming and entertainment content.",
-      "protected": false,
+      "unblock_delay": "0",
       "schedule": {
         "available_hours": [
           {
             "days": ["saturday", "sunday"],
-            "time_ranges": [
-              { "start": "00:00", "end": "23:59" }
-            ]
+            "time_ranges": [{ "start": "00:00", "end": "23:59" }]
           },
           {
             "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
@@ -153,6 +144,20 @@
           }
         ]
       }
+    }
+  ],
+  "allowlist": [
+    {
+      "domain": "stackoverflow.com",
+      "description": "Programming and study help"
+    },
+    {
+      "domain": "docs.google.com",
+      "description": "Study notes and assignments"
+    },
+    {
+      "domain": "wikipedia.org",
+      "description": "Quick academic reference"
     }
   ]
 }
