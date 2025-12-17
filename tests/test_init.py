@@ -2,6 +2,7 @@
 
 import os
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -481,9 +482,11 @@ class TestRunInitialSync:
         """Should use python module when exe not found anywhere."""
         with patch("shutil.which", return_value=None):
             with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-                with patch("subprocess.run") as mock_run:
-                    mock_run.return_value = MagicMock(returncode=0)
-                    result = run_initial_sync()
+                # Mock all paths as not existing to force module fallback
+                with patch.object(Path, "exists", return_value=False):
+                    with patch("subprocess.run") as mock_run:
+                        mock_run.return_value = MagicMock(returncode=0)
+                        result = run_initial_sync()
 
         assert result is True
         call_args = mock_run.call_args[0][0]

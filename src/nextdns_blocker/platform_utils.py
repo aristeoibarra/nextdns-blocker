@@ -136,11 +136,24 @@ def get_executable_path() -> str:
                     / "Scripts"
                     / "nextdns-blocker.exe"
                 )
+            if pipx_exe.exists():
+                exe_path = str(pipx_exe)
         else:
             pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
+            if pipx_exe.exists():
+                exe_path = str(pipx_exe)
 
-        if pipx_exe.exists():
-            exe_path = str(pipx_exe)
+    # Fallback: check Homebrew locations (macOS/Linux)
+    if not exe_path and not is_windows():
+        homebrew_paths = [
+            Path("/opt/homebrew/bin/nextdns-blocker"),  # macOS ARM (Apple Silicon)
+            Path("/usr/local/bin/nextdns-blocker"),  # macOS Intel / Homebrew on Linux
+            Path("/home/linuxbrew/.linuxbrew/bin/nextdns-blocker"),  # Linuxbrew
+        ]
+        for brew_path in homebrew_paths:
+            if brew_path.exists():
+                exe_path = str(brew_path)
+                break
 
     if exe_path:
         return exe_path
@@ -172,11 +185,24 @@ def get_executable_args() -> list[str]:
                     / "Scripts"
                     / "nextdns-blocker.exe"
                 )
+            if pipx_exe.exists():
+                exe_path = str(pipx_exe)
         else:
             pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
+            if pipx_exe.exists():
+                exe_path = str(pipx_exe)
 
-        if pipx_exe.exists():
-            exe_path = str(pipx_exe)
+    # Fallback: check Homebrew locations (macOS/Linux)
+    if not exe_path and not is_windows():
+        homebrew_paths = [
+            Path("/opt/homebrew/bin/nextdns-blocker"),  # macOS ARM (Apple Silicon)
+            Path("/usr/local/bin/nextdns-blocker"),  # macOS Intel / Homebrew on Linux
+            Path("/home/linuxbrew/.linuxbrew/bin/nextdns-blocker"),  # Linuxbrew
+        ]
+        for brew_path in homebrew_paths:
+            if brew_path.exists():
+                exe_path = str(brew_path)
+                break
 
     if exe_path:
         return [exe_path]
