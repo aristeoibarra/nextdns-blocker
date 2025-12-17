@@ -255,9 +255,6 @@ nextdns-blocker config set editor vim
 # Validate configuration syntax and structure
 nextdns-blocker config validate
 
-# Migrate from legacy domains.json to config.json
-nextdns-blocker config migrate
-
 # Sync domains (same as root sync, but preferred)
 nextdns-blocker config sync
 ```
@@ -495,7 +492,7 @@ See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_z
 - Check cron: `crontab -l` (should see sync job running every 2 minutes)
 - Check logs: `tail -f ~/.local/share/nextdns-blocker/logs/app.log`
 - Test manually: `nextdns-blocker sync`
-- Validate JSON: `python3 -m json.tool domains.json`
+- Validate JSON: `python3 -m json.tool config.json`
 
 **Config.json errors?**
 - Ensure valid JSON syntax (use [jsonlint.com](https://jsonlint.com))

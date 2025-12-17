@@ -141,7 +141,7 @@ nextdns-blocker/
 │   ├── test_validation.py    # Input validation tests
 │   └── test_watchdog.py      # Watchdog tests
 ├── pyproject.toml            # Package configuration
-├── domains.json.example      # Example domain configuration
+├── config.json.example       # Example domain configuration
 ├── .env.example              # Example environment configuration
 ├── Dockerfile                # Container image
 └── docker-compose.yml        # Docker Compose configuration

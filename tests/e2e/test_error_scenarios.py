@@ -48,8 +48,8 @@ class TestAPIErrors:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         responses.add(
             responses.GET,
@@ -86,8 +86,8 @@ class TestAPIErrors:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         responses.add(
             responses.GET,
@@ -124,8 +124,8 @@ class TestAPIErrors:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         responses.add(
             responses.GET,
@@ -167,9 +167,9 @@ class TestProtectedDomainErrors:
         )
 
         domains_data = {
-            "domains": [{"domain": "gambling.com", "protected": True, "schedule": None}]
+            "blocklist": [{"domain": "gambling.com", "protected": True, "schedule": None}]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
@@ -201,8 +201,8 @@ class TestInvalidDomainErrors:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         result = runner.invoke(
             main,
@@ -227,8 +227,8 @@ class TestInvalidDomainErrors:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         result = runner.invoke(
             main,
@@ -251,9 +251,9 @@ class TestConfigurationErrors:
         config_dir = tmp_path / "config"
         config_dir.mkdir(parents=True)
 
-        # Only create domains.json, no .env
-        domains_data = {"domains": []}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        # Only create config.json, no .env
+        domains_data = {"blocklist": []}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         result = runner.invoke(
             main,
@@ -268,11 +268,11 @@ class TestConfigurationErrors:
         runner: CliRunner,
         tmp_path: Path,
     ) -> None:
-        """Test that sync fails gracefully without domains.json file."""
+        """Test that sync fails gracefully without config.json file."""
         config_dir = tmp_path / "config"
         config_dir.mkdir(parents=True)
 
-        # Only create .env, no domains.json
+        # Only create .env, no config.json
         (config_dir / ".env").write_text(
             f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
             f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
@@ -304,8 +304,8 @@ class TestConfigurationErrors:
             f"TIMEZONE=Invalid/Timezone\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
@@ -319,14 +319,14 @@ class TestConfigurationErrors:
 
 
 class TestMalformedDomainsFile:
-    """Tests for malformed domains.json handling."""
+    """Tests for malformed config.json handling."""
 
     def test_sync_fails_with_invalid_json(
         self,
         runner: CliRunner,
         tmp_path: Path,
     ) -> None:
-        """Test that sync fails gracefully with invalid JSON in domains.json."""
+        """Test that sync fails gracefully with invalid JSON in config.json."""
         config_dir = tmp_path / "config"
         config_dir.mkdir(parents=True)
 
@@ -337,7 +337,7 @@ class TestMalformedDomainsFile:
         )
 
         # Invalid JSON
-        (config_dir / "domains.json").write_text("{ invalid json }")
+        (config_dir / "config.json").write_text("{ invalid json }")
 
         result = runner.invoke(
             main,
@@ -363,7 +363,7 @@ class TestMalformedDomainsFile:
         )
 
         # Valid JSON but missing "domains" key
-        (config_dir / "domains.json").write_text('{"other_key": []}')
+        (config_dir / "config.json").write_text('{"other_key": []}')
 
         result = runner.invoke(
             main,

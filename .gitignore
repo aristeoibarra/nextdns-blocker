@@ -2,7 +2,7 @@
 .env
 
 # User's custom domain configuration
-domains.json
+config.json
 
 # Logs
 logs/

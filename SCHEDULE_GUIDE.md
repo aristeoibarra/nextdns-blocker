@@ -1,12 +1,12 @@
 # Schedule Configuration Guide
 
-This guide explains how to configure domain schedules in `domains.json`.
+This guide explains how to configure domain schedules in `config.json`.
 
 ## Basic Structure
 
 ```json
 {
-  "domains": [
+  "blocklist": [
     {
       "domain": "example.com",
       "description": "Optional description",
@@ -256,7 +256,7 @@ See [list of valid timezones](https://en.wikipedia.org/wiki/List_of_tz_database_
 Before running, validate your JSON syntax:
 
 ```bash
-python3 -m json.tool domains.json
+python3 -m json.tool config.json
 ```
 
 The application also validates:

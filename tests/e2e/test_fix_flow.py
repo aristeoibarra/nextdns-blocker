@@ -35,7 +35,7 @@ class TestFixBasic:
         (config_dir / ".env").write_text(
             "NEXTDNS_API_KEY=test-key\nNEXTDNS_PROFILE_ID=abc123\nTIMEZONE=UTC\n"
         )
-        (config_dir / "domains.json").write_text('{"domains": []}')
+        (config_dir / "config.json").write_text('{"blocklist": []}')
 
         mock_process = MagicMock()
         mock_process.returncode = 0
