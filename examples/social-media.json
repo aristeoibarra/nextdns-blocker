@@ -1,109 +1,120 @@
-{
-    "domains": [
-        {
-            "domain": "twitter.com",
-            "description": "Block Twitter during work hours",
-            "protected": false,
-            "schedule": {
-                "available_hours": [
-                {
-                    "days": ["saturday", "sunday"],
-                    "time_ranges": [
-                            {"start": "00:00", "end": "23:59"}
-                        ]
-                    },
-                    {
-                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
-                        "time_ranges": [
-                            {"start": "18:00", "end": "22:00"}
-                        ]
-                    }
-                ]
-            }
-        },
-        {
-            "domain": "facebook.com",
-            "description": "Block Facebook during work hours",
-            "protected": false,
-            "schedule": {
-                "available_hours": [
-                    {
-                        "days": ["saturday", "sunday"],
-                        "time_ranges": [
-                            {"start": "00:00", "end": "23:59"}
-                        ]
-                    },
-                    {
-                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
-                        "time_ranges": [
-                            {"start": "18:00", "end": "22:00"}
-                        ]
-                    }
-                ]
-            }
-        },
-        {
-            "domain": "instagram.com",
-            "description": "Block Instagram during work hours",
-            "protected": false,
-            "schedule": {
-                "available_hours": [
-                    {
-                        "days": ["saturday", "sunday"],
-                        "time_ranges": [
-                            {"start": "00:00", "end": "23:59"}
-                        ]
-                    },
-                    {
-                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
-                        "time_ranges": [
-                            {"start": "18:00", "end": "22:00"}
-                        ]
-                    }
-                ]
-            }
-        },
-        {
-            "domain": "reddit.com",
-            "description": "Block Reddit during work hours",
-            "protected": false,
-            "schedule": {
-                "available_hours": [
-                    {
-                        "days": ["saturday", "sunday"],
-                        "time_ranges": [
-                            {"start": "00:00", "end": "23:59"}
-                        ]
-                    },
-                    {
-                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
-                        "time_ranges": [
-                            {"start": "18:00", "end": "22:00"}
-                        ]
-                    }
-                ]
-            }
-        },
-        {
-            "domain": "tiktok.com",
-            "description": "Block TikTok during work hours",
-            "protected": false,
-            "schedule": {
-                "available_hours": [
-                    {
-                        "days": ["saturday", "sunday"],
-                        "time_ranges": [
-                            {"start": "00:00", "end": "23:59"}
-                        ]
-                    },
-                    {
-                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
-                        "time_ranges": [
-                            {"start": "18:00", "end": "22:00"}
-                        ]
-                    }
-                ]
-            }
-        }
-    ]
+ {
+  "version": "1.0",
+  "settings": {
+    "timezone": "UTC",
+    "editor": null
+  },
+  "blocklist": [
+    {
+      "domain": "twitter.com",
+      "description": "Block Twitter during work hours",
+      "unblock_delay": "0",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "18:00", "end": "22:00" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "facebook.com",
+      "description": "Block Facebook during work hours",
+      "unblock_delay": "0",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "18:00", "end": "22:00" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "instagram.com",
+      "description": "Block Instagram during work hours",
+      "unblock_delay": "0",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "18:00", "end": "22:00" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "reddit.com",
+      "description": "Block Reddit during work hours",
+      "unblock_delay": "0",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "18:00", "end": "22:00" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "tiktok.com",
+      "description": "Block TikTok during work hours",
+      "unblock_delay": "0",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              { "start": "00:00", "end": "23:59" }
+            ]
+          },
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              { "start": "18:00", "end": "22:00" }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "allowlist": [
+    {
+      "domain": "linkedin.com",
+      "description": "Professional networking"
+    }
+  ]
 }
