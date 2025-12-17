@@ -46,7 +46,7 @@ build/
 *.spec
 
 # Local configuration (will be mounted as volume)
-domains.json
+config.json
 
 # Misc
 .DS_Store

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.0] - 2025-12-17
+
+### Added
+- **Homebrew support for update command** (#115): Auto-detect Homebrew installations
+  - Detects `/homebrew/` or `/cellar/` in executable path
+  - Uses `brew upgrade nextdns-blocker` for Homebrew installations
+  - Homebrew detection takes priority over pipx
+  - Updated help text to reflect supported installation methods
+- **Root-level uninstall command**: `nextdns-blocker uninstall`
+  - Removes scheduler jobs (launchd/cron/Task Scheduler)
+  - Cross-platform support (macOS, Linux, Windows)
+
+### Fixed
+- **Config detection logic** (#124): Require both `.env` AND config file for CWD detection
+  - Prevents incorrect directory detection when only one file exists
+  - More reliable configuration loading
+
+### Changed
+- Examples migrated to v6 config format
+- Tests updated to match new config detection logic
+
 ## [6.0.0] - 2025-12-15
 
 ### Breaking Changes
@@ -401,6 +422,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[6.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.0.0...v6.1.0
 [6.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.4.0...v6.0.0
 [5.4.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.3.0...v5.4.0
 [5.3.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.2.0...v5.3.0

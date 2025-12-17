@@ -153,7 +153,7 @@ class TestSyncWhilePaused:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "youtube.com",
                     "schedule": {
@@ -167,7 +167,7 @@ class TestSyncWhilePaused:
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
@@ -208,7 +208,7 @@ class TestPauseResumeWorkflow:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "youtube.com",
                     "schedule": {
@@ -222,7 +222,7 @@ class TestPauseResumeWorkflow:
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
@@ -281,7 +281,7 @@ class TestPauseExpiration:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "youtube.com",
                     "schedule": {
@@ -295,7 +295,7 @@ class TestPauseExpiration:
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # First pause at 8pm
         with freeze_time("2024-01-15 20:00:00"):
@@ -344,14 +344,14 @@ class TestManualUnblockDuringPause:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "youtube.com",
                     "schedule": None,  # Always blocked
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Set up mocks for unblock
         add_denylist_mock(responses, domains=["youtube.com"])

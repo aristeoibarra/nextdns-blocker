@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nextdns-blocker"
-version = "6.0.0"
+version = "6.1.0"
 description = "Automated domain blocking controller for NextDNS with per-domain scheduling"
 readme = "README.md"
 license = "MIT"
@@ -81,7 +81,7 @@ include = [
     "/README.md",
     "/CHANGELOG.md",
     "/LICENSE",
-    "/domains.json.example",
+    "/config.json.example",
     "/.env.example",
 ]
 

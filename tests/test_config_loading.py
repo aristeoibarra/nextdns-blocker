@@ -100,11 +100,13 @@ class TestLoadConfig:
 
     def test_load_config_missing_profile_id(self, temp_dir):
         """Test that missing profile ID raises ConfigurationError."""
-        with patch.dict(os.environ, {"NEXTDNS_API_KEY": "testkey12345"}, clear=True):
-            os.environ.pop("NEXTDNS_PROFILE_ID", None)
+        # Create .env with only API key (no profile ID)
+        env_file = temp_dir / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\n")
 
+        with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ConfigurationError) as exc_info:
-                load_config()
+                load_config(config_dir=temp_dir)
 
             assert "NEXTDNS_PROFILE_ID" in str(exc_info.value)
 
@@ -114,7 +116,7 @@ class TestLoadDomains:
 
     def test_load_domains_from_file(self, temp_dir, domains_json_content):
         """Test loading domains from local JSON file."""
-        json_file = temp_dir / "domains.json"
+        json_file = temp_dir / "config.json"
         with open(json_file, "w") as f:
             json.dump(domains_json_content, f)
 
@@ -126,7 +128,7 @@ class TestLoadDomains:
         assert allowlist == []  # No allowlist in default fixture
 
     def test_load_domains_file_not_found(self, temp_dir):
-        """Test that missing domains.json raises ConfigurationError."""
+        """Test that missing config.json raises ConfigurationError."""
         with pytest.raises(ConfigurationError) as exc_info:
             load_domains(str(temp_dir))
 
@@ -134,7 +136,7 @@ class TestLoadDomains:
 
     def test_load_domains_invalid_json(self, temp_dir):
         """Test that invalid JSON raises ConfigurationError."""
-        json_file = temp_dir / "domains.json"
+        json_file = temp_dir / "config.json"
         with open(json_file, "w") as f:
             f.write("{ invalid json }")
 
@@ -145,9 +147,9 @@ class TestLoadDomains:
 
     def test_load_domains_empty_domains_list(self, temp_dir):
         """Test that empty domains list raises ConfigurationError."""
-        json_file = temp_dir / "domains.json"
+        json_file = temp_dir / "config.json"
         with open(json_file, "w") as f:
-            json.dump({"domains": []}, f)
+            json.dump({"blocklist": []}, f)
 
         with pytest.raises(ConfigurationError) as exc_info:
             load_domains(str(temp_dir))
@@ -156,7 +158,7 @@ class TestLoadDomains:
 
     def test_load_domains_validation_errors(self, temp_dir, invalid_domains_json):
         """Test that validation errors raise ConfigurationError."""
-        json_file = temp_dir / "domains.json"
+        json_file = temp_dir / "config.json"
         with open(json_file, "w") as f:
             json.dump(invalid_domains_json, f)
 
@@ -167,7 +169,7 @@ class TestLoadDomains:
 
     def test_load_domains_not_dict(self, temp_dir):
         """Test that non-dict config raises ConfigurationError."""
-        json_file = temp_dir / "domains.json"
+        json_file = temp_dir / "config.json"
         with open(json_file, "w") as f:
             json.dump(["just", "a", "list"], f)
 
@@ -182,8 +184,8 @@ class TestDomainConfigValidation:
 
     def test_invalid_domain_format_detected(self, temp_dir):
         """Test that invalid domain format is detected during loading."""
-        invalid_config = {"domains": [{"domain": "invalid_domain!@#"}]}
-        json_file = temp_dir / "domains.json"
+        invalid_config = {"blocklist": [{"domain": "invalid_domain!@#"}]}
+        json_file = temp_dir / "config.json"
         with open(json_file, "w") as f:
             json.dump(invalid_config, f)
 
@@ -196,9 +198,9 @@ class TestDomainConfigValidation:
     def test_valid_domain_passes_validation(self, temp_dir):
         """Test that valid domains pass validation."""
         valid_config = {
-            "domains": [{"domain": "valid-domain.com"}, {"domain": "sub.domain.example.org"}]
+            "blocklist": [{"domain": "valid-domain.com"}, {"domain": "sub.domain.example.org"}]
         }
-        json_file = temp_dir / "domains.json"
+        json_file = temp_dir / "config.json"
         with open(json_file, "w") as f:
             json.dump(valid_config, f)
 

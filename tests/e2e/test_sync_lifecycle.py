@@ -55,7 +55,7 @@ class TestSyncBlocksDuringRestrictedHours:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "youtube.com",
                     "schedule": {
@@ -69,7 +69,7 @@ class TestSyncBlocksDuringRestrictedHours:
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Mock API: domain not currently blocked (allow multiple GET calls)
         responses.add(
@@ -121,7 +121,7 @@ class TestSyncBlocksDuringRestrictedHours:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "youtube.com",
                     "schedule": {
@@ -135,7 +135,7 @@ class TestSyncBlocksDuringRestrictedHours:
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Mock API: domain currently blocked
         responses.add(
@@ -191,7 +191,7 @@ class TestSyncProtectedDomains:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "gambling.com",
                     "protected": True,
@@ -199,7 +199,7 @@ class TestSyncProtectedDomains:
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Mock API: domain currently blocked
         add_denylist_mock(responses, domains=["gambling.com"])
@@ -241,7 +241,7 @@ class TestSyncDryRun:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "youtube.com",
                     "schedule": {
@@ -255,7 +255,7 @@ class TestSyncDryRun:
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Only mock GET endpoints - POST should not be called in dry-run
         responses.add(
@@ -305,7 +305,7 @@ class TestFullDayCycle:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "youtube.com",
                     "schedule": {
@@ -319,7 +319,7 @@ class TestFullDayCycle:
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Phase 1: Morning before allowed hours (7am) - should block
         with freeze_time("2024-01-15 07:00:00"):  # Monday 7am
@@ -446,7 +446,7 @@ class TestSyncMultipleDomains:
         # youtube: weekdays 9-17 (should be blocked on Saturday)
         # twitter: weekends 10-22 (should be allowed on Saturday 3pm)
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "youtube.com",
                     "schedule": {
@@ -471,7 +471,7 @@ class TestSyncMultipleDomains:
                 },
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Mock API: both domains currently not blocked
         responses.add(
@@ -530,7 +530,7 @@ class TestSyncNoChanges:
         )
 
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {
                     "domain": "youtube.com",
                     "schedule": {
@@ -544,7 +544,7 @@ class TestSyncNoChanges:
                 }
             ]
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Domain is already blocked (correct state for 8pm)
         add_denylist_mock(responses, domains=["youtube.com"])

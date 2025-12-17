@@ -677,7 +677,7 @@ def health(config_dir: Optional[Path]) -> None:
         console.print(f"  [red][✗][/red] Configuration: {e}")
         sys.exit(1)
 
-    # Check domains.json
+    # Check config.json
     checks_total += 1
     try:
         domains, allowlist = load_domains(config["script_dir"])
@@ -755,6 +755,89 @@ def test_notifications(config_dir: Optional[Path]) -> None:
     except ConfigurationError as e:
         console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
         sys.exit(1)
+
+
+@main.command()
+@click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
+def uninstall(yes: bool) -> None:
+    """Completely remove NextDNS Blocker and all its data.
+
+    This command will:
+    - Remove all scheduled jobs (launchd/cron/Task Scheduler)
+    - Delete configuration files (.env, config.json)
+    - Delete all logs, cache, and data files
+
+    After running this command, you will need to reinstall the package
+    using your package manager (pip, pipx, or brew).
+    """
+    import shutil
+
+    from .config import get_config_dir, get_data_dir
+    from .watchdog import (
+        _uninstall_cron_jobs,
+        _uninstall_launchd_jobs,
+        _uninstall_windows_tasks,
+    )
+
+    config_dir = get_config_dir()
+    data_dir = get_data_dir()
+
+    # Collect unique directories to remove
+    dirs_to_remove: list[tuple[str, Path]] = []
+    dirs_to_remove.append(("Config", config_dir))
+    if data_dir != config_dir:
+        dirs_to_remove.append(("Data", data_dir))
+
+    console.print("\n  [bold red]NextDNS Blocker Uninstall[/bold red]")
+    console.print("  [bold red]-------------------------[/bold red]")
+    console.print("\n  This will permanently delete:")
+    console.print("    • Scheduled jobs (watchdog)")
+    for name, path in dirs_to_remove:
+        console.print(f"    • {name}: [yellow]{path}[/yellow]")
+    console.print()
+
+    if not yes:
+        if not click.confirm("  Are you sure you want to continue?", default=False):
+            console.print("\n  [green]Uninstall cancelled.[/green]\n")
+            return
+
+    console.print("\n  [bold]Removing...[/bold]")
+
+    total_steps = 1 + len(dirs_to_remove)
+    step = 1
+
+    # Step 1: Remove scheduled jobs
+    console.print(f"    [{step}/{total_steps}] Removing scheduled jobs...")
+    try:
+        if is_macos():
+            _uninstall_launchd_jobs()
+        elif is_windows():
+            _uninstall_windows_tasks()
+        else:
+            _uninstall_cron_jobs()
+        console.print("          [green]Done[/green]")
+    except Exception as e:
+        console.print(f"          [yellow]Warning: {e}[/yellow]")
+
+    # Remove directories
+    for name, path in dirs_to_remove:
+        step += 1
+        console.print(f"    [{step}/{total_steps}] Removing {name.lower()} directory...")
+        try:
+            if path.exists():
+                shutil.rmtree(path)
+                console.print("          [green]Done[/green]")
+            else:
+                console.print("          [yellow]Already removed[/yellow]")
+        except Exception as e:
+            console.print(f"          [red]Error: {e}[/red]")
+
+    console.print("\n  [green]Uninstall complete![/green]")
+    console.print("  To remove the package itself, run:")
+    console.print("    [yellow]brew uninstall nextdns-blocker[/yellow]  (Homebrew)")
+    console.print("    [yellow]pipx uninstall nextdns-blocker[/yellow]  (pipx)")
+    console.print("    [yellow]pip uninstall nextdns-blocker[/yellow]   (pip)")
+    console.print()
 
 
 @main.command()
@@ -913,7 +996,11 @@ def fix() -> None:
 @main.command()
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
 def update(yes: bool) -> None:
-    """Check for updates and upgrade to the latest version."""
+    """Check for updates and upgrade to the latest version.
+
+    Automatically detects installation method (Homebrew, pipx, or pip)
+    and uses the appropriate upgrade command.
+    """
     import json
     import subprocess
     import urllib.request
@@ -964,8 +1051,12 @@ def update(yes: bool) -> None:
             console.print("  Update cancelled.\n")
             return
 
-    # Detect if installed via pipx (cross-platform)
+    # Detect installation method (cross-platform)
     exe_path = get_executable_path()
+
+    # Check for Homebrew installation (macOS/Linux)
+    is_homebrew_install = "/homebrew/" in exe_path.lower() or "/cellar/" in exe_path.lower()
+
     # Check multiple indicators for pipx installation
     pipx_venv_unix = Path.home() / ".local" / "pipx" / "venvs" / "nextdns-blocker"
     pipx_venv_win = Path.home() / "pipx" / "venvs" / "nextdns-blocker"
@@ -976,7 +1067,14 @@ def update(yes: bool) -> None:
     # Perform the update
     console.print("\n  Updating...")
     try:
-        if is_pipx_install:
+        if is_homebrew_install:
+            console.print("  (detected Homebrew installation)")
+            result = subprocess.run(
+                ["brew", "upgrade", "nextdns-blocker"],
+                capture_output=True,
+                text=True,
+            )
+        elif is_pipx_install:
             console.print("  (detected pipx installation)")
             result = subprocess.run(
                 ["pipx", "upgrade", "nextdns-blocker"],
@@ -984,6 +1082,7 @@ def update(yes: bool) -> None:
                 text=True,
             )
         else:
+            console.print("  (detected pip installation)")
             result = subprocess.run(
                 [sys.executable, "-m", "pip", "install", "--upgrade", "nextdns-blocker"],
                 capture_output=True,
@@ -1013,7 +1112,7 @@ def validate(
 ) -> None:
     """Validate configuration files before deployment.
 
-    Checks domains.json for:
+    Checks config.json for:
     - Valid JSON syntax
     - Valid domain formats
     - Valid schedule time formats (HH:MM)
@@ -1052,34 +1151,23 @@ def validate(
     def add_warning(message: str) -> None:
         results["warnings"].append(message)
 
-    # Check 1: config file exists and has valid JSON syntax
-    # Support both new config.json and legacy domains.json
+    # Check 1: config.json exists and has valid JSON syntax
     config_file = config_dir / "config.json"
-    legacy_file = config_dir / "domains.json"
     domains_data = None
-    config_filename = None
 
     if config_file.exists():
-        config_filename = "config.json"
         try:
             with open(config_file, encoding="utf-8") as f:
                 domains_data = json_module.load(f)
-            add_check(config_filename, True, "valid JSON syntax")
+            add_check("config.json", True, "valid JSON syntax")
         except json_module.JSONDecodeError as e:
-            add_check(config_filename, False, f"invalid JSON: {e}")
-            add_error(f"JSON syntax error: {e}")
-    elif legacy_file.exists():
-        config_filename = "domains.json"
-        try:
-            with open(legacy_file, encoding="utf-8") as f:
-                domains_data = json_module.load(f)
-            add_check(config_filename, True, "valid JSON syntax (legacy format)")
-        except json_module.JSONDecodeError as e:
-            add_check(config_filename, False, f"invalid JSON: {e}")
+            add_check("config.json", False, f"invalid JSON: {e}")
             add_error(f"JSON syntax error: {e}")
     else:
-        add_check("config", False, "file not found")
-        add_error(f"Config file not found. Expected: {config_file} or {legacy_file}")
+        add_check("config.json", False, "file not found")
+        add_error(
+            f"Config file not found: {config_file}\n" "Run 'nextdns-blocker init' to create one."
+        )
 
     if domains_data is None:
         # Cannot proceed without valid domains data
@@ -1095,15 +1183,14 @@ def validate(
     # Check 2: Validate structure
     if not isinstance(domains_data, dict):
         add_error("Configuration must be a JSON object")
-    elif "blocklist" not in domains_data and "domains" not in domains_data:
-        add_error("Missing 'blocklist' or 'domains' array in configuration")
+    elif "blocklist" not in domains_data:
+        add_error("Missing 'blocklist' array in configuration")
 
-    # Support both "blocklist" (new) and "domains" (legacy) keys
     domains_list: list[dict[str, Any]] = []
     allowlist_list: list[dict[str, Any]] = []
     if isinstance(domains_data, dict):
-        domains_list = domains_data.get("blocklist") or domains_data.get("domains") or []
-        allowlist_list = domains_data.get("allowlist") or []
+        domains_list = domains_data.get("blocklist", [])
+        allowlist_list = domains_data.get("allowlist", [])
 
     # Update summary
     results["summary"]["domains_count"] = len(domains_list)

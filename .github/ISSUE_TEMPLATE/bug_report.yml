@@ -89,7 +89,7 @@ body:
     id: config
     attributes:
       label: Configuration (sanitized)
-      description: Your domains.json configuration (remove any sensitive data)
+      description: Your config.json configuration (remove any sensitive data)
       render: json
 
   - type: checkboxes

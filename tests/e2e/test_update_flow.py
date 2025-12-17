@@ -4,7 +4,7 @@ Tests the update command including:
 - Checking PyPI for latest version
 - Comparing versions
 - Update confirmation
-- pipx vs pip update execution
+- Homebrew, pipx, and pip update execution
 """
 
 from __future__ import annotations
@@ -205,11 +205,130 @@ class TestUpdateExecution:
                             result = runner.invoke(main, ["update", "-y"])
 
         assert result.exit_code == 0
+        assert "pip" in result.output.lower()
 
         # Verify pip install --upgrade was called
         calls = [str(call) for call in mock_run.call_args_list]
         pip_call = any("pip" in str(call) and "upgrade" in str(call) for call in calls)
         assert pip_call
+
+    def test_update_uses_homebrew_when_detected_via_homebrew_path(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Test that update uses brew when installation is detected via /homebrew/ path."""
+        pypi_response = json.dumps({"info": {"version": "2.0.0"}}).encode()
+
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        mock_process.stdout = ""
+        mock_process.stderr = ""
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_response = MagicMock()
+            mock_response.read.return_value = pypi_response
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_response
+
+            with patch("nextdns_blocker.cli.__version__", "1.0.0"):
+                with patch("subprocess.run", return_value=mock_process) as mock_run:
+                    with patch("pathlib.Path.home", return_value=tmp_path):
+                        with patch(
+                            "nextdns_blocker.cli.get_executable_path",
+                            return_value="/opt/homebrew/bin/nextdns-blocker",
+                        ):
+                            result = runner.invoke(main, ["update", "-y"])
+
+        assert result.exit_code == 0
+        assert "homebrew" in result.output.lower()
+
+        # Verify brew upgrade was called
+        calls = [str(call) for call in mock_run.call_args_list]
+        brew_call = any("brew" in str(call) and "upgrade" in str(call) for call in calls)
+        assert brew_call
+
+    def test_update_uses_homebrew_when_detected_via_cellar_path(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Test that update uses brew when installation is detected via /Cellar/ path."""
+        pypi_response = json.dumps({"info": {"version": "2.0.0"}}).encode()
+
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        mock_process.stdout = ""
+        mock_process.stderr = ""
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_response = MagicMock()
+            mock_response.read.return_value = pypi_response
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_response
+
+            with patch("nextdns_blocker.cli.__version__", "1.0.0"):
+                with patch("subprocess.run", return_value=mock_process) as mock_run:
+                    with patch("pathlib.Path.home", return_value=tmp_path):
+                        with patch(
+                            "nextdns_blocker.cli.get_executable_path",
+                            return_value="/usr/local/Cellar/nextdns-blocker/6.0.0/bin/nextdns-blocker",
+                        ):
+                            result = runner.invoke(main, ["update", "-y"])
+
+        assert result.exit_code == 0
+        assert "homebrew" in result.output.lower()
+
+        # Verify brew upgrade was called
+        calls = [str(call) for call in mock_run.call_args_list]
+        brew_call = any("brew" in str(call) and "upgrade" in str(call) for call in calls)
+        assert brew_call
+
+    def test_update_homebrew_takes_priority_over_pipx(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Test that Homebrew detection takes priority over pipx when both could match."""
+        pypi_response = json.dumps({"info": {"version": "2.0.0"}}).encode()
+
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        mock_process.stdout = ""
+        mock_process.stderr = ""
+
+        # Create pipx venv directory (but Homebrew should still win)
+        pipx_venv = tmp_path / ".local" / "pipx" / "venvs" / "nextdns-blocker"
+        pipx_venv.mkdir(parents=True)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_response = MagicMock()
+            mock_response.read.return_value = pypi_response
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_response
+
+            with patch("nextdns_blocker.cli.__version__", "1.0.0"):
+                with patch("subprocess.run", return_value=mock_process) as mock_run:
+                    with patch("pathlib.Path.home", return_value=tmp_path):
+                        with patch(
+                            "nextdns_blocker.cli.get_executable_path",
+                            return_value="/opt/homebrew/bin/nextdns-blocker",
+                        ):
+                            result = runner.invoke(main, ["update", "-y"])
+
+        assert result.exit_code == 0
+        assert "homebrew" in result.output.lower()
+        assert "pipx" not in result.output.lower()
+
+        # Verify brew upgrade was called, not pipx
+        calls = [str(call) for call in mock_run.call_args_list]
+        brew_call = any("brew" in str(call) and "upgrade" in str(call) for call in calls)
+        pipx_call = any("pipx" in str(call) and "upgrade" in str(call) for call in calls)
+        assert brew_call
+        assert not pipx_call
 
     def test_update_handles_update_failure(
         self,

@@ -50,8 +50,8 @@ class TestAllowCommand:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": []}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": []}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Domain is not blocked
         add_denylist_mock(responses, domains=[])
@@ -86,8 +86,8 @@ class TestAllowCommand:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": []}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": []}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Domain IS blocked
         add_denylist_mock(responses, domains=["youtube.com"])
@@ -118,8 +118,8 @@ class TestAllowCommand:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": []}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": []}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         result = runner.invoke(
             main,
@@ -147,8 +147,8 @@ class TestAllowCommand:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": []}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": []}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_denylist_mock(responses, domains=[])
         # API returns error
@@ -186,8 +186,8 @@ class TestDisallowCommand:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": []}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": []}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         add_disallow_mock(responses, "trusted-site.com")
 
@@ -216,8 +216,8 @@ class TestDisallowCommand:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": []}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": []}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         result = runner.invoke(
             main,
@@ -245,8 +245,8 @@ class TestDisallowCommand:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Mock allowlist check (client checks before DELETE)
         add_allowlist_mock(responses, domains=["test.com"])
@@ -285,8 +285,8 @@ class TestAllowDisallowWorkflow:
             f"TIMEZONE={TEST_TIMEZONE}\n"
         )
 
-        domains_data = {"domains": []}
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        domains_data = {"blocklist": []}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Step 1: Allow domain
         add_denylist_mock(responses, domains=[])
@@ -325,7 +325,7 @@ class TestAllowlistSyncIntegration:
         runner: CliRunner,
         tmp_path: Path,
     ) -> None:
-        """Test that sync command adds domains from allowlist in domains.json."""
+        """Test that sync command adds domains from allowlist in config.json."""
         config_dir = tmp_path / "config"
         log_dir = tmp_path / "logs"
         config_dir.mkdir(parents=True)
@@ -335,16 +335,16 @@ class TestAllowlistSyncIntegration:
             f"NEXTDNS_API_KEY={TEST_API_KEY}\nNEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\nTIMEZONE=UTC\n"
         )
 
-        # domains.json with allowlist (must have at least one domain in domains)
+        # config.json with allowlist (must have at least one domain in domains)
         domains_data = {
-            "domains": [
+            "blocklist": [
                 {"domain": "youtube.com", "schedule": None},
             ],
             "allowlist": [
                 {"domain": "trusted-site.com"},
             ],
         }
-        (config_dir / "domains.json").write_text(json.dumps(domains_data))
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         # Domain not yet in allowlist
         add_denylist_mock(responses, domains=[])

@@ -445,14 +445,14 @@ class TestLoadDomainsWithAllowlist:
     """Tests for load_domains with allowlist support."""
 
     def test_load_domains_with_allowlist(self, tmp_path):
-        """Test loading domains.json with allowlist."""
+        """Test loading config.json with allowlist."""
         import json
 
         config = {
-            "domains": [{"domain": "amazon.com", "schedule": None}],
+            "blocklist": [{"domain": "amazon.com", "schedule": None}],
             "allowlist": [{"domain": "aws.amazon.com"}],
         }
-        json_file = tmp_path / "domains.json"
+        json_file = tmp_path / "config.json"
         with open(json_file, "w") as f:
             json.dump(config, f)
 
@@ -464,11 +464,11 @@ class TestLoadDomainsWithAllowlist:
         assert allowlist[0]["domain"] == "aws.amazon.com"
 
     def test_load_domains_without_allowlist(self, tmp_path):
-        """Test loading domains.json without allowlist key."""
+        """Test loading config.json without allowlist key."""
         import json
 
-        config = {"domains": [{"domain": "amazon.com", "schedule": None}]}
-        json_file = tmp_path / "domains.json"
+        config = {"blocklist": [{"domain": "amazon.com", "schedule": None}]}
+        json_file = tmp_path / "config.json"
         with open(json_file, "w") as f:
             json.dump(config, f)
 
@@ -482,10 +482,10 @@ class TestLoadDomainsWithAllowlist:
         import json
 
         config = {
-            "domains": [{"domain": "example.com", "schedule": None}],
+            "blocklist": [{"domain": "example.com", "schedule": None}],
             "allowlist": [{"domain": "example.com"}],
         }
-        json_file = tmp_path / "domains.json"
+        json_file = tmp_path / "config.json"
         with open(json_file, "w") as f:
             json.dump(config, f)
 
@@ -534,9 +534,9 @@ class TestSyncWithAllowlist:
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
+            '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
         )
 
         pause_file = tmp_path / ".paused"
@@ -564,9 +564,9 @@ class TestSyncWithAllowlist:
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
+            '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
         )
 
         pause_file = tmp_path / ".paused"
@@ -603,9 +603,9 @@ class TestStatusWithAllowlist:
 
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        domains_file = tmp_path / "domains.json"
+        domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
+            '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
         )
 
         pause_file = tmp_path / ".paused"

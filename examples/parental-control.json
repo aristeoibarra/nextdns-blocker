@@ -1,16 +1,29 @@
-{
-    "domains": [
-        {
-            "domain": "pornhub.com",
-            "description": "Blocks access to adult content",
-            "protected": true,
-            "schedule": null
-        },
-        {
-            "domain": "stake.com",
-            "description": "Blocks access to gambling sites",
-            "protected": true,
-            "schedule": null
-        }
-    ]
+ {
+  "version": "1.0",
+  "settings": {
+    "timezone": "UTC",
+    "editor": null
+  },
+  "blocklist": [
+    {
+      "domain": "pornhub.com",
+      "description": "Blocks access to adult content",
+      "unblock_delay": "never"
+    },
+    {
+      "domain": "stake.com",
+      "description": "Blocks access to gambling sites",
+      "unblock_delay": "never"
+    }
+  ],
+  "allowlist": [
+    {
+      "domain": "khanacademy.org",
+      "description": "Educational content"
+    },
+    {
+      "domain": "kids.youtube.com",
+      "description": "Child-friendly video content"
+    }
+  ]
 }
