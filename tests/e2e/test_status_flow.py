@@ -513,9 +513,7 @@ class TestStatusUpdateNotification:
         with patch("nextdns_blocker.cli.is_macos", return_value=False):
             with patch("nextdns_blocker.cli.is_windows", return_value=False):
                 with patch("nextdns_blocker.cli.get_crontab", return_value=""):
-                    with patch(
-                        "nextdns_blocker.update_check.check_for_update"
-                    ) as mock_check:
+                    with patch("nextdns_blocker.update_check.check_for_update") as mock_check:
                         result = runner.invoke(
                             main,
                             ["status", "--config-dir", str(config_dir), "--no-update-check"],
