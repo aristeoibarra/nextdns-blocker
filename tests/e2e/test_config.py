@@ -310,15 +310,30 @@ class TestValidateAllowlistConfig:
         assert len(errors) == 1
         assert "Missing 'domain'" in errors[0]
 
-    def test_schedule_not_allowed(self) -> None:
-        """Test that schedule in allowlist generates warning."""
+    def test_valid_schedule_accepted(self) -> None:
+        """Test that valid schedule in allowlist is accepted."""
+        config: dict[str, Any] = {
+            "domain": "youtube.com",
+            "schedule": {
+                "available_hours": [
+                    {
+                        "days": ["monday", "friday"],
+                        "time_ranges": [{"start": "20:00", "end": "22:00"}],
+                    }
+                ]
+            },
+        }
+        errors = validate_allowlist_config(config, 0)
+        assert len(errors) == 0
+
+    def test_empty_schedule_accepted(self) -> None:
+        """Test that empty schedule in allowlist is accepted."""
         config: dict[str, Any] = {
             "domain": "example.com",
             "schedule": {"available_hours": []},
         }
         errors = validate_allowlist_config(config, 0)
-        assert len(errors) == 1
-        assert "not allowed" in errors[0]
+        assert len(errors) == 0
 
 
 class TestValidateNoOverlap:

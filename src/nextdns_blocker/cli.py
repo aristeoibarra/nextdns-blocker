@@ -441,21 +441,45 @@ def sync(
                         )
                         unblocked_count += 1
 
-        # Sync allowlist
+        # Sync allowlist (schedule-aware)
+        allowed_count = 0
+        disallowed_count = 0
         for allowlist_config in allowlist:
             domain = allowlist_config["domain"]
-            if not client.is_allowed(domain):
+            should_allow = evaluator.should_allow_domain(allowlist_config)
+            is_allowed = client.is_allowed(domain)
+
+            if should_allow and not is_allowed:
+                # Should be in allowlist but isn't - add it
                 if dry_run:
                     console.print(f"  [green]Would ADD to allowlist: {domain}[/green]")
                 else:
                     if client.allow(domain):
                         audit_log("ALLOW", domain)
+                        allowed_count += 1
+
+            elif not should_allow and is_allowed:
+                # Should NOT be in allowlist but is - remove it
+                if dry_run:
+                    console.print(f"  [yellow]Would REMOVE from allowlist: {domain}[/yellow]")
+                else:
+                    if client.disallow(domain):
+                        audit_log("DISALLOW", domain)
+                        disallowed_count += 1
 
         if not dry_run:
-            if blocked_count or unblocked_count:
-                console.print(
-                    f"  Sync: [red]{blocked_count} blocked[/red], [green]{unblocked_count} unblocked[/green]"
-                )
+            has_changes = blocked_count or unblocked_count or allowed_count or disallowed_count
+            if has_changes:
+                parts = []
+                if blocked_count or unblocked_count:
+                    parts.append(
+                        f"[red]{blocked_count} blocked[/red], [green]{unblocked_count} unblocked[/green]"
+                    )
+                if allowed_count or disallowed_count:
+                    parts.append(
+                        f"[green]{allowed_count} allowed[/green], [yellow]{disallowed_count} disallowed[/yellow]"
+                    )
+                console.print(f"  Sync: {', '.join(parts)}")
             elif verbose:
                 console.print("  Sync: [green]No changes needed[/green]")
 
@@ -532,8 +556,27 @@ def status(config_dir: Optional[Path]) -> None:
             for item in allowlist:
                 domain = item["domain"]
                 is_allowed = client.is_allowed(domain)
-                status_icon = "[green]✓[/green]" if is_allowed else "[red]✗[/red]"
-                console.print(f"    {status_icon} {domain}")
+                has_schedule = item.get("schedule") is not None
+                should_allow = evaluator.should_allow_domain(item)
+
+                if has_schedule:
+                    # Scheduled allowlist entry
+                    expected = "allow" if should_allow else "disallow"
+                    match = (
+                        "[green]✓[/green]"
+                        if (should_allow == is_allowed)
+                        else "[red]✗ MISMATCH[/red]"
+                    )
+                    status_text = (
+                        "[green]allowed[/green]" if is_allowed else "[yellow]not allowed[/yellow]"
+                    )
+                    console.print(
+                        f"    {domain:<20} {status_text} (should: {expected}) {match} [cyan]\\[scheduled][/cyan]"
+                    )
+                else:
+                    # Always-allowed entry (no schedule)
+                    status_icon = "[green]✓[/green]" if is_allowed else "[red]✗[/red]"
+                    console.print(f"    {status_icon} {domain}")
 
         # Scheduler status
         console.print("\n  [bold]Scheduler:[/bold]")

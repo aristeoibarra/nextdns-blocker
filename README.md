@@ -427,7 +427,7 @@ See [SCHEDULE_GUIDE.md](SCHEDULE_GUIDE.md) for complete documentation and exampl
 
 ### Allowlist (Exceptions)
 
-Use the `allowlist` to keep specific subdomains accessible even when their parent domain is blocked:
+Use the `allowlist` to keep specific subdomains accessible even when their parent domain is blocked. Allowlist entries also support **schedules** for time-based access:
 
 ```json
 {
@@ -444,8 +444,16 @@ Use the `allowlist` to keep specific subdomains accessible even when their paren
       "description": "AWS Console - always accessible"
     },
     {
-      "domain": "developer.amazon.com",
-      "description": "Amazon Developer - always accessible"
+      "domain": "youtube.com",
+      "description": "Streaming - blocked by NextDNS category, allow evenings",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+            "time_ranges": [{ "start": "20:00", "end": "22:30" }]
+          }
+        ]
+      }
     }
   ]
 }
@@ -453,7 +461,14 @@ Use the `allowlist` to keep specific subdomains accessible even when their paren
 
 #### Allowlist Behavior
 
-- Allowlist entries are **always active 24/7** (no schedule support)
+| Schedule | Behavior |
+|----------|----------|
+| `null` or missing | Always in allowlist (24/7) |
+| defined | Only in allowlist during scheduled hours |
+
+- **Scheduled allowlist** is useful for domains blocked by NextDNS categories or services
+- Outside schedule hours, the domain is removed from the allowlist (category/service blocks it)
+- During schedule hours, the domain is added to the allowlist (unblocked)
 - A domain cannot be in both `domains` (denylist) and `allowlist`
 - Use for subdomain exceptions: block `amazon.com` but allow `aws.amazon.com`
 - Changes sync automatically every 2 minutes
