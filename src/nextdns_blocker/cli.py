@@ -195,7 +195,7 @@ class PanicAwareGroup(click.Group):
         """List commands, excluding hidden ones during panic mode."""
         from .panic import DANGEROUS_COMMANDS, is_panic_mode
 
-        commands = super().list_commands(ctx)
+        commands = list(super().list_commands(ctx))
         if is_panic_mode():
             commands = [c for c in commands if c not in DANGEROUS_COMMANDS]
         return commands
