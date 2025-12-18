@@ -215,9 +215,7 @@ def main(ctx: click.Context, no_color: bool) -> None:
     # Show panic mode banner if active
     if is_panic_mode():
         remaining = get_panic_remaining()
-        console.print(
-            f"\n  [red bold]PANIC MODE ACTIVE ({remaining} remaining)[/red bold]\n"
-        )
+        console.print(f"\n  [red bold]PANIC MODE ACTIVE ({remaining} remaining)[/red bold]\n")
 
     if ctx.invoked_subcommand is None:
         console.print(ctx.get_help())

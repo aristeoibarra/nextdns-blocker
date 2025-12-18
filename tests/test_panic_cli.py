@@ -150,7 +150,10 @@ class TestPanicExtend:
             patch("nextdns_blocker.panic.get_log_dir", return_value=temp_panic_dir),
             patch("nextdns_blocker.panic.audit_log"),
             patch("nextdns_blocker.panic_cli.is_panic_mode", return_value=True),
-            patch("nextdns_blocker.panic_cli.extend_panic", return_value=future_time + timedelta(minutes=30)),
+            patch(
+                "nextdns_blocker.panic_cli.extend_panic",
+                return_value=future_time + timedelta(minutes=30),
+            ),
             patch("nextdns_blocker.panic_cli.get_panic_remaining", return_value="1h 30m"),
         ):
             result = runner.invoke(panic_cli, ["extend", "30m"])

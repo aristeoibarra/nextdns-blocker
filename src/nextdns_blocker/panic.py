@@ -21,12 +21,14 @@ logger = logging.getLogger(__name__)
 MIN_PANIC_DURATION_MINUTES = 15
 
 # Commands to hide during panic mode (top-level commands)
-DANGEROUS_COMMANDS = frozenset({
-    "unblock",
-    "pause",
-    "resume",
-    "disallow",
-})
+DANGEROUS_COMMANDS = frozenset(
+    {
+        "unblock",
+        "pause",
+        "resume",
+        "disallow",
+    }
+)
 
 # Subcommands to hide during panic mode (parent -> {subcommands})
 DANGEROUS_SUBCOMMANDS: dict[str, frozenset[str]] = {
@@ -123,9 +125,7 @@ def set_panic(minutes: int) -> datetime:
         ValueError: If minutes is less than minimum
     """
     if minutes < MIN_PANIC_DURATION_MINUTES:
-        raise ValueError(
-            f"Minimum panic duration is {MIN_PANIC_DURATION_MINUTES} minutes"
-        )
+        raise ValueError(f"Minimum panic duration is {MIN_PANIC_DURATION_MINUTES} minutes")
 
     panic_until = datetime.now().replace(microsecond=0) + timedelta(minutes=minutes)
     write_secure_file(get_panic_file(), panic_until.isoformat())
@@ -168,9 +168,7 @@ def try_activate_or_extend(minutes: int) -> tuple[datetime, bool]:
         ValueError: If minutes is less than minimum or less than current remaining time
     """
     if minutes < MIN_PANIC_DURATION_MINUTES:
-        raise ValueError(
-            f"Minimum panic duration is {MIN_PANIC_DURATION_MINUTES} minutes"
-        )
+        raise ValueError(f"Minimum panic duration is {MIN_PANIC_DURATION_MINUTES} minutes")
 
     active, current_until = _get_panic_info()
 

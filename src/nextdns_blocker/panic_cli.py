@@ -165,9 +165,7 @@ class DurationCommand(click.Command):
 
 # Register common duration patterns as commands
 for pattern in ["15m", "30m", "1h", "2h", "4h", "8h", "12h", "24h", "1d", "2d", "7d"]:
-    panic_cli.add_command(
-        DurationCommand(name=pattern, help=f"Activate panic mode for {pattern}")
-    )
+    panic_cli.add_command(DurationCommand(name=pattern, help=f"Activate panic mode for {pattern}"))
 
 
 @panic_cli.command("status")
