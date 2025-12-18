@@ -90,6 +90,13 @@ def config_cli() -> None:
 )
 def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
     """Open config file in editor."""
+    from .panic import is_panic_mode
+
+    # Block config edit during panic mode
+    if is_panic_mode():
+        console.print("\n  [red]Error: Cannot edit config during panic mode[/red]\n")
+        sys.exit(1)
+
     # Get config file path
     config_path = get_config_file_path(config_dir)
 

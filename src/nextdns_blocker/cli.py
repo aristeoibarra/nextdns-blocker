@@ -174,14 +174,48 @@ def clear_pause() -> bool:
 # =============================================================================
 
 
-@click.group(invoke_without_command=True)
+class PanicAwareGroup(click.Group):
+    """Click Group that hides dangerous commands during panic mode."""
+
+    def get_command(self, ctx: click.Context, cmd_name: str) -> Optional[click.Command]:
+        """Get a command, returning None if hidden during panic mode."""
+        from .panic import DANGEROUS_COMMANDS, is_panic_mode
+
+        cmd = super().get_command(ctx, cmd_name)
+        if cmd is None:
+            return None
+
+        # Check if this top-level command should be hidden
+        if is_panic_mode() and cmd_name in DANGEROUS_COMMANDS:
+            return None  # Returns "No such command" error
+
+        return cmd
+
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        """List commands, excluding hidden ones during panic mode."""
+        from .panic import DANGEROUS_COMMANDS, is_panic_mode
+
+        commands = list(super().list_commands(ctx))
+        if is_panic_mode():
+            commands = [c for c in commands if c not in DANGEROUS_COMMANDS]
+        return commands
+
+
+@click.group(cls=PanicAwareGroup, invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="nextdns-blocker")
 @click.option("--no-color", is_flag=True, help="Disable colored output")
 @click.pass_context
 def main(ctx: click.Context, no_color: bool) -> None:
     """NextDNS Blocker - Domain blocking with per-domain scheduling."""
+    from .panic import get_panic_remaining, is_panic_mode
+
     if no_color:
         console.no_color = True
+
+    # Show panic mode banner if active
+    if is_panic_mode():
+        remaining = get_panic_remaining()
+        console.print(f"\n  [red bold]PANIC MODE ACTIVE ({remaining} remaining)[/red bold]\n")
 
     if ctx.invoked_subcommand is None:
         console.print(ctx.get_help())
@@ -360,6 +394,11 @@ def sync(
         click.echo(f"  Paused ({remaining} remaining), skipping sync")
         return
 
+    # Check panic mode - blocks allowed, unblocks skipped
+    from .panic import is_panic_mode
+
+    panic_active = is_panic_mode()
+
     try:
         from .config import get_unblock_delay, parse_unblock_delay_seconds
         from .pending import create_pending_action, get_pending_for_domain
@@ -395,6 +434,12 @@ def sync(
                         )
                         blocked_count += 1
             elif not should_block and is_blocked:
+                # Skip unblocks during panic mode
+                if panic_active:
+                    if verbose:
+                        console.print(f"  [red]Skipping unblock (panic mode): {domain}[/red]")
+                    continue
+
                 # Check unblock_delay for this domain
                 domain_delay = get_unblock_delay(domains, domain)
 
