@@ -424,3 +424,209 @@ class TestStatusErrors:
 
         # Click validation should catch non-existent directory
         assert result.exit_code != 0
+
+
+class TestStatusUpdateNotification:
+    """Tests for update notification in status command."""
+
+    @responses.activate
+    def test_status_shows_update_notification(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Test that status shows update notification when update is available."""
+        import json as json_module
+
+        config_dir = tmp_path / "config"
+        log_dir = tmp_path / "logs"
+        data_dir = tmp_path / "data"
+        config_dir.mkdir(parents=True)
+        log_dir.mkdir(parents=True)
+        data_dir.mkdir(parents=True)
+
+        (config_dir / ".env").write_text(
+            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
+            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
+            f"TIMEZONE={TEST_TIMEZONE}\n"
+        )
+
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
+
+        add_denylist_mock(responses, domains=[])
+        add_allowlist_mock(responses, domains=[])
+
+        # Mock update check to return an update
+        pypi_response = json_module.dumps({"info": {"version": "99.0.0"}}).encode()
+
+        with patch("nextdns_blocker.cli.is_macos", return_value=False):
+            with patch("nextdns_blocker.cli.is_windows", return_value=False):
+                with patch("nextdns_blocker.cli.get_crontab", return_value=""):
+                    with patch(
+                        "nextdns_blocker.update_check.user_data_dir",
+                        return_value=str(data_dir),
+                    ):
+                        with patch("urllib.request.urlopen") as mock_urlopen:
+                            from unittest.mock import MagicMock
+
+                            mock_response = MagicMock()
+                            mock_response.read.return_value = pypi_response
+                            mock_response.__enter__ = lambda s: s
+                            mock_response.__exit__ = MagicMock(return_value=False)
+                            mock_urlopen.return_value = mock_response
+
+                            result = runner.invoke(
+                                main,
+                                ["status", "--config-dir", str(config_dir)],
+                            )
+
+        assert result.exit_code == 0
+        assert "Update available" in result.output
+        assert "99.0.0" in result.output
+        assert "nextdns-blocker update" in result.output
+
+    @responses.activate
+    def test_status_no_update_check_flag(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Test that --no-update-check flag disables update notification."""
+        config_dir = tmp_path / "config"
+        log_dir = tmp_path / "logs"
+        config_dir.mkdir(parents=True)
+        log_dir.mkdir(parents=True)
+
+        (config_dir / ".env").write_text(
+            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
+            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
+            f"TIMEZONE={TEST_TIMEZONE}\n"
+        )
+
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
+
+        add_denylist_mock(responses, domains=[])
+        add_allowlist_mock(responses, domains=[])
+
+        with patch("nextdns_blocker.cli.is_macos", return_value=False):
+            with patch("nextdns_blocker.cli.is_windows", return_value=False):
+                with patch("nextdns_blocker.cli.get_crontab", return_value=""):
+                    with patch(
+                        "nextdns_blocker.update_check.check_for_update"
+                    ) as mock_check:
+                        result = runner.invoke(
+                            main,
+                            ["status", "--config-dir", str(config_dir), "--no-update-check"],
+                        )
+
+        assert result.exit_code == 0
+        # check_for_update should not be called when --no-update-check is used
+        mock_check.assert_not_called()
+        assert "Update available" not in result.output
+
+    @responses.activate
+    def test_status_handles_update_check_failure_gracefully(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Test that status works even if update check fails."""
+        config_dir = tmp_path / "config"
+        log_dir = tmp_path / "logs"
+        data_dir = tmp_path / "data"
+        config_dir.mkdir(parents=True)
+        log_dir.mkdir(parents=True)
+        data_dir.mkdir(parents=True)
+
+        (config_dir / ".env").write_text(
+            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
+            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
+            f"TIMEZONE={TEST_TIMEZONE}\n"
+        )
+
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
+
+        add_denylist_mock(responses, domains=[])
+        add_allowlist_mock(responses, domains=[])
+
+        with patch("nextdns_blocker.cli.is_macos", return_value=False):
+            with patch("nextdns_blocker.cli.is_windows", return_value=False):
+                with patch("nextdns_blocker.cli.get_crontab", return_value=""):
+                    with patch(
+                        "nextdns_blocker.update_check.user_data_dir",
+                        return_value=str(data_dir),
+                    ):
+                        with patch("urllib.request.urlopen") as mock_urlopen:
+                            # Simulate network error
+                            mock_urlopen.side_effect = Exception("Network error")
+
+                            result = runner.invoke(
+                                main,
+                                ["status", "--config-dir", str(config_dir)],
+                            )
+
+        # Status should still work even if update check fails
+        assert result.exit_code == 0
+        assert "Status" in result.output
+        assert TEST_PROFILE_ID in result.output
+        # No update notification shown
+        assert "Update available" not in result.output
+
+    @responses.activate
+    def test_status_no_notification_when_up_to_date(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Test that status shows no notification when already up to date."""
+        import json as json_module
+
+        config_dir = tmp_path / "config"
+        log_dir = tmp_path / "logs"
+        data_dir = tmp_path / "data"
+        config_dir.mkdir(parents=True)
+        log_dir.mkdir(parents=True)
+        data_dir.mkdir(parents=True)
+
+        (config_dir / ".env").write_text(
+            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
+            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
+            f"TIMEZONE={TEST_TIMEZONE}\n"
+        )
+
+        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
+
+        add_denylist_mock(responses, domains=[])
+        add_allowlist_mock(responses, domains=[])
+
+        # Mock PyPI to return same version as current
+        with patch("nextdns_blocker.cli.__version__", "1.0.0"):
+            pypi_response = json_module.dumps({"info": {"version": "1.0.0"}}).encode()
+
+            with patch("nextdns_blocker.cli.is_macos", return_value=False):
+                with patch("nextdns_blocker.cli.is_windows", return_value=False):
+                    with patch("nextdns_blocker.cli.get_crontab", return_value=""):
+                        with patch(
+                            "nextdns_blocker.update_check.user_data_dir",
+                            return_value=str(data_dir),
+                        ):
+                            with patch("urllib.request.urlopen") as mock_urlopen:
+                                from unittest.mock import MagicMock
+
+                                mock_response = MagicMock()
+                                mock_response.read.return_value = pypi_response
+                                mock_response.__enter__ = lambda s: s
+                                mock_response.__exit__ = MagicMock(return_value=False)
+                                mock_urlopen.return_value = mock_response
+
+                                result = runner.invoke(
+                                    main,
+                                    ["status", "--config-dir", str(config_dir)],
+                                )
+
+        assert result.exit_code == 0
+        assert "Update available" not in result.output
