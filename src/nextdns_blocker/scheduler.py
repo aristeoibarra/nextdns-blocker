@@ -191,6 +191,43 @@ class ScheduleEvaluator:
         """
         return self.should_block(domain_config.get("schedule"))
 
+    def should_allow(self, schedule: Optional[dict[str, Any]]) -> bool:
+        """
+        Determine if a domain should be in the allowlist based on its schedule.
+
+        This is the inverse logic of should_block, used for allowlist entries.
+        - No schedule = always in allowlist (return True)
+        - Has schedule = only in allowlist during available_hours
+
+        Args:
+            schedule: Schedule configuration (the 'schedule' field from allowlist config)
+
+        Returns:
+            True if domain should be in allowlist, False if not
+        """
+        # No schedule = always in allowlist
+        if not schedule or "available_hours" not in schedule:
+            return True
+
+        # Has schedule = only allow during available hours (inverse of should_block)
+        # should_block returns True when OUTSIDE available hours
+        # so we return the opposite: True when INSIDE available hours
+        return not self.should_block(schedule)
+
+    def should_allow_domain(self, domain_config: dict[str, Any]) -> bool:
+        """
+        Determine if a domain should be in the allowlist based on its config.
+
+        This is a convenience wrapper that extracts the schedule from domain_config.
+
+        Args:
+            domain_config: Allowlist domain configuration containing schedule
+
+        Returns:
+            True if domain should be in allowlist, False if not
+        """
+        return self.should_allow(domain_config.get("schedule"))
+
     def get_blocking_status(self, domain_config: dict[str, Any]) -> dict[str, Any]:
         """
         Get the current blocking status for a domain.

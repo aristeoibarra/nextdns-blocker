@@ -196,57 +196,32 @@ def get_log_dir() -> Path:
 
 
 # =============================================================================
-# DOMAIN CONFIG VALIDATION
+# SCHEDULE VALIDATION
 # =============================================================================
 
 
-def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
+def validate_schedule(schedule: dict[str, Any], prefix: str) -> list[str]:
     """
-    Validate a single domain configuration entry.
+    Validate a schedule configuration.
 
     Args:
-        config: Domain configuration dictionary
-        index: Index in the domains array (for error messages)
+        schedule: Schedule configuration dictionary with available_hours
+        prefix: Prefix for error messages (e.g., "'example.com'" or "allowlist 'example.com'")
 
     Returns:
         List of error messages (empty if valid)
     """
     errors: list[str] = []
 
-    # Check domain field exists and is valid
-    if "domain" not in config:
-        return [f"#{index}: Missing 'domain' field"]
-
-    domain = config["domain"]
-    if not domain or not isinstance(domain, str) or not domain.strip():
-        return [f"#{index}: Empty or invalid domain"]
-
-    domain = domain.strip()
-    if not validate_domain(domain):
-        return [f"#{index}: Invalid domain format '{domain}'"]
-
-    # Validate unblock_delay if present
-    unblock_delay = config.get("unblock_delay")
-    if unblock_delay is not None and not validate_unblock_delay(unblock_delay):
-        errors.append(
-            f"'{domain}': invalid unblock_delay '{unblock_delay}' "
-            f"(valid: {', '.join(sorted(VALID_UNBLOCK_DELAYS))})"
-        )
-
-    # Check schedule if present
-    schedule = config.get("schedule")
-    if schedule is None:
-        return errors
-
     if not isinstance(schedule, dict):
-        return [f"'{domain}': schedule must be a dictionary"]
+        return [f"{prefix}: schedule must be a dictionary"]
 
     if "available_hours" not in schedule:
         return errors
 
     hours = schedule["available_hours"]
     if not isinstance(hours, list):
-        return [f"'{domain}': available_hours must be a list"]
+        return [f"{prefix}: available_hours must be a list"]
 
     # Collect all time ranges per day for overlap detection
     day_time_ranges: dict[str, list[tuple[int, int, int]]] = (
@@ -256,7 +231,7 @@ def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
     # Validate each schedule block
     for block_idx, block in enumerate(hours):
         if not isinstance(block, dict):
-            errors.append(f"'{domain}': schedule block #{block_idx} must be a dictionary")
+            errors.append(f"{prefix}: schedule block #{block_idx} must be a dictionary")
             continue
 
         # Validate days
@@ -265,28 +240,28 @@ def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
             if isinstance(day, str):
                 day_lower = day.lower()
                 if day_lower not in VALID_DAYS:
-                    errors.append(f"'{domain}': invalid day '{day}'")
+                    errors.append(f"{prefix}: invalid day '{day}'")
                 else:
                     block_days.append(day_lower)
 
         # Validate time ranges
         for tr_idx, time_range in enumerate(block.get("time_ranges", [])):
             if not isinstance(time_range, dict):
-                errors.append(f"'{domain}': time_range #{tr_idx} must be a dictionary")
+                errors.append(f"{prefix}: time_range #{tr_idx} must be a dictionary")
                 continue
 
             start_valid = True
             end_valid = True
             for key in ["start", "end"]:
                 if key not in time_range:
-                    errors.append(f"'{domain}': missing '{key}' in time_range")
+                    errors.append(f"{prefix}: missing '{key}' in time_range")
                     if key == "start":
                         start_valid = False
                     else:
                         end_valid = False
                 elif not validate_time_format(time_range[key]):
                     errors.append(
-                        f"'{domain}': invalid time format '{time_range[key]}' "
+                        f"{prefix}: invalid time format '{time_range[key]}' "
                         f"for '{key}' (expected HH:MM)"
                     )
                     if key == "start":
@@ -326,9 +301,56 @@ def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
             if not is_overnight1 and not is_overnight2:
                 if start2 < end1:  # Overlap detected
                     logger.warning(
-                        f"'{domain}': overlapping time ranges on {day} "
+                        f"{prefix}: overlapping time ranges on {day} "
                         f"(block #{block1} and #{block2})"
                     )
+
+    return errors
+
+
+# =============================================================================
+# DOMAIN CONFIG VALIDATION
+# =============================================================================
+
+
+def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
+    """
+    Validate a single domain configuration entry.
+
+    Args:
+        config: Domain configuration dictionary
+        index: Index in the domains array (for error messages)
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    # Check domain field exists and is valid
+    if "domain" not in config:
+        return [f"#{index}: Missing 'domain' field"]
+
+    domain = config["domain"]
+    if not domain or not isinstance(domain, str) or not domain.strip():
+        return [f"#{index}: Empty or invalid domain"]
+
+    domain = domain.strip()
+    if not validate_domain(domain):
+        return [f"#{index}: Invalid domain format '{domain}'"]
+
+    # Validate unblock_delay if present
+    unblock_delay = config.get("unblock_delay")
+    if unblock_delay is not None and not validate_unblock_delay(unblock_delay):
+        errors.append(
+            f"'{domain}': invalid unblock_delay '{unblock_delay}' "
+            f"(valid: {', '.join(sorted(VALID_UNBLOCK_DELAYS))})"
+        )
+
+    # Check schedule if present
+    schedule = config.get("schedule")
+    if schedule is not None:
+        schedule_errors = validate_schedule(schedule, f"'{domain}'")
+        errors.extend(schedule_errors)
 
     return errors
 
@@ -358,11 +380,11 @@ def validate_allowlist_config(config: dict[str, Any], index: int) -> list[str]:
     if not validate_domain(domain):
         return [f"allowlist #{index}: Invalid domain format '{domain}'"]
 
-    # Allowlist should NOT have schedule (it's always 24/7)
-    if "schedule" in config and config["schedule"] is not None:
-        errors.append(
-            f"allowlist '{domain}': 'schedule' field not allowed (allowlist is always 24/7)"
-        )
+    # Validate schedule if present (allowlist now supports scheduled entries)
+    schedule = config.get("schedule")
+    if schedule is not None:
+        schedule_errors = validate_schedule(schedule, f"allowlist '{domain}'")
+        errors.extend(schedule_errors)
 
     return errors
 
