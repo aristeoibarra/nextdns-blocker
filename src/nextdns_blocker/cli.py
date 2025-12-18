@@ -539,8 +539,15 @@ def sync(
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Config directory (default: auto-detect)",
 )
-def status(config_dir: Optional[Path]) -> None:
+@click.option(
+    "--no-update-check",
+    is_flag=True,
+    help="Skip checking for updates",
+)
+def status(config_dir: Optional[Path], no_update_check: bool) -> None:
     """Show current blocking status."""
+    from .update_check import check_for_update
+
     try:
         config = load_config(config_dir)
         domains, allowlist = load_domains(config["script_dir"])
@@ -561,6 +568,17 @@ def status(config_dir: Optional[Path]) -> None:
             console.print(f"  Pause: [yellow]ACTIVE ({remaining})[/yellow]")
         else:
             console.print("  Pause: [green]inactive[/green]")
+
+        # Check for updates (unless disabled)
+        if not no_update_check:
+            update_info = check_for_update(__version__)
+            if update_info:
+                console.print()
+                console.print(
+                    f"  [yellow]⚠️  Update available: "
+                    f"{update_info.current_version} → {update_info.latest_version}[/yellow]"
+                )
+                console.print("      Run: [cyan]nextdns-blocker update[/cyan]")
 
         console.print(f"\n  [bold]Domains ({len(domains)}):[/bold]")
 
