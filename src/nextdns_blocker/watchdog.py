@@ -851,6 +851,13 @@ def watchdog_cli() -> None:
 
 def _process_pending_actions() -> None:
     """Execute pending actions that are ready."""
+    from .panic import is_panic_mode
+
+    # Skip pending actions during panic mode
+    if is_panic_mode():
+        logger.debug("Panic mode active, skipping pending actions")
+        return
+
     from .client import NextDNSClient
     from .config import load_config
     from .notifications import send_discord_notification

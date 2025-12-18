@@ -14,6 +14,7 @@ COLOR_BLOCK = 15158332  # Red
 COLOR_UNBLOCK = 3066993  # Green
 COLOR_PENDING = 16776960  # Yellow
 COLOR_CANCEL = 9807270  # Gray
+COLOR_PANIC = 9109504  # Dark Red
 
 # Notification timeout in seconds
 NOTIFICATION_TIMEOUT = 5
@@ -77,6 +78,9 @@ def send_discord_notification(
     elif event_type == "cancel_pending":
         title = "Scheduled Unblock Cancelled"
         color = COLOR_CANCEL
+    elif event_type == "panic":
+        title = "Panic Mode Activated"
+        color = COLOR_PANIC
     else:
         logger.warning(f"Unknown event type: {event_type}, skipping notification")
         return
