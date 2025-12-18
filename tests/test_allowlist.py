@@ -349,9 +349,7 @@ class TestValidateAllowlistConfig:
         """Test schedule with missing time_ranges."""
         config = {
             "domain": "youtube.com",
-            "schedule": {
-                "available_hours": [{"days": ["monday"]}]  # Missing time_ranges
-            },
+            "schedule": {"available_hours": [{"days": ["monday"]}]},  # Missing time_ranges
         }
         errors = validate_allowlist_config(config, 0)
         # Should be valid - empty time_ranges is allowed

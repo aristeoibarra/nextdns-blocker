@@ -567,7 +567,9 @@ def status(config_dir: Optional[Path]) -> None:
                         if (should_allow == is_allowed)
                         else "[red]✗ MISMATCH[/red]"
                     )
-                    status_text = "[green]allowed[/green]" if is_allowed else "[yellow]not allowed[/yellow]"
+                    status_text = (
+                        "[green]allowed[/green]" if is_allowed else "[yellow]not allowed[/yellow]"
+                    )
                     console.print(
                         f"    {domain:<20} {status_text} (should: {expected}) {match} [cyan]\\[scheduled][/cyan]"
                     )
