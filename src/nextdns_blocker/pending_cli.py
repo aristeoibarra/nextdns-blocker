@@ -8,6 +8,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from .completion import complete_pending_action_ids
 from .pending import (
     cancel_pending_action,
     get_pending_actions,
@@ -73,7 +74,7 @@ def cmd_list(show_all: bool) -> None:
 
 
 @pending_cli.command("show")
-@click.argument("action_id")
+@click.argument("action_id", shell_complete=complete_pending_action_ids)
 def cmd_show(action_id: str) -> None:
     """Show details of a pending action."""
     # Support partial ID matching
@@ -128,7 +129,7 @@ def cmd_show(action_id: str) -> None:
 
 
 @pending_cli.command("cancel")
-@click.argument("action_id")
+@click.argument("action_id", shell_complete=complete_pending_action_ids)
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation")
 @click.option(
     "--config-dir",

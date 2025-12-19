@@ -300,6 +300,41 @@ tail -f ~/.local/share/nextdns-blocker/logs/wd.log
 crontab -l
 ```
 
+### Shell Completion
+
+Enable tab completion for commands, subcommands, and domain names.
+
+**Bash** - add to `~/.bashrc`:
+
+```bash
+eval "$(nextdns-blocker completion bash)"
+```
+
+**Zsh** - add to `~/.zshrc`:
+
+```bash
+eval "$(nextdns-blocker completion zsh)"
+```
+
+**Fish** - save to completions directory:
+
+```bash
+nextdns-blocker completion fish > ~/.config/fish/completions/nextdns-blocker.fish
+```
+
+After adding the completion script, restart your shell or source the config file.
+
+**What completes:**
+
+| Context | Completions |
+|---------|-------------|
+| `nextdns-blocker <TAB>` | All commands |
+| `nextdns-blocker config <TAB>` | Subcommands: edit, show, sync, etc. |
+| `nextdns-blocker unblock <TAB>` | Domain names from your blocklist |
+| `nextdns-blocker disallow <TAB>` | Domain names from your allowlist |
+| `nextdns-blocker pending cancel <TAB>` | Pending action IDs |
+| `nextdns-blocker --<TAB>` | Flags: --help, --version, --no-color |
+
 ## Configuration
 
 ### Environment Variables (.env)

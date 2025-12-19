@@ -41,7 +41,7 @@ repos:
       - id: mypy
         additional_dependencies:
           - types-requests>=2.28.0
-          - types-click>=7.1.0
+          - click>=8.0.0
         args: [--strict, --ignore-missing-imports, --allow-untyped-decorators, --disable-error-code=type-var]
         files: ^src/
 

@@ -902,10 +902,14 @@ class TestUpdateCommandEdgeCases:
 
         assert result.exit_code == 0
         assert "pipx" in result.output.lower()
-        # Verify pipx upgrade was called
-        call_args = mock_run.call_args[0][0]
-        assert call_args[0] == "pipx"
-        assert call_args[1] == "upgrade"
+        # Verify pipx upgrade was called (search through all calls since detect_shell may call ps)
+        pipx_call_found = False
+        for call in mock_run.call_args_list:
+            args = call[0][0] if call[0] else []
+            if args and args[0] == "pipx" and args[1] == "upgrade":
+                pipx_call_found = True
+                break
+        assert pipx_call_found, f"pipx upgrade not found in calls: {mock_run.call_args_list}"
 
     def test_update_uses_pip_when_not_pipx(self, runner, tmp_path):
         """Should use pip when not installed via pipx."""
@@ -930,9 +934,14 @@ class TestUpdateCommandEdgeCases:
 
         assert result.exit_code == 0
         assert "pip" in result.output.lower()
-        # Verify pip was called
-        call_args = mock_run.call_args[0][0]
-        assert "pip" in call_args
+        # Verify pip was called (search through all calls since detect_shell may call ps)
+        pip_call_found = False
+        for call in mock_run.call_args_list:
+            args = call[0][0] if call[0] else []
+            if args and "pip" in str(args):
+                pip_call_found = True
+                break
+        assert pip_call_found, f"pip not found in calls: {mock_run.call_args_list}"
 
 
 class TestStatsCommandEdgeCases:
