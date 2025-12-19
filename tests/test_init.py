@@ -526,7 +526,7 @@ class TestRunInitialSync:
         """Should return False on exception."""
         with patch("shutil.which", return_value=None):
             with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-                with patch("subprocess.run", side_effect=Exception("error")):
+                with patch("subprocess.run", side_effect=OSError("error")):
                     result = run_initial_sync()
 
         assert result is False

@@ -14,6 +14,7 @@ import click
 
 from .common import audit_log as _base_audit_log
 from .common import get_log_dir, read_secure_file, safe_int, write_secure_file
+from .exceptions import APIError, ConfigurationError, DomainValidationError
 from .platform_utils import (
     get_executable_args,
     get_executable_path,
@@ -64,12 +65,29 @@ def get_disabled_file() -> Path:
     return get_log_dir() / ".watchdog_disabled"
 
 
+def _escape_shell_path(path: str) -> str:
+    """
+    Escape a path for safe use in shell commands.
+
+    Args:
+        path: File system path to escape
+
+    Returns:
+        Shell-escaped path safe for use in cron/shell commands
+    """
+    import shlex
+
+    return shlex.quote(path)
+
+
 def get_cron_sync() -> str:
     """Get the sync cron job definition."""
     log_dir = get_log_dir()
     exe = get_executable_path()
     log_file = str(log_dir / "cron.log")
-    return f'*/2 * * * * {exe} sync >> "{log_file}" 2>&1'
+    safe_exe = _escape_shell_path(exe)
+    safe_log = _escape_shell_path(log_file)
+    return f"*/2 * * * * {safe_exe} sync >> {safe_log} 2>&1"
 
 
 def get_cron_watchdog() -> str:
@@ -77,7 +95,9 @@ def get_cron_watchdog() -> str:
     log_dir = get_log_dir()
     exe = get_executable_path()
     log_file = str(log_dir / "wd.log")
-    return f'* * * * * {exe} watchdog check >> "{log_file}" 2>&1'
+    safe_exe = _escape_shell_path(exe)
+    safe_log = _escape_shell_path(log_file)
+    return f"* * * * * {safe_exe} watchdog check >> {safe_log} 2>&1"
 
 
 def audit_log(action: str, detail: str = "") -> None:
@@ -926,7 +946,7 @@ def _process_pending_actions() -> None:
             config["timeout"],
             config["retries"],
         )
-    except Exception as e:
+    except (ConfigurationError, KeyError, OSError) as e:
         logger.error(f"Failed to load config for pending actions: {e}")
         return
 
@@ -952,7 +972,7 @@ def _process_pending_actions() -> None:
                     click.echo(f"  Executed pending unblock: {domain}")
                 else:
                     logger.error(f"Failed to unblock {domain} (pending: {action_id})")
-            except Exception as e:
+            except (OSError, DomainValidationError, APIError) as e:
                 logger.error(f"Error processing pending action {action_id}: {e}")
 
     # Periodic cleanup of old actions (time-based, once per day)

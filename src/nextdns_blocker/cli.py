@@ -1043,6 +1043,7 @@ def fix() -> None:
                     str(Path.home() / "Library/LaunchAgents/com.nextdns-blocker.sync.plist"),
                 ],
                 capture_output=True,
+                timeout=30,
             )
             subprocess.run(
                 [
@@ -1051,16 +1052,19 @@ def fix() -> None:
                     str(Path.home() / "Library/LaunchAgents/com.nextdns-blocker.watchdog.plist"),
                 ],
                 capture_output=True,
+                timeout=30,
             )
         elif is_windows():
             # Uninstall Windows Task Scheduler tasks
             subprocess.run(
                 ["schtasks", "/delete", "/tn", WINDOWS_TASK_SYNC_NAME, "/f"],
                 capture_output=True,
+                timeout=30,
             )
             subprocess.run(
                 ["schtasks", "/delete", "/tn", WINDOWS_TASK_WATCHDOG_NAME, "/f"],
                 capture_output=True,
+                timeout=30,
             )
 
         # Use the watchdog install command
@@ -1069,12 +1073,14 @@ def fix() -> None:
                 [exe_cmd, "watchdog", "install"],
                 capture_output=True,
                 text=True,
+                timeout=60,
             )
         else:
             result = subprocess.run(
                 [sys.executable, "-m", "nextdns_blocker", "watchdog", "install"],
                 capture_output=True,
                 text=True,
+                timeout=60,
             )
 
         if result.returncode == 0:
@@ -1082,7 +1088,10 @@ def fix() -> None:
         else:
             console.print(f"        Scheduler: [red]FAILED - {result.stderr}[/red]")
             sys.exit(1)
-    except Exception as e:
+    except subprocess.TimeoutExpired:
+        console.print("        Scheduler: [red]FAILED - timeout[/red]")
+        sys.exit(1)
+    except OSError as e:
         console.print(f"        Scheduler: [red]FAILED - {e}[/red]")
         sys.exit(1)
 

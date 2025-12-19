@@ -159,7 +159,9 @@ class DurationCommand(click.Command):
     def invoke(self, ctx: click.Context) -> None:
         # Get the command name which is the duration
         duration = ctx.info_name
-        assert duration is not None  # info_name is always set for registered commands
+        if duration is None:
+            # Should never happen for registered commands, but handle gracefully
+            raise click.ClickException("Duration command invoked without info_name")
         _do_activate(duration)
 
 

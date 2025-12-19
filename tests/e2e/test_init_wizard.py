@@ -530,7 +530,7 @@ class TestRunInitialSync:
         from nextdns_blocker.init import run_initial_sync
 
         mock_exe_args.return_value = ["/usr/local/bin/nextdns-blocker"]
-        mock_run.side_effect = Exception("Network error")
+        mock_run.side_effect = OSError("Network error")
 
         result = run_initial_sync()
 

@@ -1,5 +1,6 @@
 """Interactive initialization wizard for NextDNS Blocker."""
 
+import logging
 import os
 import subprocess
 import time
@@ -20,6 +21,8 @@ from .platform_utils import (
     is_windows,
 )
 from .watchdog import _build_task_command
+
+logger = logging.getLogger(__name__)
 
 # NextDNS API base URL for validation
 NEXTDNS_API_URL = "https://api.nextdns.io"
@@ -477,7 +480,11 @@ def run_initial_sync() -> bool:
             timeout=60,
         )
         return result.returncode == 0
-    except Exception:
+    except subprocess.TimeoutExpired:
+        logger.warning("Initial sync timed out after 60 seconds")
+        return False
+    except OSError as e:
+        logger.warning(f"Initial sync failed: {e}")
         return False
 
 
