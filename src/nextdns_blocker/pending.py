@@ -3,6 +3,7 @@
 import json
 import logging
 import secrets
+import shutil
 import string
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,11 +20,47 @@ logger = logging.getLogger(__name__)
 
 PENDING_FILE_NAME = "pending.json"
 PENDING_VERSION = "1.0"
+MAX_BACKUP_FILES = 3  # Keep last N backup files
 
 
 def get_pending_file() -> Path:
     """Get the path to the pending actions file."""
     return get_data_dir() / PENDING_FILE_NAME
+
+
+def _create_backup(file_path: Path) -> Optional[Path]:
+    """
+    Create a backup of a file before overwriting due to corruption.
+
+    Args:
+        file_path: Path to the file to backup
+
+    Returns:
+        Path to backup file, or None if backup failed
+    """
+    if not file_path.exists():
+        return None
+
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = file_path.with_suffix(f".{timestamp}.bak")
+        shutil.copy2(file_path, backup_path)
+        logger.info(f"Created backup: {backup_path}")
+
+        # Clean up old backups (keep only MAX_BACKUP_FILES)
+        backup_pattern = f"{file_path.stem}.*.bak"
+        backups = sorted(file_path.parent.glob(backup_pattern), reverse=True)
+        for old_backup in backups[MAX_BACKUP_FILES:]:
+            try:
+                old_backup.unlink()
+                logger.debug(f"Removed old backup: {old_backup}")
+            except OSError:
+                pass
+
+        return backup_path
+    except OSError as e:
+        logger.warning(f"Failed to create backup of {file_path}: {e}")
+        return None
 
 
 def generate_action_id() -> str:
@@ -53,6 +90,10 @@ def _load_pending_data() -> dict[str, Any]:
         return data
     except json.JSONDecodeError as e:
         logger.error(f"Invalid pending.json: {e}")
+        # Create backup before resetting to preserve data for recovery
+        backup_path = _create_backup(pending_file)
+        if backup_path:
+            logger.warning(f"Corrupted file backed up to: {backup_path}")
         return {"version": PENDING_VERSION, "pending_actions": []}
 
 
@@ -224,23 +265,32 @@ def cleanup_old_actions(max_age_days: int = 7) -> int:
         max_age_days: Maximum age in days (default: 7)
 
     Returns:
-        Count of removed actions
+        Count of removed actions, or 0 if cleanup failed
     """
-    cutoff = datetime.now() - timedelta(days=max_age_days)
-    data = _load_pending_data()
-    original_count = len(data["pending_actions"])
+    try:
+        cutoff = datetime.now() - timedelta(days=max_age_days)
+        data = _load_pending_data()
+        original_count = len(data["pending_actions"])
 
-    new_actions = []
-    for a in data["pending_actions"]:
-        try:
-            if datetime.fromisoformat(a["created_at"]) > cutoff:
+        new_actions = []
+        for a in data["pending_actions"]:
+            try:
+                if datetime.fromisoformat(a["created_at"]) > cutoff:
+                    new_actions.append(a)
+            except (ValueError, KeyError):
+                logger.warning(f"Invalid created_at in action: {a.get('id')}")
+                # Keep malformed actions to avoid data loss
                 new_actions.append(a)
-        except (ValueError, KeyError):
-            logger.warning(f"Invalid created_at in action: {a.get('id')}")
-    data["pending_actions"] = new_actions
+        data["pending_actions"] = new_actions
 
-    removed = original_count - len(data["pending_actions"])
-    if removed > 0:
-        _save_pending_data(data)
-        logger.info(f"Cleaned up {removed} old pending actions")
-    return removed
+        removed = original_count - len(data["pending_actions"])
+        if removed > 0:
+            if _save_pending_data(data):
+                logger.info(f"Cleaned up {removed} old pending actions")
+            else:
+                logger.warning("Failed to save after cleanup")
+                return 0
+        return removed
+    except OSError as e:
+        logger.error(f"Cleanup failed due to I/O error: {e}")
+        return 0

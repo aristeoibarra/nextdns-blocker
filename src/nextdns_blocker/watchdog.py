@@ -2,6 +2,7 @@
 
 import contextlib
 import logging
+import os
 import plistlib
 import random
 import subprocess
@@ -13,7 +14,7 @@ from typing import Any, Optional
 import click
 
 from .common import audit_log as _base_audit_log
-from .common import get_log_dir, read_secure_file, write_secure_file
+from .common import get_log_dir, read_secure_file, safe_int, write_secure_file
 from .platform_utils import (
     get_executable_args,
     get_executable_path,
@@ -27,7 +28,10 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION & CONSTANTS
 # =============================================================================
 
-SUBPROCESS_TIMEOUT = 60
+# Subprocess timeout in seconds (configurable via environment variable)
+SUBPROCESS_TIMEOUT = safe_int(
+    os.environ.get("NEXTDNS_SUBPROCESS_TIMEOUT"), 60, "NEXTDNS_SUBPROCESS_TIMEOUT"
+)
 
 # launchd constants for macOS
 LAUNCHD_SYNC_LABEL = "com.nextdns-blocker.sync"

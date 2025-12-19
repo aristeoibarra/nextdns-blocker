@@ -137,3 +137,22 @@ def invalid_domains_json():
             {"domain": "bad-schedule.com", "schedule": "not a dict"},  # Invalid schedule type
         ]
     }
+
+
+@pytest.fixture(autouse=True)
+def reset_notification_rate_limit():
+    """Reset Discord notification rate limit before each test."""
+    try:
+        from nextdns_blocker.notifications import _reset_rate_limit
+
+        _reset_rate_limit()
+    except ImportError:
+        pass  # Module not yet loaded
+    yield
+    # Reset again after test to clean up
+    try:
+        from nextdns_blocker.notifications import _reset_rate_limit
+
+        _reset_rate_limit()
+    except ImportError:
+        pass
