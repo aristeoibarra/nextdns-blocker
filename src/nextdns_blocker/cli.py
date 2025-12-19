@@ -336,7 +336,8 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
             # Create pending action
             # At this point, unblock_delay is guaranteed to be a valid non-None string
             # because delay_seconds is > 0
-            assert unblock_delay is not None  # Type assertion for mypy
+            if unblock_delay is None:  # Should never happen, but satisfy type checker
+                unblock_delay = "0"
             action = create_pending_action(domain, unblock_delay, requested_by="cli")
             if action:
                 send_discord_notification(
@@ -482,7 +483,8 @@ def sync(
                     else:
                         # At this point, domain_delay is guaranteed to be a valid non-None string
                         # because delay_seconds is > 0
-                        assert domain_delay is not None  # Type assertion for mypy
+                        if domain_delay is None:  # Should never happen, but satisfy type checker
+                            domain_delay = "0"
                         action = create_pending_action(domain, domain_delay, requested_by="sync")
                         if action and verbose:
                             console.print(
@@ -1140,7 +1142,9 @@ def update(yes: bool) -> None:
     and uses the appropriate upgrade command.
     """
     import json
+    import ssl
     import subprocess
+    import urllib.error
     import urllib.request
 
     console.print("\n  Checking for updates...")
@@ -1152,8 +1156,28 @@ def update(yes: bool) -> None:
         pypi_url = "https://pypi.org/pypi/nextdns-blocker/json"
         with urllib.request.urlopen(pypi_url, timeout=10) as response:  # nosec B310
             data = json.loads(response.read().decode())
-            latest_version = data["info"]["version"]
-    except Exception as e:
+            # Safely access nested keys
+            info = data.get("info")
+            if not isinstance(info, dict):
+                console.print("  [red]Error: Invalid PyPI response format[/red]\n", highlight=False)
+                sys.exit(1)
+            latest_version = info.get("version")
+            if not isinstance(latest_version, str):
+                console.print("  [red]Error: Missing version in PyPI response[/red]\n", highlight=False)
+                sys.exit(1)
+    except ssl.SSLError as e:
+        console.print(f"  [red]SSL error: {e}[/red]\n", highlight=False)
+        sys.exit(1)
+    except ssl.CertificateError as e:
+        console.print(f"  [red]Certificate error: {e}[/red]\n", highlight=False)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        console.print(f"  [red]Network error: {e}[/red]\n", highlight=False)
+        sys.exit(1)
+    except (json.JSONDecodeError, ValueError) as e:
+        console.print(f"  [red]Error parsing PyPI response: {e}[/red]\n", highlight=False)
+        sys.exit(1)
+    except OSError as e:
         console.print(f"  [red]Error checking PyPI: {e}[/red]\n", highlight=False)
         sys.exit(1)
 

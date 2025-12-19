@@ -721,7 +721,12 @@ class TestUpdateCommand:
 
     def test_update_pypi_error(self, runner):
         """Should handle PyPI connection error."""
-        with patch("urllib.request.urlopen", side_effect=Exception("Network error")):
+        import urllib.error
+
+        with patch(
+            "urllib.request.urlopen",
+            side_effect=urllib.error.URLError("Network error"),
+        ):
             result = runner.invoke(main, ["update"])
 
         assert result.exit_code == 1

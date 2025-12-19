@@ -558,8 +558,12 @@ class TestStatusUpdateNotification:
                         return_value=str(data_dir),
                     ):
                         with patch("urllib.request.urlopen") as mock_urlopen:
+                            import urllib.error
+
                             # Simulate network error
-                            mock_urlopen.side_effect = Exception("Network error")
+                            mock_urlopen.side_effect = urllib.error.URLError(
+                                "Network error"
+                            )
 
                             result = runner.invoke(
                                 main,

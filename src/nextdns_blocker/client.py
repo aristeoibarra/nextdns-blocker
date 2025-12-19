@@ -306,8 +306,25 @@ class NextDNSClient:
 
                 response.raise_for_status()
 
-                # Handle empty responses
-                if not response.text:
+                # Handle empty responses - expected for DELETE (204 No Content)
+                # and some POST operations
+                if not response.text or not response.text.strip():
+                    # 204 No Content is explicitly expected to be empty
+                    if response.status_code == 204:
+                        return {"success": True}
+                    # For other success codes, log but still treat as success
+                    # since raise_for_status() already validated the status
+                    if response.status_code in (200, 201, 202):
+                        logger.debug(
+                            f"Empty response body for {method} {endpoint} "
+                            f"(status: {response.status_code})"
+                        )
+                        return {"success": True}
+                    # Unexpected empty response for other status codes
+                    logger.warning(
+                        f"Unexpected empty response for {method} {endpoint} "
+                        f"(status: {response.status_code})"
+                    )
                     return {"success": True}
 
                 # Parse JSON with error handling

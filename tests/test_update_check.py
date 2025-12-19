@@ -228,8 +228,10 @@ class TestFetchLatestVersion:
 
     def test_fetch_latest_version_network_error(self) -> None:
         """Test handling network error when fetching from PyPI."""
+        import urllib.error
+
         with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_urlopen.side_effect = Exception("Network error")
+            mock_urlopen.side_effect = urllib.error.URLError("Network error")
 
             version = _fetch_latest_version()
 
@@ -351,11 +353,13 @@ class TestCheckForUpdate:
 
     def test_check_for_update_handles_network_error(self, tmp_path: Path) -> None:
         """Test check_for_update handles network error gracefully."""
+        import urllib.error
+
         cache_file = tmp_path / ".update_check"
 
         with patch("nextdns_blocker.update_check._get_cache_file", return_value=cache_file):
             with patch("urllib.request.urlopen") as mock_urlopen:
-                mock_urlopen.side_effect = Exception("Network error")
+                mock_urlopen.side_effect = urllib.error.URLError("Network error")
 
                 result = check_for_update("1.0.0")
 

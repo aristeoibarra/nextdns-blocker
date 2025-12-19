@@ -635,7 +635,7 @@ class TestInstallLaunchd:
         from nextdns_blocker.init import _install_launchd
 
         with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-            with patch("nextdns_blocker.init.get_log_dir", side_effect=Exception("test error")):
+            with patch("nextdns_blocker.init.get_log_dir", side_effect=OSError("test error")):
                 success, result = _install_launchd()
 
         assert success is False
@@ -787,7 +787,7 @@ class TestInstallCron:
         """Should handle exceptions during cron installation."""
         from nextdns_blocker.init import _install_cron
 
-        with patch("nextdns_blocker.init.get_log_dir", side_effect=Exception("test error")):
+        with patch("nextdns_blocker.init.get_log_dir", side_effect=OSError("test error")):
             success, result = _install_cron()
 
         assert success is False

@@ -22,9 +22,41 @@ logger = logging.getLogger(__name__)
 try:
     import fcntl
 
-    def _lock_file(f: IO[Any], exclusive: bool = True) -> None:
-        """Acquire file lock (Unix implementation)."""
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+    def _lock_file(f: IO[Any], exclusive: bool = True, timeout: Optional[float] = None) -> None:
+        """
+        Acquire file lock (Unix implementation).
+
+        Args:
+            f: File object to lock
+            exclusive: If True, acquire exclusive lock; otherwise shared lock
+            timeout: Maximum seconds to wait for lock (None = wait indefinitely)
+
+        Raises:
+            TimeoutError: If timeout is reached while waiting for lock
+            OSError: If lock acquisition fails for other reasons
+        """
+        import time
+
+        lock_type = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+
+        if timeout is None:
+            # Blocking lock
+            fcntl.flock(f.fileno(), lock_type)
+        else:
+            # Non-blocking with timeout
+            deadline = time.monotonic() + timeout
+            sleep_interval = 0.01  # Start with 10ms
+            max_sleep = 0.1  # Max 100ms between retries
+
+            while True:
+                try:
+                    fcntl.flock(f.fileno(), lock_type | fcntl.LOCK_NB)
+                    return  # Lock acquired
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(f"Failed to acquire file lock within {timeout}s")
+                    time.sleep(sleep_interval)
+                    sleep_interval = min(sleep_interval * 2, max_sleep)
 
     def _unlock_file(f: IO[Any]) -> None:
         """Release file lock (Unix implementation)."""
@@ -43,9 +75,41 @@ except ImportError:
     try:
         import msvcrt
 
-        def _lock_file(f: IO[Any], exclusive: bool = True) -> None:
-            """Acquire file lock (Windows implementation using msvcrt.locking)."""
-            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+        def _lock_file(f: IO[Any], exclusive: bool = True, timeout: Optional[float] = None) -> None:
+            """
+            Acquire file lock (Windows implementation using msvcrt.locking).
+
+            Args:
+                f: File object to lock
+                exclusive: Ignored on Windows (always exclusive)
+                timeout: Maximum seconds to wait for lock (None = wait indefinitely)
+
+            Raises:
+                TimeoutError: If timeout is reached while waiting for lock
+                OSError: If lock acquisition fails for other reasons
+            """
+            import time
+
+            if timeout is None:
+                # Keep trying indefinitely with a reasonable default timeout
+                timeout = 30.0  # 30 second default for "indefinite" on Windows
+
+            deadline = time.monotonic() + timeout
+            sleep_interval = 0.01  # Start with 10ms
+            max_sleep = 0.1  # Max 100ms between retries
+
+            while True:
+                try:
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+                    return  # Lock acquired
+                except OSError as e:
+                    # errno 36 = EDEADLOCK on Windows (resource busy)
+                    if e.errno not in (36,):
+                        raise
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(f"Failed to acquire file lock within {timeout}s")
+                    time.sleep(sleep_interval)
+                    sleep_interval = min(sleep_interval * 2, max_sleep)
 
         def _unlock_file(f: IO[Any]) -> None:
             """Release file lock (Windows implementation)."""
@@ -62,7 +126,7 @@ except ImportError:
 
     except ImportError:
         # No locking available - use no-op functions
-        def _lock_file(f: IO[Any], exclusive: bool = True) -> None:
+        def _lock_file(f: IO[Any], exclusive: bool = True, timeout: Optional[float] = None) -> None:
             """No-op file lock (fallback when no locking available)."""
             pass
 
@@ -341,26 +405,27 @@ def write_secure_file(path: Path, content: str) -> None:
 
     # Write with exclusive lock
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECURE_FILE_MODE)
-    f = None
+    fd_closed = False
     try:
+        # os.fdopen takes ownership of fd - it will close it when the file object closes
         f = os.fdopen(fd, "w")
-        _lock_file(f, exclusive=True)
+        fd_closed = True  # fd is now owned by f
         try:
-            f.write(content)
-            f.flush()  # Ensure data is written before unlocking
-            os.fsync(f.fileno())  # Force write to disk
+            _lock_file(f, exclusive=True)
+            try:
+                f.write(content)
+                f.flush()  # Ensure data is written before unlocking
+                os.fsync(f.fileno())  # Force write to disk
+            finally:
+                _unlock_file(f)
         finally:
-            _unlock_file(f)
+            f.close()
     except OSError:
-        # If fdopen failed, we still need to close the fd
-        if f is None:
-            os.close(fd)
-        raise
-    finally:
-        # Always close the file object if it was created
-        if f is not None:
+        # Only close fd if os.fdopen failed (fd not yet owned by file object)
+        if not fd_closed:
             with contextlib.suppress(OSError):
-                f.close()
+                os.close(fd)
+        raise
 
 
 def read_secure_file(path: Path) -> Optional[str]:

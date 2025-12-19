@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 PENDING_FILE_NAME = "pending.json"
 PENDING_VERSION = "1.0"
 MAX_BACKUP_FILES = 3  # Keep last N backup files
+LOCK_TIMEOUT_SECONDS = 10.0  # Maximum time to wait for file lock
 
 
 def get_pending_file() -> Path:
@@ -54,22 +55,31 @@ def _pending_file_lock() -> Generator[None, None, None]:
 
     Uses a separate lock file to ensure read-modify-write operations
     are atomic across multiple processes.
+
+    Raises:
+        TimeoutError: If lock cannot be acquired within LOCK_TIMEOUT_SECONDS
+        OSError: If file operations fail
     """
     lock_file = _get_lock_file()
     lock_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Create lock file if it doesn't exist
     fd = os.open(lock_file, os.O_RDWR | os.O_CREAT, SECURE_FILE_MODE)
+    fd_closed = False
     try:
         f = os.fdopen(fd, "r+")
-        _lock_file(f, exclusive=True)
+        fd_closed = True  # fd is now owned by f
         try:
-            yield
+            _lock_file(f, exclusive=True, timeout=LOCK_TIMEOUT_SECONDS)
+            try:
+                yield
+            finally:
+                _unlock_file(f)
         finally:
-            _unlock_file(f)
             f.close()
     except OSError:
-        os.close(fd)
+        if not fd_closed:
+            os.close(fd)
         raise
 
 

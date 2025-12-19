@@ -330,7 +330,7 @@ def _install_launchd() -> tuple[bool, str]:
         else:
             return False, "Failed to load launchd jobs"
 
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         return False, f"launchd error: {e}"
 
 
@@ -382,7 +382,7 @@ def _install_cron() -> tuple[bool, str]:
         else:
             return False, "Failed to set crontab"
 
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         return False, f"cron error: {e}"
 
 
@@ -461,7 +461,7 @@ def _install_windows_task() -> tuple[bool, str]:
             error_msg = result_sync.stderr or result_wd.stderr or "Unknown error"
             return False, f"Failed to create scheduled tasks: {error_msg}"
 
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         return False, f"Task Scheduler error: {e}"
 
 

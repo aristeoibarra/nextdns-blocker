@@ -6,6 +6,7 @@ to avoid excessive API calls.
 
 import json
 import logging
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -149,13 +150,35 @@ def _fetch_latest_version() -> Optional[str]:
     Returns:
         Latest version string or None if fetch failed
     """
+    import ssl
+
     try:
         with urllib.request.urlopen(PYPI_URL, timeout=PYPI_TIMEOUT) as response:  # nosec B310
             data: dict[str, Any] = json.loads(response.read().decode())
-            version: str = data["info"]["version"]
+            # Safely access nested keys
+            info = data.get("info")
+            if not isinstance(info, dict):
+                logger.debug("PyPI response missing 'info' object")
+                return None
+            version = info.get("version")
+            if not isinstance(version, str):
+                logger.debug("PyPI response missing 'version' string")
+                return None
             return version
-    except Exception as e:
-        logger.debug(f"Failed to fetch latest version from PyPI: {e}")
+    except ssl.SSLError as e:
+        logger.warning(f"SSL error fetching PyPI version: {e}")
+        return None
+    except ssl.CertificateError as e:
+        logger.warning(f"Certificate error fetching PyPI version: {e}")
+        return None
+    except urllib.error.URLError as e:
+        logger.debug(f"URL error fetching latest version from PyPI: {e}")
+        return None
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.debug(f"Failed to parse PyPI response: {e}")
+        return None
+    except OSError as e:
+        logger.debug(f"Network error fetching latest version from PyPI: {e}")
         return None
 
 
