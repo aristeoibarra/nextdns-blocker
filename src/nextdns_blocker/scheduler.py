@@ -61,8 +61,10 @@ class ScheduleEvaluator:
                 raise ValueError(f"Invalid time format: {time_str}")
 
             return time(hours, minutes)
-        except (ValueError, TypeError):
+        except ValueError:
             raise ValueError(f"Invalid time format: {time_str}")
+        except TypeError as e:
+            raise ValueError(f"Invalid time format: {time_str} (type error: {e})")
 
     def is_time_in_range(self, current: time, start: time, end: time) -> bool:
         """

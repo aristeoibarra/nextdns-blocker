@@ -1,5 +1,6 @@
 """Common utilities shared between NextDNS Blocker modules."""
 
+import contextlib
 import logging
 import os
 import re
@@ -322,6 +323,9 @@ def write_secure_file(path: Path, content: str) -> None:
     Args:
         path: Path to the file
         content: Content to write
+
+    Raises:
+        OSError: If file operations fail
     """
     log_dir = get_log_dir()
     # Ensure log directory exists if writing to log dir
@@ -337,20 +341,26 @@ def write_secure_file(path: Path, content: str) -> None:
 
     # Write with exclusive lock
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECURE_FILE_MODE)
-    fd_owned = False
+    f = None
     try:
         f = os.fdopen(fd, "w")
-        fd_owned = True  # os.fdopen now owns the fd, don't close manually
         _lock_file(f, exclusive=True)
         try:
             f.write(content)
+            f.flush()  # Ensure data is written before unlocking
+            os.fsync(f.fileno())  # Force write to disk
         finally:
             _unlock_file(f)
-        f.close()
     except OSError:
-        if not fd_owned:
+        # If fdopen failed, we still need to close the fd
+        if f is None:
             os.close(fd)
         raise
+    finally:
+        # Always close the file object if it was created
+        if f is not None:
+            with contextlib.suppress(OSError):
+                f.close()
 
 
 def read_secure_file(path: Path) -> Optional[str]:

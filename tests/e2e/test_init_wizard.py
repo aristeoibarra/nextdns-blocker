@@ -13,12 +13,14 @@ from click.testing import CliRunner
 
 from nextdns_blocker.init import (
     NEXTDNS_API_URL,
-    _build_task_command,
-    _escape_windows_path,
     create_config_file,
     create_env_file,
     validate_api_credentials,
     validate_timezone,
+)
+from nextdns_blocker.watchdog import (
+    _build_task_command,
+    _escape_windows_path,
 )
 
 

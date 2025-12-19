@@ -1,14 +1,29 @@
-"""Pending action management for delayed unblock operations."""
+"""Pending action management for delayed unblock operations.
+
+Note on datetime handling:
+    All datetime operations in this module use naive (timezone-unaware) datetimes
+    for consistency. This means datetime.now() is used without timezone info,
+    and ISO format strings are stored/parsed without timezone suffixes.
+    This is intentional to avoid mixing naive and aware datetimes which would
+    cause comparison errors.
+"""
 
 import json
 import logging
+import os
 import secrets
+import shutil
 import string
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
 from .common import (
+    SECURE_FILE_MODE,
+    _lock_file,
+    _unlock_file,
     audit_log,
     read_secure_file,
     write_secure_file,
@@ -19,11 +34,78 @@ logger = logging.getLogger(__name__)
 
 PENDING_FILE_NAME = "pending.json"
 PENDING_VERSION = "1.0"
+MAX_BACKUP_FILES = 3  # Keep last N backup files
 
 
 def get_pending_file() -> Path:
     """Get the path to the pending actions file."""
     return get_data_dir() / PENDING_FILE_NAME
+
+
+def _get_lock_file() -> Path:
+    """Get the path to the pending lock file."""
+    return get_data_dir() / ".pending.lock"
+
+
+@contextmanager
+def _pending_file_lock() -> Generator[None, None, None]:
+    """
+    Context manager for atomic pending file operations.
+
+    Uses a separate lock file to ensure read-modify-write operations
+    are atomic across multiple processes.
+    """
+    lock_file = _get_lock_file()
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Create lock file if it doesn't exist
+    fd = os.open(lock_file, os.O_RDWR | os.O_CREAT, SECURE_FILE_MODE)
+    try:
+        f = os.fdopen(fd, "r+")
+        _lock_file(f, exclusive=True)
+        try:
+            yield
+        finally:
+            _unlock_file(f)
+            f.close()
+    except OSError:
+        os.close(fd)
+        raise
+
+
+def _create_backup(file_path: Path) -> Optional[Path]:
+    """
+    Create a backup of a file before overwriting due to corruption.
+
+    Args:
+        file_path: Path to the file to backup
+
+    Returns:
+        Path to backup file, or None if backup failed
+    """
+    if not file_path.exists():
+        return None
+
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = file_path.with_suffix(f".{timestamp}.bak")
+        shutil.copy2(file_path, backup_path)
+        logger.info(f"Created backup: {backup_path}")
+
+        # Clean up old backups (keep only MAX_BACKUP_FILES)
+        backup_pattern = f"{file_path.stem}.*.bak"
+        backups = sorted(file_path.parent.glob(backup_pattern), reverse=True)
+        for old_backup in backups[MAX_BACKUP_FILES:]:
+            try:
+                old_backup.unlink()
+                logger.debug(f"Removed old backup: {old_backup}")
+            except OSError:
+                pass
+
+        return backup_path
+    except OSError as e:
+        logger.warning(f"Failed to create backup of {file_path}: {e}")
+        return None
 
 
 def generate_action_id() -> str:
@@ -53,6 +135,10 @@ def _load_pending_data() -> dict[str, Any]:
         return data
     except json.JSONDecodeError as e:
         logger.error(f"Invalid pending.json: {e}")
+        # Create backup before resetting to preserve data for recovery
+        backup_path = _create_backup(pending_file)
+        if backup_path:
+            logger.warning(f"Corrupted file backed up to: {backup_path}")
         return {"version": PENDING_VERSION, "pending_actions": []}
 
 
@@ -104,20 +190,22 @@ def create_pending_action(
         "requested_by": requested_by,
     }
 
-    data = _load_pending_data()
+    # Use file lock for atomic read-modify-write operation
+    with _pending_file_lock():
+        data = _load_pending_data()
 
-    # Check for duplicate pending action for same domain
-    pending_actions: list[dict[str, Any]] = data["pending_actions"]
-    for existing in pending_actions:
-        if existing.get("domain") == domain and existing.get("status") == "pending":
-            logger.warning(f"Pending action already exists for {domain}")
-            return existing
+        # Check for duplicate pending action for same domain
+        pending_actions: list[dict[str, Any]] = data["pending_actions"]
+        for existing in pending_actions:
+            if existing.get("domain") == domain and existing.get("status") == "pending":
+                logger.warning(f"Pending action already exists for {domain}")
+                return existing
 
-    data["pending_actions"].append(action)
+        data["pending_actions"].append(action)
 
-    if _save_pending_data(data):
-        audit_log("PENDING_CREATE", f"{action['id']} {domain} delay={delay}")
-        return action
+        if _save_pending_data(data):
+            audit_log("PENDING_CREATE", f"{action['id']} {domain} delay={delay}")
+            return action
     return None
 
 
@@ -168,19 +256,21 @@ def cancel_pending_action(action_id: str) -> bool:
     Returns:
         True if cancelled, False if not found or already executed
     """
-    data = _load_pending_data()
-    for i, action in enumerate(data["pending_actions"]):
-        if action.get("id") == action_id:
-            if action.get("status") != "pending":
+    # Use file lock for atomic read-modify-write operation
+    with _pending_file_lock():
+        data = _load_pending_data()
+        for i, action in enumerate(data["pending_actions"]):
+            if action.get("id") == action_id:
+                if action.get("status") != "pending":
+                    return False
+                # Remove the action entirely
+                domain = action.get("domain", "unknown")
+                del data["pending_actions"][i]
+                if _save_pending_data(data):
+                    audit_log("PENDING_CANCEL", f"{action_id} {domain}")
+                    return True
                 return False
-            # Remove the action entirely
-            domain = action.get("domain", "unknown")
-            del data["pending_actions"][i]
-            if _save_pending_data(data):
-                audit_log("PENDING_CANCEL", f"{action_id} {domain}")
-                return True
-            return False
-    return False
+        return False
 
 
 def get_ready_actions() -> list[dict[str, Any]]:
@@ -204,16 +294,18 @@ def get_ready_actions() -> list[dict[str, Any]]:
 
 def mark_action_executed(action_id: str) -> bool:
     """Mark an action as executed and remove it from the file."""
-    data = _load_pending_data()
-    for i, action in enumerate(data["pending_actions"]):
-        if action.get("id") == action_id:
-            domain = action.get("domain", "unknown")
-            del data["pending_actions"][i]
-            if _save_pending_data(data):
-                audit_log("PENDING_EXECUTE", f"{action_id} {domain}")
-                return True
-            return False
-    return False
+    # Use file lock for atomic read-modify-write operation
+    with _pending_file_lock():
+        data = _load_pending_data()
+        for i, action in enumerate(data["pending_actions"]):
+            if action.get("id") == action_id:
+                domain = action.get("domain", "unknown")
+                del data["pending_actions"][i]
+                if _save_pending_data(data):
+                    audit_log("PENDING_EXECUTE", f"{action_id} {domain}")
+                    return True
+                return False
+        return False
 
 
 def cleanup_old_actions(max_age_days: int = 7) -> int:
@@ -224,23 +316,35 @@ def cleanup_old_actions(max_age_days: int = 7) -> int:
         max_age_days: Maximum age in days (default: 7)
 
     Returns:
-        Count of removed actions
+        Count of removed actions, or 0 if cleanup failed
     """
-    cutoff = datetime.now() - timedelta(days=max_age_days)
-    data = _load_pending_data()
-    original_count = len(data["pending_actions"])
+    try:
+        cutoff = datetime.now() - timedelta(days=max_age_days)
 
-    new_actions = []
-    for a in data["pending_actions"]:
-        try:
-            if datetime.fromisoformat(a["created_at"]) > cutoff:
-                new_actions.append(a)
-        except (ValueError, KeyError):
-            logger.warning(f"Invalid created_at in action: {a.get('id')}")
-    data["pending_actions"] = new_actions
+        # Use file lock for atomic read-modify-write operation
+        with _pending_file_lock():
+            data = _load_pending_data()
+            original_count = len(data["pending_actions"])
 
-    removed = original_count - len(data["pending_actions"])
-    if removed > 0:
-        _save_pending_data(data)
-        logger.info(f"Cleaned up {removed} old pending actions")
-    return removed
+            new_actions = []
+            for a in data["pending_actions"]:
+                try:
+                    if datetime.fromisoformat(a["created_at"]) > cutoff:
+                        new_actions.append(a)
+                except (ValueError, KeyError):
+                    logger.warning(f"Invalid created_at in action: {a.get('id')}")
+                    # Keep malformed actions to avoid data loss
+                    new_actions.append(a)
+            data["pending_actions"] = new_actions
+
+            removed = original_count - len(data["pending_actions"])
+            if removed > 0:
+                if _save_pending_data(data):
+                    logger.info(f"Cleaned up {removed} old pending actions")
+                else:
+                    logger.warning("Failed to save after cleanup")
+                    return 0
+            return removed
+    except OSError as e:
+        logger.error(f"Cleanup failed due to I/O error: {e}")
+        return 0

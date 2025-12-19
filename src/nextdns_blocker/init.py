@@ -19,6 +19,7 @@ from .platform_utils import (
     is_macos,
     is_windows,
 )
+from .watchdog import _build_task_command
 
 # NextDNS API base URL for validation
 NEXTDNS_API_URL = "https://api.nextdns.io"
@@ -383,32 +384,6 @@ def _install_cron() -> tuple[bool, str]:
 
     except Exception as e:
         return False, f"cron error: {e}"
-
-
-def _escape_windows_path(path: str) -> str:
-    """
-    Escape a path for use in Windows Task Scheduler commands.
-
-    Within double quotes in cmd.exe:
-    - Percent signs must be doubled (%% instead of %)
-    - Double quotes must be escaped as ""
-    """
-    safe_path = path.replace("%", "%%")
-    safe_path = safe_path.replace('"', '""')
-    return safe_path
-
-
-def _build_task_command(exe: str, args: str, log_file: str) -> str:
-    """
-    Build a properly escaped command string for Windows Task Scheduler.
-
-    Handles paths with spaces, special characters, and ensures proper
-    quoting for cmd.exe execution context.
-    """
-    safe_exe = _escape_windows_path(exe)
-    safe_log = _escape_windows_path(log_file)
-    # Use nested quotes: outer for schtasks, inner for cmd /c
-    return f'cmd /c ""{safe_exe}" {args} >> "{safe_log}" 2>&1"'
 
 
 def _install_windows_task() -> tuple[bool, str]:

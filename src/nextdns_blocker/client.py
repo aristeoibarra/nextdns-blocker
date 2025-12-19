@@ -101,8 +101,11 @@ class RateLimiter:
 
                 # Wait with Condition - releases lock during wait, reacquires before returning
                 # This is thread-safe: other threads can check/modify while we wait
+                wait_start = datetime.now().timestamp()
                 self._condition.wait(timeout=wait_time)
-                total_waited += wait_time
+                # Track actual time waited (handles spurious wakeups correctly)
+                actual_waited = datetime.now().timestamp() - wait_start
+                total_waited += actual_waited
 
 
 # =============================================================================
@@ -183,11 +186,17 @@ class DomainCache:
         with self._lock:
             if self._data is not None:
                 self._domains.add(domain)
+                # Keep _data in sync with _domains
+                if not any(entry.get("id") == domain for entry in self._data):
+                    self._data.append({"id": domain, "active": True})
 
     def remove_domain(self, domain: str) -> None:
         """Remove a domain from the cache (for optimistic updates)."""
         with self._lock:
             self._domains.discard(domain)
+            # Keep _data in sync with _domains
+            if self._data is not None:
+                self._data = [entry for entry in self._data if entry.get("id") != domain]
 
 
 class DenylistCache(DomainCache):
@@ -229,10 +238,24 @@ class NextDNSClient:
         self.profile_id = profile_id
         self.timeout = timeout
         self.retries = retries
+        self._api_key = api_key  # Store privately to avoid accidental exposure
         self.headers: dict[str, str] = {"X-Api-Key": api_key, "Content-Type": "application/json"}
         self._rate_limiter = RateLimiter()
         self._cache = DenylistCache()
         self._allowlist_cache = AllowlistCache()
+
+    def _redacted_headers(self) -> dict[str, str]:
+        """Return headers with API key redacted for safe logging."""
+        return {
+            "X-Api-Key": (
+                f"{self._api_key[:4]}...{self._api_key[-4:]}" if len(self._api_key) > 8 else "***"
+            ),
+            "Content-Type": self.headers.get("Content-Type", "application/json"),
+        }
+
+    def __repr__(self) -> str:
+        """Return a safe string representation without exposing API key."""
+        return f"NextDNSClient(profile_id={self.profile_id!r}, timeout={self.timeout}, retries={self.retries})"
 
     def _calculate_backoff(self, attempt: int) -> float:
         """
@@ -263,22 +286,25 @@ class NextDNSClient:
         """
         url = f"{API_URL}{endpoint}"
 
+        # Validate HTTP method
+        method_upper = method.upper()
+        if method_upper not in ("GET", "POST", "DELETE", "PUT", "PATCH"):
+            logger.error(f"Unsupported HTTP method: {method}")
+            return None
+
         for attempt in range(self.retries + 1):
             # Apply rate limiting
             self._rate_limiter.acquire()
 
             try:
-                if method == "GET":
-                    response = requests.get(url, headers=self.headers, timeout=self.timeout)
-                elif method == "POST":
-                    response = requests.post(
-                        url, headers=self.headers, json=data, timeout=self.timeout
-                    )
-                elif method == "DELETE":
-                    response = requests.delete(url, headers=self.headers, timeout=self.timeout)
-                else:
-                    logger.error(f"Unsupported HTTP method: {method}")
-                    return None
+                # Use requests.request() for all methods to reduce code duplication
+                response = requests.request(
+                    method=method_upper,
+                    url=url,
+                    headers=self.headers,
+                    json=data if method_upper in ("POST", "PUT", "PATCH") else None,
+                    timeout=self.timeout,
+                )
 
                 response.raise_for_status()
 

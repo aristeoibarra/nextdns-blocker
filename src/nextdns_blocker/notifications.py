@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -18,6 +19,20 @@ COLOR_PANIC = 9109504  # Dark Red
 
 # Notification timeout in seconds
 NOTIFICATION_TIMEOUT = 5
+
+# Rate limiting: minimum seconds between notifications (Discord allows ~30/min)
+MIN_NOTIFICATION_INTERVAL = 2.0
+
+# Thread-safe rate limiting state
+_last_notification_time: float = 0.0
+_rate_limit_lock = threading.Lock()
+
+
+def _reset_rate_limit() -> None:
+    """Reset rate limit state. Used for testing."""
+    global _last_notification_time
+    with _rate_limit_lock:
+        _last_notification_time = 0.0
 
 
 def is_notifications_enabled() -> bool:
@@ -41,6 +56,22 @@ def get_webhook_url() -> Optional[str]:
     return os.getenv("DISCORD_WEBHOOK_URL")
 
 
+def _check_rate_limit() -> bool:
+    """
+    Check if we can send a notification based on rate limiting.
+
+    Returns:
+        True if notification can be sent, False if rate limited
+    """
+    global _last_notification_time
+    with _rate_limit_lock:
+        now = datetime.now().timestamp()
+        if now - _last_notification_time < MIN_NOTIFICATION_INTERVAL:
+            return False
+        _last_notification_time = now
+        return True
+
+
 def send_discord_notification(
     domain: str, event_type: str, webhook_url: Optional[str] = None
 ) -> None:
@@ -48,21 +79,31 @@ def send_discord_notification(
     Send a Discord webhook notification for a block/unblock event.
 
     This function silently fails if:
-    - Notifications are disabled
+    - Notifications are disabled AND webhook_url is not explicitly provided
     - Webhook URL is not configured
     - Network request fails or times out
+    - Rate limit exceeded (2 seconds between notifications)
 
     Args:
         domain: Domain name that was blocked/unblocked
         event_type: Either "block" or "unblock"
+        webhook_url: Optional explicit webhook URL. If provided, notifications
+                     are sent even if DISCORD_NOTIFICATIONS_ENABLED is not set.
     """
-    if not is_notifications_enabled():
-        return
-
+    # If webhook_url is explicitly passed, use it regardless of env setting
+    # Otherwise, check if notifications are enabled via environment
     if webhook_url is None:
+        if not is_notifications_enabled():
+            return
         webhook_url = get_webhook_url()
+
     if not webhook_url:
         logger.debug("Discord webhook URL not configured, skipping notification")
+        return
+
+    # Apply rate limiting to avoid Discord rate limits
+    if not _check_rate_limit():
+        logger.debug(f"Rate limited, skipping notification for {event_type}: {domain}")
         return
 
     # Determine title and color based on event type
