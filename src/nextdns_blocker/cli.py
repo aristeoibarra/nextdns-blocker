@@ -338,7 +338,9 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
         if delay_seconds and delay_seconds > 0 and not force:
             # Create pending action - unblock_delay is guaranteed non-None here
             # because delay_seconds > 0 only when unblock_delay is a valid delay string
-            assert unblock_delay is not None  # Type narrowing for mypy
+            if unblock_delay is None:  # pragma: no cover - defensive check
+                console.print("\n  [red]Error: Internal error - delay without delay string[/red]\n")
+                sys.exit(1)
             action = create_pending_action(domain, unblock_delay, requested_by="cli")
             if action:
                 send_discord_notification(
@@ -483,7 +485,9 @@ def sync(
                         )
                     else:
                         # domain_delay is guaranteed non-None here because delay_seconds > 0
-                        assert domain_delay is not None  # Type narrowing for mypy
+                        if domain_delay is None:  # pragma: no cover - defensive check
+                            logger.error(f"Internal error: delay without delay string for {domain}")
+                            continue
                         action = create_pending_action(domain, domain_delay, requested_by="sync")
                         if action and verbose:
                             console.print(

@@ -33,8 +33,12 @@ API_KEY_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{8,}$")
 # NextDNS Profile ID pattern: alphanumeric, typically 6 characters like "abc123"
 PROFILE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,30}$")
 
-# Discord Webhook pattern: Follows Regex for default rl
-DISCORD_WEBHOOK_PATTERN = re.compile(r"^https://discord\.com/api/webhooks/\d+/[a-zA-Z0-9_-]+$")
+# Discord Webhook pattern: Stricter validation
+# - Webhook ID: 17-20 digit snowflake (Discord uses snowflakes as IDs)
+# - Token: 60-80 character alphanumeric with underscores/hyphens
+DISCORD_WEBHOOK_PATTERN = re.compile(
+    r"^https://discord\.com/api/webhooks/\d{17,20}/[a-zA-Z0-9_-]{60,80}$"
+)
 
 # =============================================================================
 # UNBLOCK DELAY SETTINGS
@@ -642,13 +646,14 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
             f"See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
         )
 
-    # Validate Discord Webhook if provided
+    # Validate Discord Webhook if provided - set to None if invalid to prevent usage
     webhook_url = config.get("discord_webhook_url")
     if webhook_url and not validate_discord_webhook(webhook_url):
-        logger.warning(f"Invalid DISCORD_WEBHOOK_URL format: {webhook_url}")
-        logger.warning("Expected format: https://discord.com/api/webhooks/{id}/{token}")
-        # Option: Set to None to prevent usage, or keep it to let it fail loudly later
-        # config["discord_webhook_url"] = None
+        logger.warning(
+            "Invalid DISCORD_WEBHOOK_URL format - notifications disabled. "
+            "Expected format: https://discord.com/api/webhooks/{id}/{token}"
+        )
+        config["discord_webhook_url"] = None
 
     return config
 

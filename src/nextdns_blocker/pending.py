@@ -97,7 +97,8 @@ def _create_backup(file_path: Path) -> Optional[Path]:
         return None
 
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Include microseconds to avoid collision in rapid successive operations
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_path = file_path.with_suffix(f".{timestamp}.bak")
         shutil.copy2(file_path, backup_path)
         logger.info(f"Created backup: {backup_path}")
@@ -145,10 +146,22 @@ def _load_pending_data() -> dict[str, Any]:
         return data
     except json.JSONDecodeError as e:
         logger.error(f"Invalid pending.json: {e}")
+        # Log content preview for debugging (truncated for safety)
+        content_preview = content[:200] + "..." if len(content) > 200 else content
+        logger.warning(f"Corrupted content preview: {content_preview!r}")
+
         # Create backup before resetting to preserve data for recovery
         backup_path = _create_backup(pending_file)
         if backup_path:
-            logger.warning(f"Corrupted file backed up to: {backup_path}")
+            logger.warning(
+                f"Corrupted file backed up to: {backup_path}. "
+                f"Any pending actions have been lost - check backup for manual recovery."
+            )
+        else:
+            logger.error(
+                "Failed to create backup of corrupted pending.json. "
+                "Pending actions may be lost."
+            )
         return {"version": PENDING_VERSION, "pending_actions": []}
 
 

@@ -186,7 +186,11 @@ class TestNextDNSClient:
         assert client.profile_id == "abc123"
         assert client.timeout == 10
         assert client.retries == 3
-        assert "X-Api-Key" in client.headers
+        # Verify headers are built correctly via _get_headers() method
+        headers = client._get_headers()
+        assert "X-Api-Key" in headers
+        assert headers["X-Api-Key"] == "test-key"
+        assert headers["Content-Type"] == "application/json"
 
     def test_calculate_backoff(self) -> None:
         """Test backoff calculation."""

@@ -20,8 +20,9 @@ COLOR_PANIC = 9109504  # Dark Red
 # Notification timeout in seconds
 NOTIFICATION_TIMEOUT = 5
 
-# Rate limiting: minimum seconds between notifications (Discord allows ~30/min)
-MIN_NOTIFICATION_INTERVAL = 2.0
+# Rate limiting: minimum seconds between notifications
+# Discord allows ~30/min, so 3 second interval provides safety margin for bulk operations
+MIN_NOTIFICATION_INTERVAL = 3.0
 
 
 class _NotificationRateLimiter:
@@ -88,17 +89,27 @@ def send_discord_notification(
     """
     Send a Discord webhook notification for a block/unblock event.
 
-    This function silently fails if:
+    This function is designed to silently fail - it will never raise exceptions
+    to the caller. All errors are logged and swallowed to prevent notification
+    failures from interrupting the main application flow.
+
+    Silent failures occur when:
     - Notifications are disabled AND webhook_url is not explicitly provided
     - Webhook URL is not configured
     - Network request fails or times out
-    - Rate limit exceeded (2 seconds between notifications)
+    - Rate limit exceeded (3 seconds between notifications)
+    - Unknown event type provided
 
     Args:
         domain: Domain name that was blocked/unblocked
-        event_type: Either "block" or "unblock"
+        event_type: Event type - one of "block", "unblock", "pending",
+                    "cancel_pending", or "panic"
         webhook_url: Optional explicit webhook URL. If provided, notifications
                      are sent even if DISCORD_NOTIFICATIONS_ENABLED is not set.
+
+    Note:
+        This function does not raise exceptions. All errors are caught internally
+        and logged at appropriate levels (debug, warning, or error).
     """
     # If webhook_url is explicitly passed, use it regardless of env setting
     # Otherwise, check if notifications are enabled via environment

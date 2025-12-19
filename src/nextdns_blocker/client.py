@@ -22,11 +22,18 @@ from .exceptions import APIError, DomainValidationError
 API_URL = "https://api.nextdns.io"
 
 # Rate limiting and backoff settings (configurable via environment variables)
-RATE_LIMIT_REQUESTS = safe_int(os.environ.get("RATE_LIMIT_REQUESTS"), 30)  # Max requests per window
-RATE_LIMIT_WINDOW = safe_int(os.environ.get("RATE_LIMIT_WINDOW"), 60)  # Window in seconds
+# Minimum bounds enforced to prevent misconfiguration
+_raw_rate_limit_requests = safe_int(os.environ.get("RATE_LIMIT_REQUESTS"), 30)
+RATE_LIMIT_REQUESTS = max(1, _raw_rate_limit_requests)  # Min 1 request per window
+
+_raw_rate_limit_window = safe_int(os.environ.get("RATE_LIMIT_WINDOW"), 60)
+RATE_LIMIT_WINDOW = max(1, _raw_rate_limit_window)  # Min 1 second window
+
 BACKOFF_BASE = 1.0  # Base delay for exponential backoff (seconds)
 BACKOFF_MAX = 30.0  # Maximum backoff delay (seconds)
-CACHE_TTL = safe_int(os.environ.get("CACHE_TTL"), 60)  # Denylist cache TTL in seconds
+
+_raw_cache_ttl = safe_int(os.environ.get("CACHE_TTL"), 60)
+CACHE_TTL = max(1, _raw_cache_ttl)  # Min 1 second TTL to prevent cache thrashing
 
 logger = logging.getLogger(__name__)
 
@@ -185,12 +192,17 @@ class DomainCache:
             self._timestamp = 0
 
     def add_domain(self, domain: str) -> None:
-        """Add a domain to the cache (for optimistic updates)."""
+        """
+        Add a domain to the cache (for optimistic updates).
+
+        Thread-safe: uses set for _domains to prevent duplicates,
+        and checks before appending to _data list.
+        """
         with self._lock:
             if self._data is not None:
-                self._domains.add(domain)
-                # Keep _data in sync with _domains
-                if not any(entry.get("id") == domain for entry in self._data):
+                # Use set.add which handles duplicates automatically
+                if domain not in self._domains:
+                    self._domains.add(domain)
                     self._data.append({"id": domain, "active": True})
 
     def remove_domain(self, domain: str) -> None:
@@ -242,16 +254,28 @@ class NextDNSClient:
         self.timeout = timeout
         self.retries = retries
         self._api_key = api_key  # Store privately to avoid accidental exposure
-        self.headers: dict[str, str] = {"X-Api-Key": api_key, "Content-Type": "application/json"}
         self._rate_limiter = RateLimiter()
         self._cache = DenylistCache()
         self._allowlist_cache = AllowlistCache()
+
+    def _get_headers(self) -> dict[str, str]:
+        """
+        Build request headers dynamically.
+
+        Headers are constructed on-demand rather than stored as an instance
+        variable to prevent accidental exposure of the API key in logs,
+        stack traces, or object serialization.
+
+        Returns:
+            Dict with required API headers
+        """
+        return {"X-Api-Key": self._api_key, "Content-Type": "application/json"}
 
     def _redacted_headers(self) -> dict[str, str]:
         """Return headers with API key redacted for safe logging."""
         return {
             "X-Api-Key": f"{self._api_key[:4]}...{self._api_key[-4:]}" if len(self._api_key) > 8 else "***",
-            "Content-Type": self.headers.get("Content-Type", "application/json"),
+            "Content-Type": "application/json",
         }
 
     def __repr__(self) -> str:
@@ -302,7 +326,7 @@ class NextDNSClient:
                 response = requests.request(
                     method=method_upper,
                     url=url,
-                    headers=self.headers,
+                    headers=self._get_headers(),
                     json=data if method_upper in ("POST", "PUT", "PATCH") else None,
                     timeout=self.timeout,
                 )

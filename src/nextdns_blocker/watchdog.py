@@ -246,13 +246,39 @@ def clear_disabled() -> bool:
 
 
 def get_crontab() -> str:
-    """Get the current user's crontab contents."""
+    """
+    Get the current user's crontab contents.
+
+    Returns:
+        Crontab contents as string.
+        Empty string if no crontab exists or on error.
+
+    Note:
+        This function logs errors to distinguish between "no crontab" (normal)
+        and actual failures (permission denied, timeout, etc.).
+    """
     try:
         result = subprocess.run(
             ["crontab", "-l"], capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT
         )
-        return result.stdout if result.returncode == 0 else ""
-    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        if result.returncode == 0:
+            return result.stdout
+        # crontab -l returns non-zero when no crontab exists (common case)
+        # stderr typically contains "no crontab for <user>"
+        if "no crontab" in result.stderr.lower():
+            logger.debug("No crontab exists for current user")
+        else:
+            # Unexpected error - log it
+            logger.warning(f"crontab -l failed: {result.stderr.strip()}")
+        return ""
+    except subprocess.TimeoutExpired:
+        logger.error(f"crontab -l timed out after {SUBPROCESS_TIMEOUT}s")
+        return ""
+    except OSError as e:
+        logger.error(f"Failed to run crontab command: {e}")
+        return ""
+    except subprocess.SubprocessError as e:
+        logger.error(f"Subprocess error running crontab: {e}")
         return ""
 
 
