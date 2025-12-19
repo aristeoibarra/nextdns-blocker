@@ -247,7 +247,9 @@ class NextDNSClient:
     def _redacted_headers(self) -> dict[str, str]:
         """Return headers with API key redacted for safe logging."""
         return {
-            "X-Api-Key": f"{self._api_key[:4]}...{self._api_key[-4:]}" if len(self._api_key) > 8 else "***",
+            "X-Api-Key": (
+                f"{self._api_key[:4]}...{self._api_key[-4:]}" if len(self._api_key) > 8 else "***"
+            ),
             "Content-Type": self.headers.get("Content-Type", "application/json"),
         }
 
