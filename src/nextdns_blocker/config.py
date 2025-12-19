@@ -565,9 +565,7 @@ def _load_env_file(env_file: Path) -> None:
 
             # Validate key format (POSIX-compliant env var name)
             if not env_key_pattern.match(key):
-                logger.warning(
-                    f".env line {line_num}: invalid key format '{key[:20]}', skipping"
-                )
+                logger.warning(f".env line {line_num}: invalid key format '{key[:20]}', skipping")
                 continue
 
             # Parse and validate value
