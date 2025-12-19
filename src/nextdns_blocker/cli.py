@@ -1163,7 +1163,9 @@ def update(yes: bool) -> None:
                 sys.exit(1)
             latest_version = info.get("version")
             if not isinstance(latest_version, str):
-                console.print("  [red]Error: Missing version in PyPI response[/red]\n", highlight=False)
+                console.print(
+                    "  [red]Error: Missing version in PyPI response[/red]\n", highlight=False
+                )
                 sys.exit(1)
     except ssl.SSLError as e:
         console.print(f"  [red]SSL error: {e}[/red]\n", highlight=False)

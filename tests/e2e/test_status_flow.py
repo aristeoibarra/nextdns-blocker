@@ -561,9 +561,7 @@ class TestStatusUpdateNotification:
                             import urllib.error
 
                             # Simulate network error
-                            mock_urlopen.side_effect = urllib.error.URLError(
-                                "Network error"
-                            )
+                            mock_urlopen.side_effect = urllib.error.URLError("Network error")
 
                             result = runner.invoke(
                                 main,
