@@ -74,11 +74,12 @@ class TestCompleteBlocklistDomains:
             config_file = config_dir / "config.json"
             config_file.write_text("{}")
 
-            with patch(
-                "nextdns_blocker.config.get_config_dir", return_value=config_dir
-            ), patch(
-                "nextdns_blocker.config.load_domains",
-                return_value=(mock_blocklist, mock_allowlist),
+            with (
+                patch("nextdns_blocker.config.get_config_dir", return_value=config_dir),
+                patch(
+                    "nextdns_blocker.config.load_domains",
+                    return_value=(mock_blocklist, mock_allowlist),
+                ),
             ):
                 ctx = MagicMock(spec=click.Context)
                 param = MagicMock(spec=click.Parameter)
@@ -96,11 +97,12 @@ class TestCompleteBlocklistDomains:
             config_file = config_dir / "config.json"
             config_file.write_text("{}")
 
-            with patch(
-                "nextdns_blocker.config.get_config_dir", return_value=config_dir
-            ), patch(
-                "nextdns_blocker.config.load_domains",
-                return_value=(mock_blocklist, mock_allowlist),
+            with (
+                patch("nextdns_blocker.config.get_config_dir", return_value=config_dir),
+                patch(
+                    "nextdns_blocker.config.load_domains",
+                    return_value=(mock_blocklist, mock_allowlist),
+                ),
             ):
                 ctx = MagicMock(spec=click.Context)
                 param = MagicMock(spec=click.Parameter)
@@ -120,11 +122,12 @@ class TestCompleteBlocklistDomains:
             config_file = config_dir / "config.json"
             config_file.write_text("{}")
 
-            with patch(
-                "nextdns_blocker.config.get_config_dir", return_value=config_dir
-            ), patch(
-                "nextdns_blocker.config.load_domains",
-                return_value=(mock_blocklist, mock_allowlist),
+            with (
+                patch("nextdns_blocker.config.get_config_dir", return_value=config_dir),
+                patch(
+                    "nextdns_blocker.config.load_domains",
+                    return_value=(mock_blocklist, mock_allowlist),
+                ),
             ):
                 ctx = MagicMock(spec=click.Context)
                 param = MagicMock(spec=click.Parameter)
@@ -141,11 +144,12 @@ class TestCompleteBlocklistDomains:
             config_file = config_dir / "config.json"
             config_file.write_text("{}")
 
-            with patch(
-                "nextdns_blocker.config.get_config_dir", return_value=config_dir
-            ), patch(
-                "nextdns_blocker.config.load_domains",
-                return_value=(mock_blocklist, mock_allowlist),
+            with (
+                patch("nextdns_blocker.config.get_config_dir", return_value=config_dir),
+                patch(
+                    "nextdns_blocker.config.load_domains",
+                    return_value=(mock_blocklist, mock_allowlist),
+                ),
             ):
                 ctx = MagicMock(spec=click.Context)
                 param = MagicMock(spec=click.Parameter)
@@ -157,9 +161,7 @@ class TestCompleteBlocklistDomains:
     def test_handles_missing_config(self):
         """Test that missing config returns empty list without error."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch(
-                "nextdns_blocker.config.get_config_dir", return_value=Path(tmpdir)
-            ):
+            with patch("nextdns_blocker.config.get_config_dir", return_value=Path(tmpdir)):
                 ctx = MagicMock(spec=click.Context)
                 param = MagicMock(spec=click.Parameter)
 
@@ -192,11 +194,12 @@ class TestCompleteAllowlistDomains:
             config_file = config_dir / "config.json"
             config_file.write_text("{}")
 
-            with patch(
-                "nextdns_blocker.config.get_config_dir", return_value=config_dir
-            ), patch(
-                "nextdns_blocker.config.load_domains",
-                return_value=(mock_blocklist, mock_allowlist),
+            with (
+                patch("nextdns_blocker.config.get_config_dir", return_value=config_dir),
+                patch(
+                    "nextdns_blocker.config.load_domains",
+                    return_value=(mock_blocklist, mock_allowlist),
+                ),
             ):
                 ctx = MagicMock(spec=click.Context)
                 param = MagicMock(spec=click.Parameter)
@@ -214,11 +217,12 @@ class TestCompleteAllowlistDomains:
             config_file = config_dir / "config.json"
             config_file.write_text("{}")
 
-            with patch(
-                "nextdns_blocker.config.get_config_dir", return_value=config_dir
-            ), patch(
-                "nextdns_blocker.config.load_domains",
-                return_value=(mock_blocklist, mock_allowlist),
+            with (
+                patch("nextdns_blocker.config.get_config_dir", return_value=config_dir),
+                patch(
+                    "nextdns_blocker.config.load_domains",
+                    return_value=(mock_blocklist, mock_allowlist),
+                ),
             ):
                 ctx = MagicMock(spec=click.Context)
                 param = MagicMock(spec=click.Parameter)
@@ -237,11 +241,12 @@ class TestCompleteAllowlistDomains:
             config_file = config_dir / "config.json"
             config_file.write_text("{}")
 
-            with patch(
-                "nextdns_blocker.config.get_config_dir", return_value=config_dir
-            ), patch(
-                "nextdns_blocker.config.load_domains",
-                return_value=(mock_blocklist, []),  # Empty allowlist
+            with (
+                patch("nextdns_blocker.config.get_config_dir", return_value=config_dir),
+                patch(
+                    "nextdns_blocker.config.load_domains",
+                    return_value=(mock_blocklist, []),  # Empty allowlist
+                ),
             ):
                 ctx = MagicMock(spec=click.Context)
                 param = MagicMock(spec=click.Parameter)

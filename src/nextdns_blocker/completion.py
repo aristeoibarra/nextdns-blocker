@@ -64,9 +64,7 @@ def complete_blocklist_domains(
             if domain and domain.lower().startswith(incomplete.lower()):
                 # Include description as help text if available
                 description = domain_config.get("description", "")
-                completions.append(
-                    CompletionItem(domain, help=description)
-                )
+                completions.append(CompletionItem(domain, help=description))
 
         return completions
 
@@ -121,9 +119,7 @@ def complete_allowlist_domains(
             domain = allowlist_config.get("domain", "")
             if domain and domain.lower().startswith(incomplete.lower()):
                 description = allowlist_config.get("description", "")
-                completions.append(
-                    CompletionItem(domain, help=description)
-                )
+                completions.append(CompletionItem(domain, help=description))
 
         return completions
 
@@ -163,14 +159,11 @@ def complete_pending_action_ids(
                 domain = action.get("domain", "")
 
                 # Match against full ID or suffix
-                if (
-                    action_id.lower().startswith(incomplete.lower())
-                    or suffix.lower().startswith(incomplete.lower())
+                if action_id.lower().startswith(incomplete.lower()) or suffix.lower().startswith(
+                    incomplete.lower()
                 ):
                     help_text = f"Unblock {domain}" if domain else ""
-                    completions.append(
-                        CompletionItem(action_id, help=help_text)
-                    )
+                    completions.append(CompletionItem(action_id, help=help_text))
 
         return completions
 
@@ -193,26 +186,26 @@ def get_completion_script(shell: str) -> str:
     env_var = "_NEXTDNS_BLOCKER_COMPLETE"
 
     if shell == "bash":
-        return f'''# Bash completion for {prog_name}
+        return f"""# Bash completion for {prog_name}
 # Add to ~/.bashrc or ~/.bash_profile:
 # eval "$({env_var}=bash_source {prog_name})"
 
 eval "$({env_var}=bash_source {prog_name})"
-'''
+"""
     elif shell == "zsh":
-        return f'''# Zsh completion for {prog_name}
+        return f"""# Zsh completion for {prog_name}
 # Add to ~/.zshrc:
 # eval "$({env_var}=zsh_source {prog_name})"
 
 eval "$({env_var}=zsh_source {prog_name})"
-'''
+"""
     elif shell == "fish":
-        return f'''# Fish completion for {prog_name}
+        return f"""# Fish completion for {prog_name}
 # Save to ~/.config/fish/completions/{prog_name}.fish
 # Or run: {env_var}=fish_source {prog_name} | source
 
 {env_var}=fish_source {prog_name} | source
-'''
+"""
     else:
         raise ValueError(f"Unsupported shell: {shell}")
 

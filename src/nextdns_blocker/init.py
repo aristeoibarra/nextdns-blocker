@@ -616,7 +616,9 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
             else:
                 click.echo(click.style("OK", fg="green"))
                 click.echo(f"    {msg}")
-                click.echo(f"    Restart your shell or run: source ~/{'.zshrc' if shell == 'zsh' else '.bashrc'}")
+                click.echo(
+                    f"    Restart your shell or run: source ~/{'.zshrc' if shell == 'zsh' else '.bashrc'}"
+                )
         else:
             click.echo(click.style("SKIPPED", fg="yellow"))
             click.echo(f"    {msg}")
