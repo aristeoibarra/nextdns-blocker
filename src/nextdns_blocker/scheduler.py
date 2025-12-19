@@ -4,7 +4,7 @@ from datetime import datetime, time, timedelta
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
-from .common import DAYS_MAP
+from .common import WEEKDAY_TO_DAY
 
 
 class ScheduleEvaluator:
@@ -61,10 +61,13 @@ class ScheduleEvaluator:
                 raise ValueError(f"Invalid time format: {time_str}")
 
             return time(hours, minutes)
-        except ValueError:
-            raise ValueError(f"Invalid time format: {time_str}")
+        except ValueError as e:
+            # Re-raise with consistent message if not already formatted
+            if "Invalid time format" not in str(e):
+                raise ValueError(f"Invalid time format: {time_str}") from e
+            raise
         except TypeError as e:
-            raise ValueError(f"Invalid time format: {time_str} (type error: {e})")
+            raise ValueError(f"Invalid time format: {time_str}") from e
 
     def is_time_in_range(self, current: time, start: time, end: time) -> bool:
         """
@@ -122,7 +125,7 @@ class ScheduleEvaluator:
             True if current time is within yesterday's overnight window
         """
         yesterday = now - timedelta(days=1)
-        yesterday_day = list(DAYS_MAP.keys())[yesterday.weekday()]
+        yesterday_day = WEEKDAY_TO_DAY[yesterday.weekday()]
         current_time = now.time()
 
         for block in schedule.get("available_hours", []):
@@ -157,7 +160,7 @@ class ScheduleEvaluator:
             return True
 
         now = self._get_current_time()
-        current_day = list(DAYS_MAP.keys())[now.weekday()]
+        current_day = WEEKDAY_TO_DAY[now.weekday()]
         current_time = now.time()
 
         # Check today's schedule

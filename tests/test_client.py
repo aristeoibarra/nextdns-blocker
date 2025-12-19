@@ -1,5 +1,6 @@
 """Tests for NextDNSClient class."""
 
+from collections import deque
 from datetime import datetime
 from unittest.mock import patch
 
@@ -452,7 +453,7 @@ class TestRateLimiter:
         limiter = RateLimiter()
         assert limiter.max_requests == RATE_LIMIT_REQUESTS
         assert limiter.window_seconds == RATE_LIMIT_WINDOW
-        assert limiter.requests == []
+        assert len(limiter._requests) == 0
 
     def test_init_custom_values(self):
         """RateLimiter initializes with custom values."""
@@ -466,7 +467,7 @@ class TestRateLimiter:
         for _ in range(5):
             waited = limiter.acquire()
             assert waited == 0
-        assert len(limiter.requests) == 5
+        assert len(limiter._requests) == 5
 
     def test_acquire_at_limit_waits(self):
         """acquire() waits when rate limit is reached."""
@@ -488,14 +489,14 @@ class TestRateLimiter:
 
         # Add old timestamp (expired)
         old_time = datetime.now().timestamp() - 120  # 2 minutes ago
-        limiter.requests = [old_time]
+        limiter._requests = deque([old_time])
 
         # acquire() should clean up expired and allow request
         waited = limiter.acquire()
         assert waited == 0
-        assert len(limiter.requests) == 1
+        assert len(limiter._requests) == 1
         # The old expired request should be gone, only new one remains
-        assert limiter.requests[0] > old_time
+        assert limiter._requests[0] > old_time
 
     def test_sliding_window_behavior(self):
         """Rate limiter uses sliding window correctly."""
@@ -504,12 +505,12 @@ class TestRateLimiter:
         now = datetime.now().timestamp()
 
         # Simulate 2 requests from 30 seconds ago (still valid)
-        limiter.requests = [now - 30, now - 25]
+        limiter._requests = deque([now - 30, now - 25])
 
         # Should allow 1 more request without waiting
         waited = limiter.acquire()
         assert waited == 0
-        assert len(limiter.requests) == 3
+        assert len(limiter._requests) == 3
 
     def test_multiple_acquires_track_timestamps(self):
         """Each acquire adds a timestamp to the list."""
@@ -517,4 +518,4 @@ class TestRateLimiter:
 
         for i in range(5):
             limiter.acquire()
-            assert len(limiter.requests) == i + 1
+            assert len(limiter._requests) == i + 1

@@ -130,6 +130,9 @@ def _get_pause_info() -> tuple[bool, Optional[datetime]]:
 
     try:
         pause_until = datetime.fromisoformat(content)
+        # Ensure we're comparing naive datetimes (strip timezone if present)
+        if pause_until.tzinfo is not None:
+            pause_until = pause_until.replace(tzinfo=None)
         if datetime.now() < pause_until:
             return True, pause_until
         # Expired, clean up (missing_ok handles race conditions)
@@ -333,11 +336,9 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
         delay_seconds = parse_unblock_delay_seconds(unblock_delay or "0")
 
         if delay_seconds and delay_seconds > 0 and not force:
-            # Create pending action
-            # At this point, unblock_delay is guaranteed to be a valid non-None string
-            # because delay_seconds is > 0
-            if unblock_delay is None:  # Should never happen, but satisfy type checker
-                unblock_delay = "0"
+            # Create pending action - unblock_delay is guaranteed non-None here
+            # because delay_seconds > 0 only when unblock_delay is a valid delay string
+            assert unblock_delay is not None  # Type narrowing for mypy
             action = create_pending_action(domain, unblock_delay, requested_by="cli")
             if action:
                 send_discord_notification(
@@ -481,10 +482,8 @@ def sync(
                             f"(delay: {domain_delay})[/yellow]"
                         )
                     else:
-                        # At this point, domain_delay is guaranteed to be a valid non-None string
-                        # because delay_seconds is > 0
-                        if domain_delay is None:  # Should never happen, but satisfy type checker
-                            domain_delay = "0"
+                        # domain_delay is guaranteed non-None here because delay_seconds > 0
+                        assert domain_delay is not None  # Type narrowing for mypy
                         action = create_pending_action(domain, domain_delay, requested_by="sync")
                         if action and verbose:
                             console.print(

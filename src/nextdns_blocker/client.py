@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import threading
+from collections import deque
 from datetime import datetime
 from time import sleep
 from typing import Any, Optional
@@ -50,7 +51,8 @@ class RateLimiter:
         """
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self.requests: list[float] = []
+        # Use deque for O(1) popleft operations when removing expired timestamps
+        self._requests: deque[float] = deque()
         self._condition = threading.Condition()
 
     def acquire(self, timeout: Optional[float] = None) -> float:
@@ -77,17 +79,18 @@ class RateLimiter:
                 if deadline is not None and now >= deadline:
                     raise TimeoutError("Rate limiter acquire timed out")
 
-                # Remove expired timestamps
+                # Remove expired timestamps from the front (O(1) per removal with deque)
                 cutoff = now - self.window_seconds
-                self.requests = [ts for ts in self.requests if ts > cutoff]
+                while self._requests and self._requests[0] <= cutoff:
+                    self._requests.popleft()
 
                 # Check if we can proceed
-                if len(self.requests) < self.max_requests:
-                    self.requests.append(now)
+                if len(self._requests) < self.max_requests:
+                    self._requests.append(now)
                     return total_waited
 
                 # Calculate wait time until oldest request expires
-                wait_time = self.requests[0] - cutoff
+                wait_time = self._requests[0] - cutoff
                 if wait_time <= 0:
                     # Oldest request already expired, try again
                     continue

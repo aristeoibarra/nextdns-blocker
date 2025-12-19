@@ -529,6 +529,65 @@ def _load_timezone_setting(config_dir: Path) -> str:
     return DEFAULT_TIMEZONE
 
 
+def _load_env_file(env_file: Path) -> None:
+    """
+    Load environment variables from a .env file.
+
+    Validates each line and sets valid key-value pairs as environment variables.
+    Invalid lines are logged as warnings and skipped.
+
+    Args:
+        env_file: Path to the .env file
+    """
+    # Pattern for valid environment variable names (POSIX-compliant)
+    env_key_pattern = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+    max_value_length = 32768  # Reasonable limit for env var values
+
+    with open(env_file, encoding="utf-8-sig") as f:  # utf-8-sig handles BOM
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+
+            # Skip empty lines and comments
+            if not line or line.startswith("#"):
+                continue
+
+            # Validate line format
+            if "=" not in line:
+                logger.warning(f".env line {line_num}: missing '=' separator, skipping")
+                continue
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+
+            if not key:
+                logger.warning(f".env line {line_num}: empty key, skipping")
+                continue
+
+            # Validate key format (POSIX-compliant env var name)
+            if not env_key_pattern.match(key):
+                logger.warning(
+                    f".env line {line_num}: invalid key format '{key[:20]}', skipping"
+                )
+                continue
+
+            # Parse and validate value
+            parsed_value = parse_env_value(value)
+
+            # Check for null bytes (security issue)
+            if "\x00" in parsed_value:
+                logger.warning(f".env line {line_num}: value contains null byte, skipping")
+                continue
+
+            # Check for excessive length
+            if len(parsed_value) > max_value_length:
+                logger.warning(
+                    f".env line {line_num}: value too long ({len(parsed_value)} chars), skipping"
+                )
+                continue
+
+            os.environ[key] = parsed_value
+
+
 def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
     """
     Load configuration from .env file and environment variables.
@@ -547,55 +606,8 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
         config_dir = get_config_dir()
 
     env_file = config_dir / ".env"
-
     if env_file.exists():
-        # Pattern for valid environment variable names (POSIX-compliant)
-        env_key_pattern = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
-        max_value_length = 32768  # Reasonable limit for env var values
-
-        with open(env_file, encoding="utf-8-sig") as f:  # utf-8-sig handles BOM
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
-
-                # Skip empty lines and comments
-                if not line or line.startswith("#"):
-                    continue
-
-                # Validate line format
-                if "=" not in line:
-                    logger.warning(f".env line {line_num}: missing '=' separator, skipping")
-                    continue
-
-                key, value = line.split("=", 1)
-                key = key.strip()
-
-                if not key:
-                    logger.warning(f".env line {line_num}: empty key, skipping")
-                    continue
-
-                # Validate key format (POSIX-compliant env var name)
-                if not env_key_pattern.match(key):
-                    logger.warning(
-                        f".env line {line_num}: invalid key format '{key[:20]}', skipping"
-                    )
-                    continue
-
-                # Parse and validate value
-                parsed_value = parse_env_value(value)
-
-                # Check for null bytes (security issue)
-                if "\x00" in parsed_value:
-                    logger.warning(f".env line {line_num}: value contains null byte, skipping")
-                    continue
-
-                # Check for excessive length
-                if len(parsed_value) > max_value_length:
-                    logger.warning(
-                        f".env line {line_num}: value too long ({len(parsed_value)} chars), skipping"
-                    )
-                    continue
-
-                os.environ[key] = parsed_value
+        _load_env_file(env_file)
 
     # Build configuration with validated values
     config: dict[str, Any] = {

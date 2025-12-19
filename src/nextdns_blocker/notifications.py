@@ -23,16 +23,42 @@ NOTIFICATION_TIMEOUT = 5
 # Rate limiting: minimum seconds between notifications (Discord allows ~30/min)
 MIN_NOTIFICATION_INTERVAL = 2.0
 
-# Thread-safe rate limiting state
-_last_notification_time: float = 0.0
-_rate_limit_lock = threading.Lock()
+
+class _NotificationRateLimiter:
+    """Thread-safe rate limiter for Discord notifications."""
+
+    def __init__(self, min_interval: float = MIN_NOTIFICATION_INTERVAL) -> None:
+        self._min_interval = min_interval
+        self._last_notification_time: float = 0.0
+        self._lock = threading.Lock()
+
+    def reset(self) -> None:
+        """Reset rate limit state. Used for testing."""
+        with self._lock:
+            self._last_notification_time = 0.0
+
+    def check(self) -> bool:
+        """
+        Check if we can send a notification based on rate limiting.
+
+        Returns:
+            True if notification can be sent, False if rate limited
+        """
+        with self._lock:
+            now = datetime.now().timestamp()
+            if now - self._last_notification_time < self._min_interval:
+                return False
+            self._last_notification_time = now
+            return True
+
+
+# Singleton instance for module-level rate limiting
+_rate_limiter = _NotificationRateLimiter()
 
 
 def _reset_rate_limit() -> None:
     """Reset rate limit state. Used for testing."""
-    global _last_notification_time
-    with _rate_limit_lock:
-        _last_notification_time = 0.0
+    _rate_limiter.reset()
 
 
 def is_notifications_enabled() -> bool:
@@ -54,22 +80,6 @@ def get_webhook_url() -> Optional[str]:
         Webhook URL if set, None otherwise
     """
     return os.getenv("DISCORD_WEBHOOK_URL")
-
-
-def _check_rate_limit() -> bool:
-    """
-    Check if we can send a notification based on rate limiting.
-
-    Returns:
-        True if notification can be sent, False if rate limited
-    """
-    global _last_notification_time
-    with _rate_limit_lock:
-        now = datetime.now().timestamp()
-        if now - _last_notification_time < MIN_NOTIFICATION_INTERVAL:
-            return False
-        _last_notification_time = now
-        return True
 
 
 def send_discord_notification(
@@ -102,7 +112,7 @@ def send_discord_notification(
         return
 
     # Apply rate limiting to avoid Discord rate limits
-    if not _check_rate_limit():
+    if not _rate_limiter.check():
         logger.debug(f"Rate limited, skipping notification for {event_type}: {domain}")
         return
 
@@ -148,8 +158,16 @@ def send_discord_notification(
             f"Discord notification timeout for {event_type}: {domain} "
             f"(timeout: {NOTIFICATION_TIMEOUT}s)"
         )
+    except requests.exceptions.ConnectionError as e:
+        logger.warning(f"Discord notification connection error for {event_type}: {domain} - {e}")
+    except requests.exceptions.HTTPError as e:
+        logger.warning(f"Discord notification HTTP error for {event_type}: {domain} - {e}")
     except requests.exceptions.RequestException as e:
         logger.warning(f"Discord notification failed for {event_type}: {domain} - {e}")
+    except (ValueError, TypeError) as e:
+        # JSON serialization or payload construction errors
+        logger.warning(f"Discord notification payload error for {event_type}: {domain} - {e}")
     except Exception as e:
         # Catch any other unexpected errors to ensure silent failure
-        logger.warning(f"Unexpected error sending Discord notification: {e}")
+        # Log as error (not warning) to make these more visible for debugging
+        logger.error(f"Unexpected error sending Discord notification for {event_type}: {domain} - {e}")

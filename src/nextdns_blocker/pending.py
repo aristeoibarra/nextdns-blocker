@@ -295,6 +295,9 @@ def get_ready_actions() -> list[dict[str, Any]]:
             execute_at_str = action.get("execute_at", "")
             if execute_at_str:
                 execute_at = datetime.fromisoformat(execute_at_str)
+                # Ensure we're comparing naive datetimes (strip timezone if present)
+                if execute_at.tzinfo is not None:
+                    execute_at = execute_at.replace(tzinfo=None)
                 if execute_at <= now:
                     ready.append(action)
         except (ValueError, KeyError):
@@ -339,7 +342,11 @@ def cleanup_old_actions(max_age_days: int = 7) -> int:
             new_actions = []
             for a in data["pending_actions"]:
                 try:
-                    if datetime.fromisoformat(a["created_at"]) > cutoff:
+                    created_at = datetime.fromisoformat(a["created_at"])
+                    # Ensure we're comparing naive datetimes (strip timezone if present)
+                    if created_at.tzinfo is not None:
+                        created_at = created_at.replace(tzinfo=None)
+                    if created_at > cutoff:
                         new_actions.append(a)
                 except (ValueError, KeyError):
                     logger.warning(f"Invalid created_at in action: {a.get('id')}")

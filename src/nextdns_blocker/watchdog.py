@@ -127,6 +127,9 @@ def _should_run_cleanup() -> bool:
             content = read_secure_file(cleanup_file)
             if content:
                 last_cleanup = datetime.fromisoformat(content)
+                # Ensure we're comparing naive datetimes (strip timezone if present)
+                if last_cleanup.tzinfo is not None:
+                    last_cleanup = last_cleanup.replace(tzinfo=None)
                 hours_since = (datetime.now() - last_cleanup).total_seconds() / 3600
                 if hours_since < CLEANUP_INTERVAL_HOURS:
                     return False
@@ -165,6 +168,9 @@ def is_disabled() -> bool:
             return True
 
         disabled_until = datetime.fromisoformat(content)
+        # Ensure we're comparing naive datetimes (strip timezone if present)
+        if disabled_until.tzinfo is not None:
+            disabled_until = disabled_until.replace(tzinfo=None)
         if datetime.now() < disabled_until:
             return True
 
@@ -189,6 +195,9 @@ def get_disabled_remaining() -> str:
             return "permanently"
 
         disabled_until = datetime.fromisoformat(content)
+        # Ensure we're comparing naive datetimes (strip timezone if present)
+        if disabled_until.tzinfo is not None:
+            disabled_until = disabled_until.replace(tzinfo=None)
         remaining = disabled_until - datetime.now()
 
         if remaining.total_seconds() <= 0:
@@ -723,7 +732,16 @@ def _build_task_command(exe: str, args: str, log_file: str) -> str:
 def _run_schtasks(
     args: list[str], timeout: int = SUBPROCESS_TIMEOUT
 ) -> subprocess.CompletedProcess[str]:
-    """Run schtasks command with standard options."""
+    """
+    Run schtasks command with standard options.
+
+    Args:
+        args: List of arguments to pass to schtasks
+        timeout: Command timeout in seconds
+
+    Returns:
+        CompletedProcess with stdout/stderr captured
+    """
     return subprocess.run(
         ["schtasks"] + args,
         capture_output=True,
@@ -946,8 +964,14 @@ def _process_pending_actions() -> None:
             config["timeout"],
             config["retries"],
         )
-    except (ConfigurationError, KeyError, OSError) as e:
-        logger.error(f"Failed to load config for pending actions: {e}")
+    except ConfigurationError as e:
+        logger.error(f"Configuration error for pending actions: {e}")
+        return
+    except KeyError as e:
+        logger.error(f"Missing configuration key for pending actions: {e}")
+        return
+    except OSError as e:
+        logger.error(f"I/O error loading config for pending actions: {e}")
         return
 
     for action in ready_actions:

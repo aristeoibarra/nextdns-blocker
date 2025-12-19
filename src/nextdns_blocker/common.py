@@ -103,8 +103,11 @@ except ImportError:
                     msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
                     return  # Lock acquired
                 except OSError as e:
-                    # errno 36 = EDEADLOCK on Windows (resource busy)
-                    if e.errno not in (36,):
+                    # Windows lock contention errors:
+                    # errno 36 = EDEADLOCK (resource busy)
+                    # errno 13 = EACCES (permission denied / lock held by another process)
+                    # errno 33 = ELOCK (lock violation on some Windows versions)
+                    if e.errno not in (13, 33, 36):
                         raise
                     if time.monotonic() >= deadline:
                         raise TimeoutError(f"Failed to acquire file lock within {timeout}s")
@@ -203,6 +206,10 @@ DAYS_MAP = {
     "saturday": 5,
     "sunday": 6,
 }
+
+# Weekday number to day name mapping (inverse of DAYS_MAP)
+# This provides O(1) lookup by weekday index without relying on dict key order
+WEEKDAY_TO_DAY = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 
 
 # =============================================================================

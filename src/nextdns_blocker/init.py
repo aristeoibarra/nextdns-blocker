@@ -189,11 +189,19 @@ NEXTDNS_PROFILE_ID={profile_id}
 
     # Write with secure permissions
     fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECURE_FILE_MODE)
+    fd_closed = False
     try:
-        with os.fdopen(fd, "w") as f:
+        # os.fdopen takes ownership of fd - it will close it when the file object closes
+        f = os.fdopen(fd, "w")
+        fd_closed = True  # fd is now owned by f
+        try:
             f.write(content)
+        finally:
+            f.close()
     except OSError:
-        os.close(fd)
+        # Only close fd if os.fdopen failed (fd not yet owned by file object)
+        if not fd_closed:
+            os.close(fd)
         raise
 
     return env_file

@@ -66,6 +66,9 @@ def _get_panic_info() -> tuple[bool, Optional[datetime]]:
 
     try:
         panic_until = datetime.fromisoformat(content)
+        # Ensure we're comparing naive datetimes (strip timezone if present)
+        if panic_until.tzinfo is not None:
+            panic_until = panic_until.replace(tzinfo=None)
         if datetime.now() < panic_until:
             return True, panic_until
         # Expired, clean up (missing_ok handles race conditions)
