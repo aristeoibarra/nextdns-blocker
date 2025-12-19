@@ -385,8 +385,9 @@ class TestFixComplete:
                             result = runner.invoke(main, ["fix"])
 
         assert result.exit_code == 0
-        assert "[1/4] Checking configuration" in result.output
-        assert "[2/4] Detecting installation" in result.output
-        assert "[3/4] Reinstalling scheduler" in result.output
-        assert "[4/4] Running sync" in result.output
+        assert "[1/5] Checking configuration" in result.output
+        assert "[2/5] Detecting installation" in result.output
+        assert "[3/5] Reinstalling scheduler" in result.output
+        assert "[4/5] Running sync" in result.output
+        assert "[5/5] Checking shell completion" in result.output
         assert "Fix complete" in result.output

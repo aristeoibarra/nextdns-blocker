@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -10,6 +11,7 @@ import click
 import requests
 
 from .common import SECURE_FILE_MODE, get_log_dir
+from .completion import detect_shell, install_completion
 from .config import get_config_dir
 from .platform_utils import (
     get_executable_args,
@@ -550,12 +552,16 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
         click.echo(click.style(f"\n  Error: {msg}\n", fg="red"))
         return False
 
+    time.sleep(0.3)
+
     # Determine config directory
     config_dir = get_config_dir(config_dir_override)
 
     # Auto-detect timezone
     timezone = detect_system_timezone()
     click.echo(f"  Timezone detected: {timezone}")
+
+    time.sleep(0.3)
 
     # Create .env file (credentials only)
     click.echo()
@@ -570,6 +576,8 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
     else:
         click.echo(f"  Existing config.json found: {config_file}")
 
+    time.sleep(0.4)
+
     # Install scheduling (launchd/cron)
     click.echo()
     click.echo("  Installing scheduling...")
@@ -583,6 +591,8 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
         click.echo(click.style(f"  Warning: {sched_type}", fg="yellow"))
         click.echo("  You can install manually with: nextdns-blocker watchdog install")
 
+    time.sleep(0.3)
+
     # Run initial sync
     click.echo()
     click.echo("  Running initial sync... ", nl=False)
@@ -591,6 +601,28 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
     else:
         click.echo(click.style("FAILED", fg="yellow"))
         click.echo("  You can run manually: nextdns-blocker sync")
+
+    time.sleep(0.3)
+
+    # Install shell completion
+    shell = detect_shell()
+    if shell and not is_windows():
+        click.echo()
+        click.echo("  Installing shell completion... ", nl=False)
+        success, msg = install_completion(shell)
+        if success:
+            if "Already" in msg:
+                click.echo(click.style("OK", fg="green") + " (already installed)")
+            else:
+                click.echo(click.style("OK", fg="green"))
+                click.echo(f"    {msg}")
+                click.echo(f"    Restart your shell or run: source ~/{'.zshrc' if shell == 'zsh' else '.bashrc'}")
+        else:
+            click.echo(click.style("SKIPPED", fg="yellow"))
+            click.echo(f"    {msg}")
+            click.echo("    You can install manually: nextdns-blocker completion --help")
+
+    time.sleep(0.5)
 
     # Success message
     click.echo()

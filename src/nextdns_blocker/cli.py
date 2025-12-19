@@ -20,6 +20,14 @@ from .common import (
     validate_domain,
     write_secure_file,
 )
+from .completion import (
+    complete_allowlist_domains,
+    complete_blocklist_domains,
+    detect_shell,
+    get_completion_script,
+    install_completion,
+    is_completion_installed,
+)
 from .config import (
     DEFAULT_PAUSE_MINUTES,
     get_config_dir,
@@ -268,7 +276,7 @@ def resume() -> None:
 
 
 @main.command()
-@click.argument("domain")
+@click.argument("domain", shell_complete=complete_blocklist_domains)
 @click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -704,7 +712,7 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
 
 
 @main.command()
-@click.argument("domain")
+@click.argument("domain", shell_complete=complete_allowlist_domains)
 @click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -974,7 +982,7 @@ def fix() -> None:
     click.echo("  -------------------\n")
 
     # Step 1: Verify config
-    console.print("  [bold][1/4] Checking configuration...[/bold]")
+    console.print("  [bold][1/5] Checking configuration...[/bold]")
     try:
         load_config()  # Validates config exists and is valid
         console.print("        Config: [green]OK[/green]")
@@ -984,7 +992,7 @@ def fix() -> None:
         sys.exit(1)
 
     # Step 2: Find executable
-    console.print("  [bold][2/4] Detecting installation...[/bold]")
+    console.print("  [bold][2/5] Detecting installation...[/bold]")
     detected_path = get_executable_path()
     exe_cmd: Optional[str] = detected_path
     # Detect installation type
@@ -997,7 +1005,7 @@ def fix() -> None:
         console.print("        Type: system")
 
     # Step 3: Reinstall scheduler
-    console.print("  [bold][3/4] Reinstalling scheduler...[/bold]")
+    console.print("  [bold][3/5] Reinstalling scheduler...[/bold]")
     try:
         if is_macos():
             # Uninstall launchd jobs
@@ -1052,7 +1060,7 @@ def fix() -> None:
         sys.exit(1)
 
     # Step 4: Run sync
-    console.print("  [bold][4/4] Running sync...[/bold]")
+    console.print("  [bold][4/5] Running sync...[/bold]")
     try:
         if exe_cmd:
             result = subprocess.run(
@@ -1077,6 +1085,23 @@ def fix() -> None:
         console.print("        Sync: [red]TIMEOUT[/red]")
     except Exception as e:
         console.print(f"        Sync: [red]FAILED - {e}[/red]")
+
+    # Step 5: Shell completion
+    console.print("  [bold][5/5] Checking shell completion...[/bold]")
+    shell = detect_shell()
+    if shell and not is_windows():
+        if is_completion_installed(shell):
+            console.print("        Completion: [green]OK[/green]")
+        else:
+            success, msg = install_completion(shell)
+            if success:
+                console.print("        Completion: [green]INSTALLED[/green]")
+                console.print(f"        {msg}")
+            else:
+                console.print("        Completion: [yellow]SKIPPED[/yellow]")
+                console.print(f"        {msg}")
+    else:
+        console.print("        Completion: [dim]N/A (Windows or unsupported shell)[/dim]")
 
     console.print("\n  [green]Fix complete![/green]\n")
 
@@ -1178,6 +1203,15 @@ def update(yes: bool) -> None:
             )
         if result.returncode == 0:
             console.print(f"  [green]Successfully updated to version {latest_version}[/green]")
+
+            # Check/install shell completion after update
+            shell = detect_shell()
+            if shell and not is_windows():
+                if not is_completion_installed(shell):
+                    success, msg = install_completion(shell)
+                    if success:
+                        console.print(f"  Shell completion installed: {msg}")
+
             console.print("  Please restart the application to use the new version.\n")
         else:
             console.print(f"  [red]Update failed: {result.stderr}[/red]\n", highlight=False)
@@ -1361,6 +1395,37 @@ def validate(
         console.print()
 
     sys.exit(0 if results["valid"] else 1)
+
+
+# =============================================================================
+# SHELL COMPLETION
+# =============================================================================
+
+
+@main.command()
+@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
+def completion(shell: str) -> None:
+    """Generate shell completion script.
+
+    Output the completion script for your shell. To enable completions,
+    add the appropriate line to your shell configuration file.
+
+    Examples:
+
+    \b
+    # Bash - add to ~/.bashrc
+    eval "$(nextdns-blocker completion bash)"
+
+    \b
+    # Zsh - add to ~/.zshrc
+    eval "$(nextdns-blocker completion zsh)"
+
+    \b
+    # Fish - save to completions directory
+    nextdns-blocker completion fish > ~/.config/fish/completions/nextdns-blocker.fish
+    """
+    script = get_completion_script(shell)
+    click.echo(script)
 
 
 # =============================================================================
