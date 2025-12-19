@@ -7,6 +7,7 @@ Panic mode provides an emergency lockdown that:
 - Cannot be disabled (must wait for expiration)
 """
 
+import contextlib
 import logging
 import re
 from datetime import datetime, timedelta
@@ -53,6 +54,10 @@ def _get_panic_info() -> tuple[bool, Optional[datetime]]:
     Returns:
         Tuple of (is_panic_active, panic_until_datetime).
         If not active or error, returns (False, None).
+
+    Note:
+        Uses missing_ok=True for unlink to handle race conditions where
+        another process may have already cleaned up the file.
     """
     panic_file = get_panic_file()
     content = read_secure_file(panic_file)
@@ -63,13 +68,15 @@ def _get_panic_info() -> tuple[bool, Optional[datetime]]:
         panic_until = datetime.fromisoformat(content)
         if datetime.now() < panic_until:
             return True, panic_until
-        # Expired, clean up
-        panic_file.unlink(missing_ok=True)
+        # Expired, clean up (missing_ok handles race conditions)
+        with contextlib.suppress(OSError):
+            panic_file.unlink(missing_ok=True)
         return False, None
     except ValueError:
         # Invalid content, clean up
         logger.warning(f"Invalid panic file content, removing: {content[:50]}")
-        panic_file.unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            panic_file.unlink(missing_ok=True)
         return False, None
 
 

@@ -458,6 +458,8 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
         logger.info(f"Loaded domains from {config_file.name}")
     except json.JSONDecodeError as e:
         raise ConfigurationError(f"Invalid JSON in {config_file.name}: {e}")
+    except OSError as e:
+        raise ConfigurationError(f"Failed to read {config_file.name}: {e}")
 
     # Validate structure
     if not isinstance(config, dict):
@@ -512,9 +514,10 @@ def _load_timezone_setting(config_dir: Path) -> str:
             with open(config_file, encoding="utf-8") as f:
                 config_data = json.load(f)
             settings = config_data.get("settings", {})
-            if settings.get("timezone"):
-                return str(settings["timezone"])
-        except (json.JSONDecodeError, OSError):
+            timezone_value = settings.get("timezone")
+            if timezone_value and isinstance(timezone_value, str):
+                return str(timezone_value)
+        except (json.JSONDecodeError, OSError, TypeError, AttributeError):
             pass  # Fall through to env/default
 
     # Fall back to environment variable (legacy support)

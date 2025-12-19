@@ -79,7 +79,7 @@ def send_discord_notification(
     Send a Discord webhook notification for a block/unblock event.
 
     This function silently fails if:
-    - Notifications are disabled
+    - Notifications are disabled AND webhook_url is not explicitly provided
     - Webhook URL is not configured
     - Network request fails or times out
     - Rate limit exceeded (2 seconds between notifications)
@@ -87,12 +87,16 @@ def send_discord_notification(
     Args:
         domain: Domain name that was blocked/unblocked
         event_type: Either "block" or "unblock"
+        webhook_url: Optional explicit webhook URL. If provided, notifications
+                     are sent even if DISCORD_NOTIFICATIONS_ENABLED is not set.
     """
-    if not is_notifications_enabled():
-        return
-
+    # If webhook_url is explicitly passed, use it regardless of env setting
+    # Otherwise, check if notifications are enabled via environment
     if webhook_url is None:
+        if not is_notifications_enabled():
+            return
         webhook_url = get_webhook_url()
+
     if not webhook_url:
         logger.debug("Discord webhook URL not configured, skipping notification")
         return

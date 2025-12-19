@@ -284,22 +284,25 @@ class NextDNSClient:
         """
         url = f"{API_URL}{endpoint}"
 
+        # Validate HTTP method
+        method_upper = method.upper()
+        if method_upper not in ("GET", "POST", "DELETE", "PUT", "PATCH"):
+            logger.error(f"Unsupported HTTP method: {method}")
+            return None
+
         for attempt in range(self.retries + 1):
             # Apply rate limiting
             self._rate_limiter.acquire()
 
             try:
-                if method == "GET":
-                    response = requests.get(url, headers=self.headers, timeout=self.timeout)
-                elif method == "POST":
-                    response = requests.post(
-                        url, headers=self.headers, json=data, timeout=self.timeout
-                    )
-                elif method == "DELETE":
-                    response = requests.delete(url, headers=self.headers, timeout=self.timeout)
-                else:
-                    logger.error(f"Unsupported HTTP method: {method}")
-                    return None
+                # Use requests.request() for all methods to reduce code duplication
+                response = requests.request(
+                    method=method_upper,
+                    url=url,
+                    headers=self.headers,
+                    json=data if method_upper in ("POST", "PUT", "PATCH") else None,
+                    timeout=self.timeout,
+                )
 
                 response.raise_for_status()
 

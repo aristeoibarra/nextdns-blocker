@@ -1,5 +1,6 @@
 """Command-line interface for NextDNS Blocker using Click."""
 
+import contextlib
 import logging
 import sys
 from datetime import datetime, timedelta
@@ -117,6 +118,10 @@ def _get_pause_info() -> tuple[bool, Optional[datetime]]:
     Returns:
         Tuple of (is_paused, pause_until_datetime).
         If not paused or error, returns (False, None).
+
+    Note:
+        Uses missing_ok=True for unlink to handle race conditions where
+        another process may have already cleaned up the file.
     """
     pause_file = get_pause_file()
     content = read_secure_file(pause_file)
@@ -127,13 +132,15 @@ def _get_pause_info() -> tuple[bool, Optional[datetime]]:
         pause_until = datetime.fromisoformat(content)
         if datetime.now() < pause_until:
             return True, pause_until
-        # Expired, clean up
-        pause_file.unlink(missing_ok=True)
+        # Expired, clean up (missing_ok handles race conditions)
+        with contextlib.suppress(OSError):
+            pause_file.unlink(missing_ok=True)
         return False, None
     except ValueError:
         # Invalid content, clean up
         logger.warning(f"Invalid pause file content, removing: {content[:50]}")
-        pause_file.unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            pause_file.unlink(missing_ok=True)
         return False, None
 
 

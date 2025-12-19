@@ -4,7 +4,6 @@ import contextlib
 import logging
 import os
 import plistlib
-import random
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -32,6 +31,9 @@ logger = logging.getLogger(__name__)
 SUBPROCESS_TIMEOUT = safe_int(
     os.environ.get("NEXTDNS_SUBPROCESS_TIMEOUT"), 60, "NEXTDNS_SUBPROCESS_TIMEOUT"
 )
+
+# Cleanup interval in hours (run cleanup once per day)
+CLEANUP_INTERVAL_HOURS = 24
 
 # launchd constants for macOS
 LAUNCHD_SYNC_LABEL = "com.nextdns-blocker.sync"
@@ -83,13 +85,56 @@ def audit_log(action: str, detail: str = "") -> None:
     _base_audit_log(action, detail, prefix="WD")
 
 
+def _get_last_cleanup_file() -> Path:
+    """Get the path to the last cleanup timestamp file."""
+    return get_log_dir() / ".last_cleanup"
+
+
+def _should_run_cleanup() -> bool:
+    """
+    Check if cleanup should run based on time since last cleanup.
+
+    Uses a deterministic time-based approach instead of random chance.
+    Cleanup runs once per CLEANUP_INTERVAL_HOURS.
+
+    Returns:
+        True if cleanup should run, False otherwise.
+    """
+    cleanup_file = _get_last_cleanup_file()
+
+    try:
+        if cleanup_file.exists():
+            content = read_secure_file(cleanup_file)
+            if content:
+                last_cleanup = datetime.fromisoformat(content)
+                hours_since = (datetime.now() - last_cleanup).total_seconds() / 3600
+                if hours_since < CLEANUP_INTERVAL_HOURS:
+                    return False
+    except (ValueError, OSError):
+        pass  # If we can't read the file, run cleanup
+
+    return True
+
+
+def _mark_cleanup_done() -> None:
+    """Record that cleanup was just performed."""
+    cleanup_file = _get_last_cleanup_file()
+    with contextlib.suppress(OSError):
+        write_secure_file(cleanup_file, datetime.now().isoformat())
+
+
 # =============================================================================
 # DISABLED STATE MANAGEMENT
 # =============================================================================
 
 
 def is_disabled() -> bool:
-    """Check if watchdog is temporarily or permanently disabled."""
+    """
+    Check if watchdog is temporarily or permanently disabled.
+
+    Note:
+        Cleanup of expired files is handled safely to avoid race conditions.
+    """
     disabled_file = get_disabled_file()
     content = read_secure_file(disabled_file)
     if not content:
@@ -103,10 +148,12 @@ def is_disabled() -> bool:
         if datetime.now() < disabled_until:
             return True
 
-        # Expired, clean up
+        # Expired, clean up (safe cleanup handles race conditions)
         _remove_disabled_file()
         return False
     except ValueError:
+        # Invalid content, attempt cleanup
+        _remove_disabled_file()
         return False
 
 
@@ -908,9 +955,10 @@ def _process_pending_actions() -> None:
             except Exception as e:
                 logger.error(f"Error processing pending action {action_id}: {e}")
 
-    # Periodic cleanup of old actions
-    if random.random() < 0.01:  # ~1% chance per run
+    # Periodic cleanup of old actions (time-based, once per day)
+    if _should_run_cleanup():
         cleanup_old_actions(max_age_days=7)
+        _mark_cleanup_done()
 
 
 @watchdog_cli.command("check")
