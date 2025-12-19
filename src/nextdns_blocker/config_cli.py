@@ -26,6 +26,13 @@ console = Console(highlight=False)
 NEW_CONFIG_FILE = "config.json"
 CONFIG_VERSION = "1.0"
 
+# Safe editors whitelist for security (prevents arbitrary command execution)
+SAFE_EDITORS = frozenset({
+    "vim", "vi", "nvim", "nano", "emacs", "pico", "micro", "joe", "ne",
+    "code", "subl", "atom", "gedit", "kate", "notepad", "notepad++",
+    "sublime_text", "TextEdit", "open"
+})
+
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -74,7 +81,7 @@ def _parse_editor_command(editor: str) -> list[str]:
         List of command arguments safe for subprocess
 
     Raises:
-        ValueError: If editor command is empty or malformed
+        ValueError: If editor command is empty, malformed, or not in safe list
     """
     if not editor or not editor.strip():
         raise ValueError("Editor command cannot be empty")
@@ -83,8 +90,20 @@ def _parse_editor_command(editor: str) -> list[str]:
         parts = shlex.split(editor)
         if not parts:
             raise ValueError("Editor command cannot be empty")
+
+        # Validate that the base editor is in the safe list
+        base_editor = Path(parts[0]).name  # Get just the executable name
+        if base_editor not in SAFE_EDITORS:
+            raise ValueError(
+                f"Editor '{base_editor}' is not in the safe editors list. "
+                f"Allowed editors: {', '.join(sorted(SAFE_EDITORS))}"
+            )
+
         return parts
     except ValueError as e:
+        # Re-raise ValueError (includes our validation errors)
+        if "not in the safe editors list" in str(e) or "Editor command" in str(e):
+            raise
         # shlex.split can raise ValueError on malformed input (unclosed quotes)
         raise ValueError(f"Invalid editor command format: {e}")
 
@@ -100,11 +119,16 @@ def load_config_file(config_path: Path) -> dict[str, Any]:
         Parsed config dictionary
 
     Raises:
-        ConfigurationError: If file cannot be read or parsed
+        ConfigurationError: If file cannot be read, parsed, or has invalid structure
     """
     try:
         with open(config_path, encoding="utf-8") as f:
-            result: dict[str, Any] = json.load(f)
+            result = json.load(f)
+            # Validate that the result is a dictionary
+            if not isinstance(result, dict):
+                raise ConfigurationError(
+                    f"Invalid config format in {config_path.name}: expected object, got {type(result).__name__}"
+                )
             return result
     except json.JSONDecodeError as e:
         raise ConfigurationError(f"Invalid JSON in {config_path.name}: {e}")

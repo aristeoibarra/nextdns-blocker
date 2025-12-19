@@ -43,8 +43,12 @@ class ScheduleEvaluator:
         Raises:
             ValueError: If time format is invalid
         """
-        if not time_str or not isinstance(time_str, str):
-            raise ValueError(f"Invalid time format: {time_str}")
+        if time_str is None:
+            raise ValueError("Invalid time format: None")
+        if not isinstance(time_str, str):
+            raise ValueError(f"Invalid time format: expected string, got {type(time_str).__name__}")
+        if not time_str:
+            raise ValueError("Invalid time format: empty string")
 
         if ":" not in time_str:
             raise ValueError(f"Invalid time format: {time_str}")

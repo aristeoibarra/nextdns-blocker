@@ -336,12 +336,10 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
         delay_seconds = parse_unblock_delay_seconds(unblock_delay or "0")
 
         if delay_seconds and delay_seconds > 0 and not force:
-            # Create pending action - unblock_delay is guaranteed non-None here
-            # because delay_seconds > 0 only when unblock_delay is a valid delay string
-            if unblock_delay is None:  # pragma: no cover - defensive check
-                console.print("\n  [red]Error: Internal error - delay without delay string[/red]\n")
-                sys.exit(1)
-            action = create_pending_action(domain, unblock_delay, requested_by="cli")
+            # Create pending action
+            # Note: unblock_delay is guaranteed non-None here because delay_seconds > 0
+            # only when parse_unblock_delay_seconds returns a positive int from a valid string
+            action = create_pending_action(domain, unblock_delay, requested_by="cli")  # type: ignore[arg-type]
             if action:
                 send_discord_notification(
                     domain=f"{domain} (scheduled)",
@@ -484,11 +482,9 @@ def sync(
                             f"(delay: {domain_delay})[/yellow]"
                         )
                     else:
-                        # domain_delay is guaranteed non-None here because delay_seconds > 0
-                        if domain_delay is None:  # pragma: no cover - defensive check
-                            logger.error(f"Internal error: delay without delay string for {domain}")
-                            continue
-                        action = create_pending_action(domain, domain_delay, requested_by="sync")
+                        # Note: domain_delay is guaranteed non-None here because delay_seconds > 0
+                        # only when parse_unblock_delay_seconds returns a positive int from a valid string
+                        action = create_pending_action(domain, domain_delay, requested_by="sync")  # type: ignore[arg-type]
                         if action and verbose:
                             console.print(
                                 f"  [yellow]Scheduled unblock: {domain} ({domain_delay})[/yellow]"
@@ -1038,7 +1034,7 @@ def fix() -> None:
     console.print("  [bold][3/5] Reinstalling scheduler...[/bold]")
     try:
         if is_macos():
-            # Uninstall launchd jobs
+            # Uninstall launchd jobs with timeout protection
             subprocess.run(
                 [
                     "launchctl",
@@ -1047,6 +1043,7 @@ def fix() -> None:
                 ],
                 capture_output=True,
                 timeout=30,
+                check=False,  # Don't raise on non-zero exit
             )
             subprocess.run(
                 [
@@ -1056,18 +1053,21 @@ def fix() -> None:
                 ],
                 capture_output=True,
                 timeout=30,
+                check=False,
             )
         elif is_windows():
-            # Uninstall Windows Task Scheduler tasks
+            # Uninstall Windows Task Scheduler tasks with timeout protection
             subprocess.run(
                 ["schtasks", "/delete", "/tn", WINDOWS_TASK_SYNC_NAME, "/f"],
                 capture_output=True,
                 timeout=30,
+                check=False,
             )
             subprocess.run(
                 ["schtasks", "/delete", "/tn", WINDOWS_TASK_WATCHDOG_NAME, "/f"],
                 capture_output=True,
                 timeout=30,
+                check=False,
             )
 
         # Use the watchdog install command

@@ -285,6 +285,9 @@ def validate_url(url: str) -> bool:
     # Validate port range if present
     port_str = match.group(1)
     if port_str:
+        # Reject leading zeros (could indicate octal in some contexts)
+        if len(port_str) > 1 and port_str.startswith("0"):
+            return False
         port = int(port_str)
         if port < 1 or port > 65535:
             return False

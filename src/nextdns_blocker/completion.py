@@ -1,5 +1,6 @@
 """Shell completion functions for CLI commands."""
 
+import json
 import logging
 import os
 import subprocess
@@ -68,9 +69,10 @@ def complete_blocklist_domains(
 
         return completions
 
-    except Exception:
-        # Silently fail - completion errors shouldn't break the CLI
-        logger.debug("Failed to load domains for completion", exc_info=True)
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
+        # Log at warning level so users know completion may not work
+        # but don't break CLI operation
+        logger.warning(f"Failed to load domains for completion: {e}")
         return []
 
 
@@ -123,8 +125,8 @@ def complete_allowlist_domains(
 
         return completions
 
-    except Exception:
-        logger.debug("Failed to load allowlist for completion", exc_info=True)
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.warning(f"Failed to load allowlist for completion: {e}")
         return []
 
 
@@ -167,8 +169,8 @@ def complete_pending_action_ids(
 
         return completions
 
-    except Exception:
-        logger.debug("Failed to load pending actions for completion", exc_info=True)
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.warning(f"Failed to load pending actions for completion: {e}")
         return []
 
 

@@ -65,7 +65,11 @@ def _block_all_domains() -> int:
 
         return len(blocked_domains)
 
-    except Exception as e:
+    except (OSError, KeyError, TypeError, ValueError) as e:
+        # Handle specific exceptions that might occur during blocking:
+        # - OSError: Network/file system errors
+        # - KeyError: Missing config keys
+        # - TypeError/ValueError: Data format issues
         console.print(f"  [yellow]Warning: Could not block all domains: {e}[/yellow]")
         return len(blocked_domains)
 

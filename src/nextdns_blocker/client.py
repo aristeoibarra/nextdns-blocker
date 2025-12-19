@@ -24,16 +24,16 @@ API_URL = "https://api.nextdns.io"
 # Rate limiting and backoff settings (configurable via environment variables)
 # Minimum bounds enforced to prevent misconfiguration
 _raw_rate_limit_requests = safe_int(os.environ.get("RATE_LIMIT_REQUESTS"), 30)
-RATE_LIMIT_REQUESTS = max(1, _raw_rate_limit_requests)  # Min 1 request per window
+RATE_LIMIT_REQUESTS = min(1000, max(1, _raw_rate_limit_requests))  # 1-1000 requests per window
 
 _raw_rate_limit_window = safe_int(os.environ.get("RATE_LIMIT_WINDOW"), 60)
-RATE_LIMIT_WINDOW = max(1, _raw_rate_limit_window)  # Min 1 second window
+RATE_LIMIT_WINDOW = min(3600, max(1, _raw_rate_limit_window))  # 1-3600 seconds window
 
 BACKOFF_BASE = 1.0  # Base delay for exponential backoff (seconds)
 BACKOFF_MAX = 30.0  # Maximum backoff delay (seconds)
 
 _raw_cache_ttl = safe_int(os.environ.get("CACHE_TTL"), 60)
-CACHE_TTL = max(1, _raw_cache_ttl)  # Min 1 second TTL to prevent cache thrashing
+CACHE_TTL = min(3600, max(1, _raw_cache_ttl))  # 1-3600 seconds TTL
 
 logger = logging.getLogger(__name__)
 
@@ -139,17 +139,21 @@ class DomainCache:
         self._timestamp: float = 0
         self._lock = threading.Lock()
 
+    def _is_valid_unlocked(self) -> bool:
+        """Check if cache is still valid (internal, must hold lock)."""
+        return (
+            self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl
+        )
+
     def is_valid(self) -> bool:
         """Check if cache is still valid."""
         with self._lock:
-            return (
-                self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl
-            )
+            return self._is_valid_unlocked()
 
     def get(self) -> Optional[list[dict[str, Any]]]:
         """Get cached data if valid."""
         with self._lock:
-            if self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl:
+            if self._is_valid_unlocked():
                 return self._data
             return None
 
@@ -272,9 +276,9 @@ class NextDNSClient:
         return {"X-Api-Key": self._api_key, "Content-Type": "application/json"}
 
     def _redacted_headers(self) -> dict[str, str]:
-        """Return headers with API key redacted for safe logging."""
+        """Return headers with API key fully redacted for safe logging."""
         return {
-            "X-Api-Key": f"{self._api_key[:4]}...{self._api_key[-4:]}" if len(self._api_key) > 8 else "***",
+            "X-Api-Key": "***REDACTED***",
             "Content-Type": "application/json",
         }
 
