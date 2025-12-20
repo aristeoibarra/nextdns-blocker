@@ -30,6 +30,16 @@ skip_on_windows = pytest.mark.skipif(
 )
 
 
+def _get_home_env_vars() -> dict[str, str]:
+    """Get environment variables needed for Path.home() to work on all platforms."""
+    home_vars = {}
+    # Windows needs these for Path.home()
+    for var in ("USERPROFILE", "HOMEDRIVE", "HOMEPATH", "HOME"):
+        if var in os.environ:
+            home_vars[var] = os.environ[var]
+    return home_vars
+
+
 class TestValidateApiCredentials:
     """Tests for validate_api_credentials function."""
 
@@ -280,6 +290,7 @@ class TestRunNonInteractive:
             "NEXTDNS_API_KEY": "testkey12345",
             "NEXTDNS_PROFILE_ID": "testprofile",
             "TIMEZONE": "UTC",
+            **_get_home_env_vars(),
         }
 
         with patch.dict(os.environ, env, clear=True):
@@ -864,6 +875,7 @@ class TestNonInteractiveEdgeCases:
         env = {
             "NEXTDNS_API_KEY": "testkey12345",
             "NEXTDNS_PROFILE_ID": "testprofile",
+            **_get_home_env_vars(),
         }
 
         with patch.dict(os.environ, env, clear=True):
@@ -886,6 +898,7 @@ class TestNonInteractiveEdgeCases:
         env = {
             "NEXTDNS_API_KEY": "testkey12345",
             "NEXTDNS_PROFILE_ID": "testprofile",
+            **_get_home_env_vars(),
         }
 
         with patch.dict(os.environ, env, clear=True):
