@@ -374,8 +374,10 @@ def install_completion(shell: str) -> tuple[bool, str]:
 
     except PermissionError:
         return False, f"Permission denied: {rc_file}"
-    except Exception as e:
+    except OSError as e:
         return False, f"Failed to install: {e}"
+    except (UnicodeDecodeError, UnicodeEncodeError) as e:
+        return False, f"Encoding error during install: {e}"
 
 
 def uninstall_completion(shell: str) -> tuple[bool, str]:
@@ -419,5 +421,9 @@ def uninstall_completion(shell: str) -> tuple[bool, str]:
         rc_file.write_text("".join(new_lines), encoding="utf-8")
         return True, f"Removed from {rc_file}"
 
-    except Exception as e:
+    except PermissionError:
+        return False, f"Permission denied: {rc_file}"
+    except OSError as e:
         return False, f"Failed to remove: {e}"
+    except (UnicodeDecodeError, UnicodeEncodeError) as e:
+        return False, f"Encoding error during removal: {e}"

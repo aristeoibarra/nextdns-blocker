@@ -2,6 +2,7 @@
 
 import contextlib
 import json
+import logging
 import os
 import shlex
 import shutil
@@ -16,6 +17,8 @@ from rich.console import Console
 from .common import audit_log
 from .config import get_config_dir
 from .exceptions import ConfigurationError
+
+logger = logging.getLogger(__name__)
 
 console = Console(highlight=False)
 
@@ -169,9 +172,7 @@ def save_config_file(config_path: Path, config: dict[str, Any]) -> None:
         Path(temp_path).replace(config_path)
     except (OSError, TypeError, ValueError) as e:
         # Clean up temp file on error
-        # Log the error for debugging purposes
-        import logging
-        logging.getLogger(__name__).debug(f"Failed to save config file: {e}")
+        logger.debug(f"Failed to save config file: {e}")
         with contextlib.suppress(OSError):
             Path(temp_path).unlink()
         raise
@@ -291,10 +292,8 @@ def cmd_show(config_dir: Optional[Path], output_json: bool) -> None:
             console.print(f"  [bold]Allowlist:[/bold] {len(allowlist)} domains\n")
 
     except ConfigurationError as e:
+        # Note: load_config_file() already converts JSONDecodeError to ConfigurationError
         console.print(f"\n  [red]Config error: {e}[/red]\n")
-        sys.exit(1)
-    except json.JSONDecodeError as e:
-        console.print(f"\n  [red]JSON error: {e}[/red]\n")
         sys.exit(1)
 
 

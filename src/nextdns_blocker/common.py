@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import stat
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import IO, Any, Optional
@@ -35,8 +36,6 @@ try:
             TimeoutError: If timeout is reached while waiting for lock
             OSError: If lock acquisition fails for other reasons
         """
-        import time
-
         lock_type = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
 
         if timeout is None:
@@ -357,7 +356,7 @@ def safe_int(value: Optional[str], default: int, name: str = "value") -> int:
         Converted integer or default value
 
     Raises:
-        ConfigurationError: If value is not a valid positive integer
+        ConfigurationError: If value is not a valid non-negative integer
     """
     from .exceptions import ConfigurationError
 
@@ -367,7 +366,7 @@ def safe_int(value: Optional[str], default: int, name: str = "value") -> int:
     try:
         result = int(value)
         if result < 0:
-            raise ConfigurationError(f"{name} must be a positive integer, got: {value}")
+            raise ConfigurationError(f"{name} must be a non-negative integer, got: {value}")
         return result
     except ValueError:
         raise ConfigurationError(f"{name} must be a valid integer, got: {value}")
@@ -488,5 +487,6 @@ def read_secure_file(path: Path) -> Optional[str]:
                 return f.read().strip()
             finally:
                 _unlock_file(f)
-    except OSError:
+    except OSError as e:
+        logger.debug(f"Failed to read secure file {path}: {e}")
         return None

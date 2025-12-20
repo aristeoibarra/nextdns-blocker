@@ -7,7 +7,6 @@ Panic mode provides an emergency lockdown that:
 - Cannot be disabled (must wait for expiration)
 """
 
-import contextlib
 import logging
 import re
 from datetime import datetime, timedelta
@@ -74,15 +73,13 @@ def _get_panic_info() -> tuple[bool, Optional[datetime]]:
         panic_until = ensure_naive_datetime(datetime.fromisoformat(content))
         if datetime.now() < panic_until:
             return True, panic_until
-        # Expired, clean up (missing_ok handles race conditions)
-        with contextlib.suppress(OSError):
-            panic_file.unlink(missing_ok=True)
+        # Expired, clean up
+        panic_file.unlink(missing_ok=True)
         return False, None
     except ValueError:
         # Invalid content, clean up
         logger.warning(f"Invalid panic file content, removing: {content[:50]}")
-        with contextlib.suppress(OSError):
-            panic_file.unlink(missing_ok=True)
+        panic_file.unlink(missing_ok=True)
         return False, None
 
 

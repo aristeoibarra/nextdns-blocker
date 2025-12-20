@@ -1,9 +1,9 @@
 """Interactive initialization wizard for NextDNS Blocker."""
 
+import json
 import logging
 import os
 import subprocess
-import time
 from pathlib import Path
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -11,9 +11,9 @@ from zoneinfo import ZoneInfo
 import click
 import requests
 
-from .common import SECURE_FILE_MODE, get_log_dir
+from .common import get_log_dir, write_secure_file
 from .completion import detect_shell, install_completion
-from .config import get_config_dir
+from .config import DEFAULT_TIMEOUT, get_config_dir
 from .platform_utils import (
     get_executable_args,
     get_executable_path,
@@ -23,6 +23,9 @@ from .platform_utils import (
 from .watchdog import _build_task_command
 
 logger = logging.getLogger(__name__)
+
+# Timeout for subprocess commands during init (seconds)
+INIT_SUBPROCESS_TIMEOUT = 30
 
 # NextDNS API base URL for validation
 NEXTDNS_API_URL = "https://api.nextdns.io"
@@ -43,7 +46,7 @@ def validate_api_credentials(api_key: str, profile_id: str) -> tuple[bool, str]:
         response = requests.get(
             f"{NEXTDNS_API_URL}/profiles/{profile_id}/denylist",
             headers={"X-Api-Key": api_key},
-            timeout=10,
+            timeout=DEFAULT_TIMEOUT,
         )
 
         if response.status_code == 200:
@@ -112,12 +115,14 @@ def detect_system_timezone() -> str:
                 for marker in ("zoneinfo/", "zoneinfo.default/"):
                     if marker in target:
                         tz_name = target.split(marker)[-1]
-                        ZoneInfo(tz_name)
-                        return tz_name
+                        try:
+                            ZoneInfo(tz_name)
+                            return tz_name
+                        except KeyError:
+                            logger.debug(f"Timezone '{tz_name}' from /etc/localtime is not valid")
+                            # Continue to try next marker or fallback
         except OSError as e:
             logger.debug(f"Could not read /etc/localtime symlink: {e}")
-        except KeyError:
-            logger.debug(f"Timezone '{tz_name}' from /etc/localtime is not valid")
 
     # Try Windows tzutil command
     if is_windows():
@@ -191,22 +196,8 @@ NEXTDNS_API_KEY={api_key}
 NEXTDNS_PROFILE_ID={profile_id}
 """
 
-    # Write with secure permissions
-    fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECURE_FILE_MODE)
-    fd_closed = False
-    try:
-        # os.fdopen takes ownership of fd - it will close it when the file object closes
-        f = os.fdopen(fd, "w")
-        fd_closed = True  # fd is now owned by f
-        try:
-            f.write(content)
-        finally:
-            f.close()
-    except OSError:
-        # Only close fd if os.fdopen failed (fd not yet owned by file object)
-        if not fd_closed:
-            os.close(fd)
-        raise
+    # Write with secure permissions (0o600)
+    write_secure_file(env_file, content)
 
     return env_file
 
@@ -222,8 +213,6 @@ def create_config_file(config_dir: Path, timezone: str) -> Path:
     Returns:
         Path to created config.json file
     """
-    import json
-
     config_dir.mkdir(parents=True, exist_ok=True)
 
     config_file = config_dir / "config.json"
@@ -239,7 +228,8 @@ def create_config_file(config_dir: Path, timezone: str) -> Path:
         "allowlist": [],
     }
 
-    config_file.write_text(json.dumps(config, indent=2) + "\n")
+    # Use write_secure_file for consistent secure permissions (0o600)
+    write_secure_file(config_file, json.dumps(config, indent=2) + "\n")
     return config_file
 
 
@@ -318,12 +308,12 @@ def _install_launchd() -> tuple[bool, str]:
         subprocess.run(
             ["launchctl", "unload", str(sync_plist_path)],
             capture_output=True,
-            timeout=30,
+            timeout=INIT_SUBPROCESS_TIMEOUT,
         )
         subprocess.run(
             ["launchctl", "unload", str(watchdog_plist_path)],
             capture_output=True,
-            timeout=30,
+            timeout=INIT_SUBPROCESS_TIMEOUT,
         )
 
         # Load jobs
@@ -331,13 +321,13 @@ def _install_launchd() -> tuple[bool, str]:
             ["launchctl", "load", str(sync_plist_path)],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=INIT_SUBPROCESS_TIMEOUT,
         )
         result_wd = subprocess.run(
             ["launchctl", "load", str(watchdog_plist_path)],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=INIT_SUBPROCESS_TIMEOUT,
         )
 
         if result_sync.returncode == 0 and result_wd.returncode == 0:
@@ -345,6 +335,8 @@ def _install_launchd() -> tuple[bool, str]:
         else:
             return False, "Failed to load launchd jobs"
 
+    except subprocess.TimeoutExpired:
+        return False, "launchd command timed out"
     except (OSError, subprocess.SubprocessError) as e:
         return False, f"launchd error: {e}"
 
@@ -368,7 +360,7 @@ def _install_cron() -> tuple[bool, str]:
             ["crontab", "-l"],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=INIT_SUBPROCESS_TIMEOUT,
         )
         current_crontab = result.stdout if result.returncode == 0 else ""
 
@@ -389,7 +381,7 @@ def _install_cron() -> tuple[bool, str]:
             input=new_crontab,
             text=True,
             capture_output=True,
-            timeout=30,
+            timeout=INIT_SUBPROCESS_TIMEOUT,
         )
 
         if result.returncode == 0:
@@ -397,6 +389,8 @@ def _install_cron() -> tuple[bool, str]:
         else:
             return False, "Failed to set crontab"
 
+    except subprocess.TimeoutExpired:
+        return False, "cron command timed out"
     except (OSError, subprocess.SubprocessError) as e:
         return False, f"cron error: {e}"
 
@@ -418,12 +412,12 @@ def _install_windows_task() -> tuple[bool, str]:
         subprocess.run(
             ["schtasks", "/delete", "/tn", sync_task_name, "/f"],
             capture_output=True,
-            timeout=30,
+            timeout=INIT_SUBPROCESS_TIMEOUT,
         )
         subprocess.run(
             ["schtasks", "/delete", "/tn", watchdog_task_name, "/f"],
             capture_output=True,
-            timeout=30,
+            timeout=INIT_SUBPROCESS_TIMEOUT,
         )
 
         # Create sync task (every 2 minutes)
@@ -445,7 +439,7 @@ def _install_windows_task() -> tuple[bool, str]:
             ],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=INIT_SUBPROCESS_TIMEOUT,
         )
 
         # Create watchdog task (every 1 minute)
@@ -467,7 +461,7 @@ def _install_windows_task() -> tuple[bool, str]:
             ],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=INIT_SUBPROCESS_TIMEOUT,
         )
 
         if result_sync.returncode == 0 and result_wd.returncode == 0:
@@ -476,6 +470,8 @@ def _install_windows_task() -> tuple[bool, str]:
             error_msg = result_sync.stderr or result_wd.stderr or "Unknown error"
             return False, f"Failed to create scheduled tasks: {error_msg}"
 
+    except subprocess.TimeoutExpired:
+        return False, "Task Scheduler command timed out"
     except (OSError, subprocess.SubprocessError) as e:
         return False, f"Task Scheduler error: {e}"
 
@@ -546,16 +542,12 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
         click.echo(click.style(f"\n  Error: {msg}\n", fg="red"))
         return False
 
-    time.sleep(0.3)
-
     # Determine config directory
     config_dir = get_config_dir(config_dir_override)
 
     # Auto-detect timezone
     timezone = detect_system_timezone()
     click.echo(f"  Timezone detected: {timezone}")
-
-    time.sleep(0.3)
 
     # Create .env file (credentials only)
     click.echo()
@@ -570,8 +562,6 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
     else:
         click.echo(f"  Existing config.json found: {config_file}")
 
-    time.sleep(0.4)
-
     # Install scheduling (launchd/cron)
     click.echo()
     click.echo("  Installing scheduling...")
@@ -585,8 +575,6 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
         click.echo(click.style(f"  Warning: {sched_type}", fg="yellow"))
         click.echo("  You can install manually with: nextdns-blocker watchdog install")
 
-    time.sleep(0.3)
-
     # Run initial sync
     click.echo()
     click.echo("  Running initial sync... ", nl=False)
@@ -595,8 +583,6 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
     else:
         click.echo(click.style("FAILED", fg="yellow"))
         click.echo("  You can run manually: nextdns-blocker sync")
-
-    time.sleep(0.3)
 
     # Install shell completion
     shell = detect_shell()
@@ -617,8 +603,6 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
             click.echo(click.style("SKIPPED", fg="yellow"))
             click.echo(f"    {msg}")
             click.echo("    You can install manually: nextdns-blocker completion --help")
-
-    time.sleep(0.5)
 
     # Success message
     click.echo()

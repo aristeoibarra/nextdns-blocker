@@ -3,10 +3,10 @@
 import json
 import logging
 import os
+import random
 import threading
+import time
 from collections import deque
-from datetime import datetime
-from time import sleep
 from typing import Any, Optional
 
 import requests
@@ -68,6 +68,9 @@ class RateLimiter:
         """
         Acquire permission to make a request, waiting if necessary.
 
+        Uses time.monotonic() for accurate interval measurement that is not
+        affected by system clock changes.
+
         Args:
             timeout: Maximum time to wait in seconds (None for no timeout)
 
@@ -78,11 +81,11 @@ class RateLimiter:
             TimeoutError: If timeout is reached while waiting for rate limit
         """
         total_waited = 0.0
-        deadline = None if timeout is None else datetime.now().timestamp() + timeout
+        deadline = None if timeout is None else time.monotonic() + timeout
 
         with self._condition:
             while True:
-                now = datetime.now().timestamp()
+                now = time.monotonic()
 
                 # Check if we've exceeded the timeout
                 if deadline is not None and now >= deadline:
@@ -113,10 +116,10 @@ class RateLimiter:
 
                 # Wait with Condition - releases lock during wait, reacquires before returning
                 # This is thread-safe: other threads can check/modify while we wait
-                wait_start = datetime.now().timestamp()
+                wait_start = time.monotonic()
                 self._condition.wait(timeout=wait_time)
                 # Track actual time waited (handles spurious wakeups correctly)
-                actual_waited = datetime.now().timestamp() - wait_start
+                actual_waited = time.monotonic() - wait_start
                 total_waited += actual_waited
 
 
@@ -126,7 +129,11 @@ class RateLimiter:
 
 
 class DomainCache:
-    """Thread-safe cache class for domain lists to reduce API calls."""
+    """Thread-safe cache class for domain lists to reduce API calls.
+
+    Uses time.monotonic() for cache expiration to ensure accurate timing
+    that is not affected by system clock changes.
+    """
 
     def __init__(self, ttl: int = CACHE_TTL) -> None:
         """
@@ -143,9 +150,7 @@ class DomainCache:
 
     def _is_valid_unlocked(self) -> bool:
         """Check if cache is still valid (internal, must hold lock)."""
-        return (
-            self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl
-        )
+        return self._data is not None and (time.monotonic() - self._timestamp) < self.ttl
 
     def is_valid(self) -> bool:
         """Check if cache is still valid."""
@@ -163,8 +168,11 @@ class DomainCache:
         """Update cache with new data."""
         with self._lock:
             self._data = data
-            self._domains = {entry.get("id", "") for entry in data}
-            self._timestamp = datetime.now().timestamp()
+            # Filter out entries without valid id to prevent false positives
+            self._domains = {
+                entry.get("id") for entry in data if entry.get("id")
+            }
+            self._timestamp = time.monotonic()
 
     def contains(self, domain: str) -> Optional[bool]:
         """
@@ -186,7 +194,7 @@ class DomainCache:
             None if cache is invalid/expired and lookup cannot be performed
         """
         with self._lock:
-            if self._data is None or (datetime.now().timestamp() - self._timestamp) >= self.ttl:
+            if self._data is None or (time.monotonic() - self._timestamp) >= self.ttl:
                 return None
             return domain in self._domains
 
@@ -318,16 +326,21 @@ class NextDNSClient:
 
     def _calculate_backoff(self, attempt: int) -> float:
         """
-        Calculate exponential backoff delay.
+        Calculate exponential backoff delay with jitter.
+
+        Uses "full jitter" strategy to prevent thundering herd problem
+        when multiple clients retry simultaneously.
 
         Args:
             attempt: Current attempt number (0-indexed)
 
         Returns:
-            Delay in seconds
+            Delay in seconds (with random jitter between 0 and calculated delay)
         """
         delay = BACKOFF_BASE * (2**attempt)
-        return float(min(delay, BACKOFF_MAX))
+        capped_delay = min(delay, BACKOFF_MAX)
+        # Full jitter: random value between 0 and capped_delay
+        return random.uniform(0, capped_delay)
 
     def request(
         self, method: str, endpoint: str, data: Optional[dict[str, Any]] = None
@@ -347,9 +360,11 @@ class NextDNSClient:
 
         # Validate HTTP method
         method_upper = method.upper()
-        if method_upper not in ("GET", "POST", "DELETE", "PUT", "PATCH"):
-            logger.error(f"Unsupported HTTP method: {method}")
-            return None
+        valid_methods = ("GET", "POST", "DELETE", "PUT", "PATCH")
+        if method_upper not in valid_methods:
+            raise ValueError(
+                f"Unsupported HTTP method: {method}. Valid methods: {', '.join(valid_methods)}"
+            )
 
         for attempt in range(self.retries + 1):
             # Apply rate limiting
@@ -403,7 +418,7 @@ class NextDNSClient:
                         f"Request timeout for {method} {endpoint}, "
                         f"retry {attempt + 1}/{self.retries} after {backoff:.1f}s"
                     )
-                    sleep(backoff)
+                    time.sleep(backoff)
                     continue
                 logger.error(f"API timeout after {self.retries} retries: {method} {endpoint}")
                 return None
@@ -418,7 +433,7 @@ class NextDNSClient:
                             f"HTTP {status_code} for {method} {endpoint}, "
                             f"retry {attempt + 1}/{self.retries} after {backoff:.1f}s"
                         )
-                        sleep(backoff)
+                        time.sleep(backoff)
                         continue
                 logger.error(f"API HTTP error for {method} {endpoint}: {e}")
                 return None
@@ -429,7 +444,7 @@ class NextDNSClient:
                         f"Request error for {method} {endpoint}, "
                         f"retry {attempt + 1}/{self.retries} after {backoff:.1f}s"
                     )
-                    sleep(backoff)
+                    time.sleep(backoff)
                     continue
                 logger.error(f"API request error for {method} {endpoint}: {e}")
                 return None

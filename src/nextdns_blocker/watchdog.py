@@ -4,6 +4,7 @@ import contextlib
 import logging
 import os
 import plistlib
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -83,8 +84,6 @@ def _escape_shell_path(path: str) -> str:
     Returns:
         Shell-escaped path safe for use in cron/shell commands
     """
-    import shlex
-
     return shlex.quote(path)
 
 
@@ -701,9 +700,25 @@ def _run_sync_after_restore() -> None:
     """Run sync command after restoring scheduled jobs."""
     try:
         exe_args = get_executable_args()
-        subprocess.run(exe_args + ["sync"], timeout=SUBPROCESS_TIMEOUT)
-    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+        result = subprocess.run(
+            exe_args + ["sync"],
+            timeout=SUBPROCESS_TIMEOUT,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            logger.info("Sync completed successfully after restore")
+        else:
+            logger.warning(
+                f"Sync after restore exited with code {result.returncode}: "
+                f"{result.stderr.strip() if result.stderr else 'no error output'}"
+            )
+    except subprocess.TimeoutExpired:
+        logger.warning(f"Sync after restore timed out after {SUBPROCESS_TIMEOUT}s")
+    except OSError as e:
         logger.warning(f"Failed to run sync after restore: {e}")
+    except subprocess.SubprocessError as e:
+        logger.warning(f"Subprocess error running sync after restore: {e}")
 
 
 # =============================================================================
@@ -1008,8 +1023,15 @@ def _process_pending_actions() -> None:
         action_id = action.get("id")
         action_type = action.get("action")
 
-        if domain is None or action_id is None or action_type is None:
-            logger.warning(f"Skipping malformed pending action: {action}")
+        # Validate required fields with proper type checking
+        if not isinstance(domain, str) or not domain:
+            logger.warning(f"Skipping action with invalid domain: {action}")
+            continue
+        if not isinstance(action_id, str) or not action_id:
+            logger.warning(f"Skipping action with invalid id: {action}")
+            continue
+        if action_type is None:
+            logger.warning(f"Skipping action with missing type: {action}")
             continue
 
         if action_type == "unblock":

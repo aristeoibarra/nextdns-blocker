@@ -3,6 +3,7 @@
 import logging
 import os
 import threading
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -42,11 +43,14 @@ class _NotificationRateLimiter:
         """
         Check if we can send a notification based on rate limiting.
 
+        Uses time.monotonic() for accurate interval measurement that is not
+        affected by system clock changes.
+
         Returns:
             True if notification can be sent, False if rate limited
         """
         with self._lock:
-            now = datetime.now().timestamp()
+            now = time.monotonic()
             if now - self._last_notification_time < self._min_interval:
                 return False
             self._last_notification_time = now
@@ -179,10 +183,9 @@ def send_discord_notification(
         # JSON serialization or payload construction errors
         logger.warning(f"Discord notification payload error for {event_type}: {domain} - {e}")
     except Exception as e:
-        # Catch any other unexpected errors to ensure silent failure
-        # Log as error with exception type to help debugging
+        # Catch any other Exception subclass (but not BaseException like KeyboardInterrupt/SystemExit)
+        # to ensure silent failure for notification errors
         logger.error(
             f"Unexpected error sending Discord notification for {event_type}: {domain} - "
-            f"{type(e).__name__}: {e}",
-            exc_info=True,  # Include traceback for debugging unexpected errors
+            f"{type(e).__name__}: {e}"
         )

@@ -465,11 +465,15 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
         raise ConfigurationError("Config must be a JSON object with 'blocklist' array")
 
     domains = config.get("blocklist", [])
+    if not isinstance(domains, list):
+        raise ConfigurationError("'blocklist' must be an array")
     if not domains:
         raise ConfigurationError("No domains configured (missing 'blocklist' array)")
 
     # Load allowlist (optional, defaults to empty)
     allowlist = config.get("allowlist", [])
+    if not isinstance(allowlist, list):
+        raise ConfigurationError("'allowlist' must be an array")
 
     # Validate each domain in denylist
     all_errors: list[str] = []
@@ -526,8 +530,6 @@ def _load_timezone_setting(config_dir: Path) -> str:
             logger.debug(f"Could not parse timezone from config.json: {e}")
         except OSError as e:
             logger.debug(f"Could not read config.json for timezone: {e}")
-        except (TypeError, AttributeError) as e:
-            logger.debug(f"Invalid config.json structure for timezone: {e}")
 
     # Fall back to environment variable (legacy support)
     env_tz = os.getenv("TIMEZONE")
@@ -578,7 +580,11 @@ def _load_env_file(env_file: Path) -> None:
                 continue
 
             # Parse and validate value
-            parsed_value = parse_env_value(value)
+            try:
+                parsed_value = parse_env_value(value)
+            except ValueError as e:
+                logger.warning(f".env line {line_num}: {e}, skipping")
+                continue
 
             # Check for null bytes (security issue)
             if "\x00" in parsed_value:
@@ -650,11 +656,11 @@ def _validate_timezone(timezone: str) -> None:
     """
     try:
         ZoneInfo(timezone)
-    except KeyError:
+    except KeyError as e:
         raise ConfigurationError(
             f"Invalid TIMEZONE '{timezone}'. "
             f"See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
-        )
+        ) from e
 
 
 def _validate_optional_webhook(config: dict[str, Any]) -> None:

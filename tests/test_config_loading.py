@@ -263,7 +263,7 @@ class TestSafeInt:
         """Test negative number raises ConfigurationError."""
         with pytest.raises(ConfigurationError) as exc_info:
             safe_int("-5", 0, "TEST_VAR")
-        assert "positive integer" in str(exc_info.value)
+        assert "non-negative integer" in str(exc_info.value)
 
     def test_safe_int_zero_valid(self):
         """Test zero is valid."""

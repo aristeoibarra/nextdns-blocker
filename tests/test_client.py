@@ -55,7 +55,7 @@ class TestGetDenylist:
         assert result == []
 
     @responses.activate
-    @patch("nextdns_blocker.client.sleep")
+    @patch("nextdns_blocker.client.time.sleep")
     def test_get_denylist_timeout(self, mock_sleep, client):
         # All retry attempts timeout
         for _ in range(4):
@@ -206,7 +206,7 @@ class TestRequestRetry:
     """Tests for retry logic in request method."""
 
     @responses.activate
-    @patch("nextdns_blocker.client.sleep")
+    @patch("nextdns_blocker.client.time.sleep")
     def test_retry_on_timeout(self, mock_sleep, client):
         # First two calls timeout, third succeeds
         responses.add(
@@ -232,7 +232,7 @@ class TestRequestRetry:
         assert mock_sleep.call_count == 2
 
     @responses.activate
-    @patch("nextdns_blocker.client.sleep")
+    @patch("nextdns_blocker.client.time.sleep")
     def test_max_retries_exceeded(self, mock_sleep, client):
         # All calls timeout (1 original + 3 retries = 4 total)
         for _ in range(4):
@@ -485,10 +485,12 @@ class TestRateLimiter:
 
     def test_expired_requests_cleaned(self):
         """Expired requests are removed from the window."""
+        import time
+
         limiter = RateLimiter(max_requests=2, window_seconds=60)
 
-        # Add old timestamp (expired)
-        old_time = datetime.now().timestamp() - 120  # 2 minutes ago
+        # Add old timestamp (expired) - using time.monotonic() since that's what RateLimiter uses
+        old_time = time.monotonic() - 120  # 2 minutes ago
         limiter._requests = deque([old_time])
 
         # acquire() should clean up expired and allow request
@@ -500,9 +502,11 @@ class TestRateLimiter:
 
     def test_sliding_window_behavior(self):
         """Rate limiter uses sliding window correctly."""
+        import time
+
         limiter = RateLimiter(max_requests=3, window_seconds=60)
 
-        now = datetime.now().timestamp()
+        now = time.monotonic()
 
         # Simulate 2 requests from 30 seconds ago (still valid)
         limiter._requests = deque([now - 30, now - 25])

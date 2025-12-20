@@ -23,8 +23,8 @@ class ScheduleEvaluator:
         """
         try:
             self.tz = ZoneInfo(timezone_str)
-        except KeyError:
-            raise ValueError(f"Invalid timezone: {timezone_str}")
+        except KeyError as e:
+            raise ValueError(f"Invalid timezone: {timezone_str}") from e
 
     def _get_current_time(self) -> datetime:
         """Get current time in the configured timezone."""
@@ -43,6 +43,7 @@ class ScheduleEvaluator:
         Raises:
             ValueError: If time format is invalid
         """
+        # Validate input type and presence
         if time_str is None:
             raise ValueError("Invalid time format: None")
         if not isinstance(time_str, str):
@@ -50,28 +51,30 @@ class ScheduleEvaluator:
         if not time_str:
             raise ValueError("Invalid time format: empty string")
 
+        # Validate format before splitting
         if ":" not in time_str:
             raise ValueError(f"Invalid time format: {time_str}")
 
-        try:
-            parts = time_str.split(":")
-            if len(parts) != 2:
-                raise ValueError(f"Invalid time format: {time_str}")
+        parts = time_str.split(":")
+        if len(parts) != 2:
+            raise ValueError(f"Invalid time format: {time_str}")
 
-            hours = int(parts[0])
-            minutes = int(parts[1])
+        # Validate that parts are ASCII digits only (isdigit accepts Unicode digits)
+        hour_part, minute_part = parts[0], parts[1]
+        if not hour_part or not minute_part:
+            raise ValueError(f"Invalid time format: {time_str}")
+        if not (hour_part.isascii() and hour_part.isdigit()):
+            raise ValueError(f"Invalid time format: {time_str}")
+        if not (minute_part.isascii() and minute_part.isdigit()):
+            raise ValueError(f"Invalid time format: {time_str}")
 
-            if not (0 <= hours <= 23) or not (0 <= minutes <= 59):
-                raise ValueError(f"Invalid time format: {time_str}")
+        hours = int(hour_part)
+        minutes = int(minute_part)
 
-            return time(hours, minutes)
-        except ValueError as e:
-            # Re-raise with consistent message if not already formatted
-            if "Invalid time format" not in str(e):
-                raise ValueError(f"Invalid time format: {time_str}") from e
-            raise
-        except TypeError as e:
-            raise ValueError(f"Invalid time format: {time_str}") from e
+        if not (0 <= hours <= 23) or not (0 <= minutes <= 59):
+            raise ValueError(f"Invalid time format: {time_str}")
+
+        return time(hours, minutes)
 
     def is_time_in_range(self, current: time, start: time, end: time) -> bool:
         """

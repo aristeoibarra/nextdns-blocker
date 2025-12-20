@@ -1,7 +1,7 @@
 """Command-line interface for NextDNS Blocker using Click."""
 
-import contextlib
 import logging
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -115,6 +115,9 @@ console = Console(highlight=False)
 MIN_PORT = 1
 MAX_PORT = 65535
 
+# PyPI API URL for update checking
+PYPI_PACKAGE_URL = "https://pypi.org/pypi/nextdns-blocker/json"
+
 
 # =============================================================================
 # PAUSE MANAGEMENT
@@ -142,15 +145,13 @@ def _get_pause_info() -> tuple[bool, Optional[datetime]]:
         pause_until = ensure_naive_datetime(datetime.fromisoformat(content))
         if datetime.now() < pause_until:
             return True, pause_until
-        # Expired, clean up (missing_ok handles race conditions)
-        with contextlib.suppress(OSError):
-            pause_file.unlink(missing_ok=True)
+        # Expired, clean up
+        pause_file.unlink(missing_ok=True)
         return False, None
     except ValueError:
         # Invalid content, clean up
         logger.warning(f"Invalid pause file content, removing: {content[:50]}")
-        with contextlib.suppress(OSError):
-            pause_file.unlink(missing_ok=True)
+        pause_file.unlink(missing_ok=True)
         return False, None
 
 
@@ -342,9 +343,8 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
         # Handle delay (if set and not forcing)
         delay_seconds = parse_unblock_delay_seconds(unblock_delay or "0")
 
-        if delay_seconds is not None and delay_seconds > 0 and not force and unblock_delay:
+        if delay_seconds and delay_seconds > 0 and not force and unblock_delay:
             # Create pending action
-            # unblock_delay is guaranteed non-empty by the condition above
             action = create_pending_action(domain, unblock_delay, requested_by="cli")
             if action:
                 send_discord_notification(
@@ -1284,8 +1284,7 @@ def update(yes: bool) -> None:
 
     # Fetch latest version from PyPI
     try:
-        pypi_url = "https://pypi.org/pypi/nextdns-blocker/json"
-        with urllib.request.urlopen(pypi_url, timeout=10) as response:  # nosec B310
+        with urllib.request.urlopen(PYPI_PACKAGE_URL, timeout=10) as response:  # nosec B310
             data = json.loads(response.read().decode())
             # Safely access nested keys
             info = data.get("info")
@@ -1299,10 +1298,8 @@ def update(yes: bool) -> None:
                 )
                 sys.exit(1)
     except ssl.SSLError as e:
+        # SSLError is the base class and includes SSLCertVerificationError
         console.print(f"  [red]SSL error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-    except ssl.CertificateError as e:
-        console.print(f"  [red]Certificate error: {e}[/red]\n", highlight=False)
         sys.exit(1)
     except urllib.error.URLError as e:
         console.print(f"  [red]Network error: {e}[/red]\n", highlight=False)
@@ -1322,15 +1319,21 @@ def update(yes: bool) -> None:
         console.print("\n  [green]You are already on the latest version.[/green]\n")
         return
 
-    # Parse versions for comparison
+    # Parse versions for comparison (handles semver with suffixes like "1.0.0rc1")
     def parse_version(v: str) -> tuple[int, ...]:
-        return tuple(int(x) for x in v.split("."))
+        # Extract only the numeric parts (e.g., "1.0.0rc1" -> "1.0.0")
+        # This regex captures digits separated by dots, ignoring suffixes
+        numeric_match = re.match(r"^(\d+(?:\.\d+)*)", v)
+        if not numeric_match:
+            raise ValueError(f"Cannot parse version: {v}")
+        numeric_part = numeric_match.group(1)
+        return tuple(int(x) for x in numeric_part.split("."))
 
     try:
         current_tuple = parse_version(current_version)
         latest_tuple = parse_version(latest_version)
     except ValueError:
-        # If parsing fails, just do string comparison
+        # If parsing fails, assume update is available to be safe
         current_tuple = (0,)
         latest_tuple = (1,)
 

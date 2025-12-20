@@ -57,9 +57,11 @@ class TestVersionParsing:
         assert _parse_version("") == ()
 
     def test_parse_version_with_pre_release(self) -> None:
-        """Test parsing version with pre-release suffix fails gracefully."""
-        # This would fail to parse fully, but we handle it gracefully
-        assert _parse_version("1.0.0-beta") == ()
+        """Test parsing version with pre-release suffix extracts numeric part."""
+        # Pre-release suffixes are stripped, only numeric part is extracted
+        assert _parse_version("1.0.0-beta") == (1, 0, 0)
+        assert _parse_version("2.1.0rc1") == (2, 1, 0)
+        assert _parse_version("3.0.0-alpha.1") == (3, 0, 0)
 
 
 class TestVersionComparison:
