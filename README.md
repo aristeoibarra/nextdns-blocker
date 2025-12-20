@@ -54,12 +54,11 @@ docker compose up -d
 
 ## Documentation
 
-For complete documentation, visit: **[nextdns-blocker.aristeo.dev](https://nextdns-blocker.aristeo.dev)**
+For complete documentation, visit: **[nextdns-blocker.pages.dev](https://nextdns-blocker.pages.dev)**
 
-- [Getting Started](https://nextdns-blocker.aristeo.dev/getting-started/)
-- [Commands Reference](https://nextdns-blocker.aristeo.dev/commands/)
-- [Configuration Guide](https://nextdns-blocker.aristeo.dev/configuration/)
-- [Troubleshooting](https://nextdns-blocker.aristeo.dev/guides/troubleshooting/)
+- [Getting Started](https://nextdns-blocker.pages.dev/getting-started/)
+- [Commands Reference](https://nextdns-blocker.pages.dev/commands/)
+- [Configuration Guide](https://nextdns-blocker.pages.dev/configuration/)
 
 ## Basic Commands
 
