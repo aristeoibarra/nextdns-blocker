@@ -716,4 +716,3 @@ La herramienta incluye una función de Log de auditoría. Revisa los archivos de
 ¿Puedo ejecutar esto en una Raspberry Pi?
 
 Sí. Como nextdns-blocker es un paquete de Python, es liviano y compatible con cualquier sistema que soporte Python 3, incluyendo Raspberry Pi, servidores Linux, macOS y Windows.
-
