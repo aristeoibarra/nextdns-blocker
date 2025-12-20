@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import stat
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import IO, Any, Optional
@@ -22,9 +23,39 @@ logger = logging.getLogger(__name__)
 try:
     import fcntl
 
-    def _lock_file(f: IO[Any], exclusive: bool = True) -> None:
-        """Acquire file lock (Unix implementation)."""
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+    def _lock_file(f: IO[Any], exclusive: bool = True, timeout: Optional[float] = None) -> None:
+        """
+        Acquire file lock (Unix implementation).
+
+        Args:
+            f: File object to lock
+            exclusive: If True, acquire exclusive lock; otherwise shared lock
+            timeout: Maximum seconds to wait for lock (None = wait indefinitely)
+
+        Raises:
+            TimeoutError: If timeout is reached while waiting for lock
+            OSError: If lock acquisition fails for other reasons
+        """
+        lock_type = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+
+        if timeout is None:
+            # Blocking lock
+            fcntl.flock(f.fileno(), lock_type)
+        else:
+            # Non-blocking with timeout
+            deadline = time.monotonic() + timeout
+            sleep_interval = 0.01  # Start with 10ms
+            max_sleep = 0.1  # Max 100ms between retries
+
+            while True:
+                try:
+                    fcntl.flock(f.fileno(), lock_type | fcntl.LOCK_NB)
+                    return  # Lock acquired
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(f"Failed to acquire file lock within {timeout}s")
+                    time.sleep(sleep_interval)
+                    sleep_interval = min(sleep_interval * 2, max_sleep)
 
     def _unlock_file(f: IO[Any]) -> None:
         """Release file lock (Unix implementation)."""
@@ -43,9 +74,44 @@ except ImportError:
     try:
         import msvcrt
 
-        def _lock_file(f: IO[Any], exclusive: bool = True) -> None:
-            """Acquire file lock (Windows implementation using msvcrt.locking)."""
-            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+        def _lock_file(f: IO[Any], exclusive: bool = True, timeout: Optional[float] = None) -> None:
+            """
+            Acquire file lock (Windows implementation using msvcrt.locking).
+
+            Args:
+                f: File object to lock
+                exclusive: Ignored on Windows (always exclusive)
+                timeout: Maximum seconds to wait for lock (None = wait indefinitely)
+
+            Raises:
+                TimeoutError: If timeout is reached while waiting for lock
+                OSError: If lock acquisition fails for other reasons
+            """
+            import time
+
+            if timeout is None:
+                # Keep trying indefinitely with a reasonable default timeout
+                timeout = 30.0  # 30 second default for "indefinite" on Windows
+
+            deadline = time.monotonic() + timeout
+            sleep_interval = 0.01  # Start with 10ms
+            max_sleep = 0.1  # Max 100ms between retries
+
+            while True:
+                try:
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+                    return  # Lock acquired
+                except OSError as e:
+                    # Windows lock contention errors:
+                    # errno 36 = EDEADLOCK (resource busy)
+                    # errno 13 = EACCES (permission denied / lock held by another process)
+                    # errno 33 = ELOCK (lock violation on some Windows versions)
+                    if e.errno not in (13, 33, 36):
+                        raise
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(f"Failed to acquire file lock within {timeout}s")
+                    time.sleep(sleep_interval)
+                    sleep_interval = min(sleep_interval * 2, max_sleep)
 
         def _unlock_file(f: IO[Any]) -> None:
             """Release file lock (Windows implementation)."""
@@ -62,7 +128,7 @@ except ImportError:
 
     except ImportError:
         # No locking available - use no-op functions
-        def _lock_file(f: IO[Any], exclusive: bool = True) -> None:
+        def _lock_file(f: IO[Any], exclusive: bool = True, timeout: Optional[float] = None) -> None:
             """No-op file lock (fallback when no locking available)."""
             pass
 
@@ -140,6 +206,10 @@ DAYS_MAP = {
     "sunday": 6,
 }
 
+# Weekday number to day name mapping (inverse of DAYS_MAP)
+# This provides O(1) lookup by weekday index without relying on dict key order
+WEEKDAY_TO_DAY = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
 
 # =============================================================================
 # DIRECTORY MANAGEMENT
@@ -149,6 +219,25 @@ DAYS_MAP = {
 def ensure_log_dir() -> None:
     """Ensure log directory exists. Called lazily when needed."""
     get_log_dir().mkdir(parents=True, exist_ok=True)
+
+
+def ensure_naive_datetime(dt: datetime) -> datetime:
+    """
+    Ensure a datetime is naive (timezone-unaware) for consistent comparisons.
+
+    This function centralizes the handling of naive vs aware datetimes throughout
+    the codebase. All datetime comparisons should use naive datetimes to avoid
+    TypeError when comparing aware and naive datetimes.
+
+    Args:
+        dt: A datetime object (can be naive or aware)
+
+    Returns:
+        A naive datetime (tzinfo stripped if present)
+    """
+    if dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
 
 
 # =============================================================================
@@ -214,6 +303,9 @@ def validate_url(url: str) -> bool:
     # Validate port range if present
     port_str = match.group(1)
     if port_str:
+        # Reject leading zeros (could indicate octal in some contexts)
+        if len(port_str) > 1 and port_str.startswith("0"):
+            return False
         port = int(port_str)
         if port < 1 or port > 65535:
             return False
@@ -235,7 +327,13 @@ def parse_env_value(value: str) -> str:
 
     Returns:
         Cleaned value with quotes removed
+
+    Raises:
+        ValueError: If value is None or not a string
     """
+    if value is None or not isinstance(value, str):
+        raise ValueError("Environment value must be a non-None string")
+
     value = value.strip()
     if len(value) >= 2 and (
         (value.startswith('"') and value.endswith('"'))
@@ -258,7 +356,7 @@ def safe_int(value: Optional[str], default: int, name: str = "value") -> int:
         Converted integer or default value
 
     Raises:
-        ConfigurationError: If value is not a valid positive integer
+        ConfigurationError: If value is not a valid non-negative integer
     """
     from .exceptions import ConfigurationError
 
@@ -268,7 +366,7 @@ def safe_int(value: Optional[str], default: int, name: str = "value") -> int:
     try:
         result = int(value)
         if result < 0:
-            raise ConfigurationError(f"{name} must be a positive integer, got: {value}")
+            raise ConfigurationError(f"{name} must be a non-negative integer, got: {value}")
         return result
     except ValueError:
         raise ConfigurationError(f"{name} must be a valid integer, got: {value}")
@@ -313,7 +411,9 @@ def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
                 _unlock_file(f)
 
     except OSError as e:
-        logger.debug(f"Failed to write audit log: {e}")
+        # Log at WARNING level to ensure audit failures are visible
+        # (audit logs are security-relevant and failures should be noticed)
+        logger.warning(f"Failed to write audit log: {e}")
 
 
 def write_secure_file(path: Path, content: str) -> None:
@@ -327,40 +427,44 @@ def write_secure_file(path: Path, content: str) -> None:
     Raises:
         OSError: If file operations fail
     """
-    log_dir = get_log_dir()
+    # Resolve the path to catch symlink attacks and path traversal
+    resolved_path = path.resolve()
+
     # Ensure log directory exists if writing to log dir
-    if path.parent == log_dir:
+    log_dir = get_log_dir().resolve()
+    if resolved_path.parent == log_dir or log_dir in resolved_path.parents:
         ensure_log_dir()
     else:
         # Create parent directories if needed for other paths
-        path.parent.mkdir(parents=True, exist_ok=True)
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Set secure permissions before writing if file exists
-    if path.exists():
-        os.chmod(path, SECURE_FILE_MODE)
+    if resolved_path.exists():
+        os.chmod(resolved_path, SECURE_FILE_MODE)
 
     # Write with exclusive lock
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECURE_FILE_MODE)
-    f = None
+    fd = os.open(resolved_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECURE_FILE_MODE)
+    fd_closed = False
     try:
+        # os.fdopen takes ownership of fd - it will close it when the file object closes
         f = os.fdopen(fd, "w")
-        _lock_file(f, exclusive=True)
+        fd_closed = True  # fd is now owned by f
         try:
-            f.write(content)
-            f.flush()  # Ensure data is written before unlocking
-            os.fsync(f.fileno())  # Force write to disk
+            _lock_file(f, exclusive=True)
+            try:
+                f.write(content)
+                f.flush()  # Ensure data is written before unlocking
+                os.fsync(f.fileno())  # Force write to disk
+            finally:
+                _unlock_file(f)
         finally:
-            _unlock_file(f)
+            f.close()
     except OSError:
-        # If fdopen failed, we still need to close the fd
-        if f is None:
-            os.close(fd)
-        raise
-    finally:
-        # Always close the file object if it was created
-        if f is not None:
+        # Only close fd if os.fdopen failed (fd not yet owned by file object)
+        if not fd_closed:
             with contextlib.suppress(OSError):
-                f.close()
+                os.close(fd)
+        raise
 
 
 def read_secure_file(path: Path) -> Optional[str]:
@@ -383,5 +487,6 @@ def read_secure_file(path: Path) -> Optional[str]:
                 return f.read().strip()
             finally:
                 _unlock_file(f)
-    except OSError:
+    except OSError as e:
+        logger.debug(f"Failed to read secure file {path}: {e}")
         return None

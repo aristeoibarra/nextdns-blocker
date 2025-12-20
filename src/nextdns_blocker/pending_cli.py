@@ -1,5 +1,6 @@
 """Pending command group for NextDNS Blocker."""
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -13,6 +14,8 @@ from .pending import (
     cancel_pending_action,
     get_pending_actions,
 )
+
+logger = logging.getLogger(__name__)
 
 console = Console(highlight=False)
 
@@ -64,8 +67,9 @@ def cmd_list(show_all: bool) -> None:
                 time_str,
                 action.get("status", "-"),
             )
-        except (KeyError, ValueError):
-            # Skip malformed actions
+        except (KeyError, ValueError) as e:
+            # Skip malformed actions but log for debugging
+            logger.debug(f"Skipping malformed pending action: {e}")
             continue
 
     console.print()
@@ -121,9 +125,9 @@ def cmd_show(action_id: str) -> None:
                     console.print(f"\n  [yellow]Time remaining: {hours}h {minutes}m[/yellow]")
                 else:
                     console.print("\n  [green]Ready for execution[/green]")
-        except (ValueError, KeyError):
-            # Invalid datetime format
-            pass
+        except (ValueError, KeyError) as e:
+            # Invalid datetime format - log for debugging
+            logger.debug(f"Could not parse execute_at datetime: {e}")
 
     console.print()
 
@@ -183,9 +187,9 @@ def cmd_cancel(action_id: str, yes: bool, config_dir: Optional[Path]) -> None:
         try:
             config = load_config(config_dir)
             webhook_url = config.get("discord_webhook_url")
-        except Exception:
+        except (OSError, ValueError, KeyError) as e:
             # Ignore errors loading config; Discord notification is optional
-            pass
+            logger.debug(f"Could not load config for webhook: {e}")
 
         # Send notification
         send_discord_notification(

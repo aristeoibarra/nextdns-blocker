@@ -172,9 +172,10 @@ class TestCompleteBlocklistDomains:
 
     def test_handles_exception_gracefully(self):
         """Test that exceptions are caught and empty list returned."""
+        # Use OSError which is one of the specifically caught exceptions
         with patch(
             "nextdns_blocker.config.get_config_dir",
-            side_effect=Exception("Test error"),
+            side_effect=OSError("Test error"),
         ):
             ctx = MagicMock(spec=click.Context)
             param = MagicMock(spec=click.Parameter)
@@ -316,9 +317,10 @@ class TestCompletePendingActionIds:
 
     def test_handles_exception_gracefully(self):
         """Test that exceptions are caught and empty list returned."""
+        # Use OSError which is one of the specifically caught exceptions
         with patch(
             "nextdns_blocker.pending.get_pending_actions",
-            side_effect=Exception("Test error"),
+            side_effect=OSError("Test error"),
         ):
             ctx = MagicMock(spec=click.Context)
             param = MagicMock(spec=click.Parameter)

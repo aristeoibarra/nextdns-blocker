@@ -30,6 +30,16 @@ skip_on_windows = pytest.mark.skipif(
 )
 
 
+def _get_home_env_vars() -> dict[str, str]:
+    """Get environment variables needed for Path.home() to work on all platforms."""
+    home_vars = {}
+    # Windows needs these for Path.home()
+    for var in ("USERPROFILE", "HOMEDRIVE", "HOMEPATH", "HOME"):
+        if var in os.environ:
+            home_vars[var] = os.environ[var]
+    return home_vars
+
+
 class TestValidateApiCredentials:
     """Tests for validate_api_credentials function."""
 
@@ -280,6 +290,7 @@ class TestRunNonInteractive:
             "NEXTDNS_API_KEY": "testkey12345",
             "NEXTDNS_PROFILE_ID": "testprofile",
             "TIMEZONE": "UTC",
+            **_get_home_env_vars(),
         }
 
         with patch.dict(os.environ, env, clear=True):
@@ -526,7 +537,7 @@ class TestRunInitialSync:
         """Should return False on exception."""
         with patch("shutil.which", return_value=None):
             with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-                with patch("subprocess.run", side_effect=Exception("error")):
+                with patch("subprocess.run", side_effect=OSError("error")):
                     result = run_initial_sync()
 
         assert result is False
@@ -635,7 +646,7 @@ class TestInstallLaunchd:
         from nextdns_blocker.init import _install_launchd
 
         with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-            with patch("nextdns_blocker.init.get_log_dir", side_effect=Exception("test error")):
+            with patch("nextdns_blocker.init.get_log_dir", side_effect=OSError("test error")):
                 success, result = _install_launchd()
 
         assert success is False
@@ -787,7 +798,7 @@ class TestInstallCron:
         """Should handle exceptions during cron installation."""
         from nextdns_blocker.init import _install_cron
 
-        with patch("nextdns_blocker.init.get_log_dir", side_effect=Exception("test error")):
+        with patch("nextdns_blocker.init.get_log_dir", side_effect=OSError("test error")):
             success, result = _install_cron()
 
         assert success is False
@@ -864,6 +875,7 @@ class TestNonInteractiveEdgeCases:
         env = {
             "NEXTDNS_API_KEY": "testkey12345",
             "NEXTDNS_PROFILE_ID": "testprofile",
+            **_get_home_env_vars(),
         }
 
         with patch.dict(os.environ, env, clear=True):
@@ -886,6 +898,7 @@ class TestNonInteractiveEdgeCases:
         env = {
             "NEXTDNS_API_KEY": "testkey12345",
             "NEXTDNS_PROFILE_ID": "testprofile",
+            **_get_home_env_vars(),
         }
 
         with patch.dict(os.environ, env, clear=True):

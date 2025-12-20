@@ -6,6 +6,8 @@ to avoid excessive API calls.
 
 import json
 import logging
+import re
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -14,7 +16,7 @@ from typing import Any, Optional
 
 from platformdirs import user_data_dir
 
-from .common import APP_NAME
+from .common import APP_NAME, write_secure_file
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +48,22 @@ def _parse_version(version: str) -> tuple[int, ...]:
     """
     Parse a version string into a tuple of integers.
 
+    Handles versions with suffixes like "1.0.0rc1", "2.0.0-beta.1" by
+    extracting only the numeric parts.
+
     Args:
-        version: Version string like "1.2.3"
+        version: Version string like "1.2.3" or "1.0.0rc1"
 
     Returns:
         Tuple of integers for comparison
     """
     try:
-        return tuple(int(x) for x in version.split("."))
+        # Extract only the numeric parts (e.g., "1.0.0rc1" -> "1.0.0")
+        numeric_match = re.match(r"^(\d+(?:\.\d+)*)", version)
+        if not numeric_match:
+            return ()
+        numeric_part = numeric_match.group(1)
+        return tuple(int(x) for x in numeric_part.split("."))
     except ValueError:
         # If parsing fails, return empty tuple (will compare as less than anything)
         return ()
@@ -104,7 +114,7 @@ def _read_cache() -> Optional[dict[str, Any]]:
 
 def _write_cache(latest_version: str) -> None:
     """
-    Write the update check cache.
+    Write the update check cache with secure permissions (0o600).
 
     Args:
         latest_version: The latest version found on PyPI
@@ -118,8 +128,8 @@ def _write_cache(latest_version: str) -> None:
     try:
         # Ensure parent directory exists
         cache_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(cache_data, f)
+        # Use write_secure_file for consistent secure permissions
+        write_secure_file(cache_file, json.dumps(cache_data))
     except OSError as e:
         logger.debug(f"Failed to write update cache: {e}")
 
@@ -149,13 +159,38 @@ def _fetch_latest_version() -> Optional[str]:
     Returns:
         Latest version string or None if fetch failed
     """
+    import ssl
+
     try:
+        # Security: Using urllib.request.urlopen with hardcoded HTTPS URL to PyPI.
+        # This is safe because:
+        # 1. URL is hardcoded constant, not user-controlled
+        # 2. Uses HTTPS with certificate validation
+        # 3. Only fetches public package metadata (read-only)
         with urllib.request.urlopen(PYPI_URL, timeout=PYPI_TIMEOUT) as response:  # nosec B310
             data: dict[str, Any] = json.loads(response.read().decode())
-            version: str = data["info"]["version"]
+            # Safely access nested keys
+            info = data.get("info")
+            if not isinstance(info, dict):
+                logger.debug("PyPI response missing 'info' object")
+                return None
+            version = info.get("version")
+            if not isinstance(version, str):
+                logger.debug("PyPI response missing 'version' string")
+                return None
             return version
-    except Exception as e:
-        logger.debug(f"Failed to fetch latest version from PyPI: {e}")
+    except ssl.SSLError as e:
+        # SSLError is the base class and includes SSLCertVerificationError
+        logger.warning(f"SSL error fetching PyPI version: {e}")
+        return None
+    except urllib.error.URLError as e:
+        logger.debug(f"URL error fetching latest version from PyPI: {e}")
+        return None
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.debug(f"Failed to parse PyPI response: {e}")
+        return None
+    except OSError as e:
+        logger.debug(f"Network error fetching latest version from PyPI: {e}")
         return None
 
 

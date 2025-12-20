@@ -248,7 +248,7 @@ class TestSafeInt:
         with pytest.raises(ConfigurationError) as exc_info:
             safe_int("-1", 0, "test_value")
 
-        assert "positive integer" in str(exc_info.value)
+        assert "non-negative integer" in str(exc_info.value)
 
     def test_invalid_string_raises_error(self) -> None:
         """Test non-numeric string raises ConfigurationError."""

@@ -8,6 +8,7 @@ Note on datetime handling:
     cause comparison errors.
 """
 
+import contextlib
 import json
 import logging
 import os
@@ -25,16 +26,18 @@ from .common import (
     _lock_file,
     _unlock_file,
     audit_log,
+    ensure_naive_datetime,
     read_secure_file,
     write_secure_file,
 )
-from .config import UNBLOCK_DELAY_SECONDS, get_data_dir
+from .config import UNBLOCK_DELAY_SECONDS, VALID_UNBLOCK_DELAYS, get_data_dir
 
 logger = logging.getLogger(__name__)
 
 PENDING_FILE_NAME = "pending.json"
 PENDING_VERSION = "1.0"
 MAX_BACKUP_FILES = 3  # Keep last N backup files
+LOCK_TIMEOUT_SECONDS = 10.0  # Maximum time to wait for file lock
 
 
 def get_pending_file() -> Path:
@@ -54,22 +57,33 @@ def _pending_file_lock() -> Generator[None, None, None]:
 
     Uses a separate lock file to ensure read-modify-write operations
     are atomic across multiple processes.
+
+    Raises:
+        TimeoutError: If lock cannot be acquired within LOCK_TIMEOUT_SECONDS
+        OSError: If file operations fail
     """
     lock_file = _get_lock_file()
     lock_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Create lock file if it doesn't exist
     fd = os.open(lock_file, os.O_RDWR | os.O_CREAT, SECURE_FILE_MODE)
+    fd_closed = False
     try:
         f = os.fdopen(fd, "r+")
-        _lock_file(f, exclusive=True)
+        fd_closed = True  # fd is now owned by f
         try:
-            yield
+            _lock_file(f, exclusive=True, timeout=LOCK_TIMEOUT_SECONDS)
+            try:
+                yield
+            finally:
+                _unlock_file(f)
         finally:
-            _unlock_file(f)
             f.close()
     except OSError:
-        os.close(fd)
+        if not fd_closed:
+            # Use suppress to handle case where fd might already be invalid
+            with contextlib.suppress(OSError):
+                os.close(fd)
         raise
 
 
@@ -87,7 +101,8 @@ def _create_backup(file_path: Path) -> Optional[Path]:
         return None
 
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Include microseconds to avoid collision in rapid successive operations
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_path = file_path.with_suffix(f".{timestamp}.bak")
         shutil.copy2(file_path, backup_path)
         logger.info(f"Created backup: {backup_path}")
@@ -99,8 +114,8 @@ def _create_backup(file_path: Path) -> Optional[Path]:
             try:
                 old_backup.unlink()
                 logger.debug(f"Removed old backup: {old_backup}")
-            except OSError:
-                pass
+            except OSError as e:
+                logger.debug(f"Could not remove old backup {old_backup}: {e}")
 
         return backup_path
     except OSError as e:
@@ -121,24 +136,51 @@ def generate_action_id() -> str:
 
 
 def _load_pending_data() -> dict[str, Any]:
-    """Load pending actions from file."""
+    """
+    Load pending actions from file.
+
+    Returns:
+        dict containing 'version' and 'pending_actions' list.
+        Returns empty structure if file doesn't exist or is corrupted.
+    """
     pending_file = get_pending_file()
     content = read_secure_file(pending_file)
     if not content:
         return {"version": PENDING_VERSION, "pending_actions": []}
 
     try:
-        data: dict[str, Any] = json.loads(content)
+        parsed = json.loads(content)
+        # Validate that parsed data is a dict
+        if not isinstance(parsed, dict):
+            logger.error(f"Invalid pending.json: expected object, got {type(parsed).__name__}")
+            _create_backup(pending_file)
+            return {"version": PENDING_VERSION, "pending_actions": []}
+        data: dict[str, Any] = parsed
         # Ensure version compatibility
         if data.get("version") != PENDING_VERSION:
             logger.warning("Pending file version mismatch, migrating...")
+        # Validate pending_actions is a list
+        if "pending_actions" not in data or not isinstance(data.get("pending_actions"), list):
+            logger.warning("Missing or invalid 'pending_actions' in pending.json, resetting")
+            data["pending_actions"] = []
         return data
     except json.JSONDecodeError as e:
         logger.error(f"Invalid pending.json: {e}")
+        # Log content preview for debugging (truncated for safety)
+        content_preview = content[:200] + "..." if len(content) > 200 else content
+        logger.warning(f"Corrupted content preview: {content_preview!r}")
+
         # Create backup before resetting to preserve data for recovery
         backup_path = _create_backup(pending_file)
         if backup_path:
-            logger.warning(f"Corrupted file backed up to: {backup_path}")
+            logger.warning(
+                f"Corrupted file backed up to: {backup_path}. "
+                f"Any pending actions have been lost - check backup for manual recovery."
+            )
+        else:
+            logger.error(
+                "Failed to create backup of corrupted pending.json. " "Pending actions may be lost."
+            )
         return {"version": PENDING_VERSION, "pending_actions": []}
 
 
@@ -171,9 +213,17 @@ def create_pending_action(
 
     Returns:
         Created action dict, or None on failure or if delay is 'never'
+
+    Note:
+        Invalid delay values are logged and treated as 'never' (no action created).
     """
+    # Validate delay is a known value
+    if delay not in VALID_UNBLOCK_DELAYS:
+        logger.warning(f"Invalid delay value '{delay}', no pending action created")
+        return None
+
     delay_seconds = UNBLOCK_DELAY_SECONDS.get(delay)
-    if delay_seconds is None:  # 'never' or invalid
+    if delay_seconds is None:  # 'never' - valid but no action needed
         return None
 
     now = datetime.now()
@@ -210,18 +260,19 @@ def create_pending_action(
 
 
 def get_pending_action(action_id: str) -> Optional[dict[str, Any]]:
-    """Get a pending action by ID."""
-    data = _load_pending_data()
-    pending_actions: list[dict[str, Any]] = data.get("pending_actions", [])
-    for action in pending_actions:
-        if action.get("id") == action_id:
-            return action
-    return None
+    """Get a pending action by ID (thread-safe with shared lock)."""
+    with _pending_file_lock():
+        data = _load_pending_data()
+        pending_actions: list[dict[str, Any]] = data.get("pending_actions", [])
+        for action in pending_actions:
+            if action.get("id") == action_id:
+                return action
+        return None
 
 
 def get_pending_actions(status: Optional[str] = None) -> list[dict[str, Any]]:
     """
-    Get all pending actions, optionally filtered by status.
+    Get all pending actions, optionally filtered by status (thread-safe).
 
     Args:
         status: Filter by status ('pending', 'executed', 'cancelled')
@@ -229,21 +280,23 @@ def get_pending_actions(status: Optional[str] = None) -> list[dict[str, Any]]:
     Returns:
         List of matching actions
     """
-    data = _load_pending_data()
-    actions: list[dict[str, Any]] = data.get("pending_actions", [])
-    if status:
-        actions = [a for a in actions if a.get("status") == status]
-    return actions
+    with _pending_file_lock():
+        data = _load_pending_data()
+        actions: list[dict[str, Any]] = data.get("pending_actions", [])
+        if status:
+            actions = [a for a in actions if a.get("status") == status]
+        return actions
 
 
 def get_pending_for_domain(domain: str) -> Optional[dict[str, Any]]:
-    """Get pending action for a specific domain."""
-    data = _load_pending_data()
-    pending_actions: list[dict[str, Any]] = data.get("pending_actions", [])
-    for action in pending_actions:
-        if action.get("domain") == domain and action.get("status") == "pending":
-            return action
-    return None
+    """Get pending action for a specific domain (thread-safe)."""
+    with _pending_file_lock():
+        data = _load_pending_data()
+        pending_actions: list[dict[str, Any]] = data.get("pending_actions", [])
+        for action in pending_actions:
+            if action.get("domain") == domain and action.get("status") == "pending":
+                return action
+        return None
 
 
 def cancel_pending_action(action_id: str) -> bool:
@@ -274,22 +327,23 @@ def cancel_pending_action(action_id: str) -> bool:
 
 
 def get_ready_actions() -> list[dict[str, Any]]:
-    """Get all actions that are ready to execute (execute_at <= now)."""
+    """Get all actions that are ready to execute (execute_at <= now, thread-safe)."""
     now = datetime.now()
-    data = _load_pending_data()
-    ready = []
-    for action in data["pending_actions"]:
-        if action.get("status") != "pending":
-            continue
-        try:
-            execute_at_str = action.get("execute_at", "")
-            if execute_at_str:
-                execute_at = datetime.fromisoformat(execute_at_str)
-                if execute_at <= now:
-                    ready.append(action)
-        except (ValueError, KeyError):
-            logger.warning(f"Invalid action: {action.get('id')}")
-    return ready
+    with _pending_file_lock():
+        data = _load_pending_data()
+        ready = []
+        for action in data["pending_actions"]:
+            if action.get("status") != "pending":
+                continue
+            try:
+                execute_at_str = action.get("execute_at", "")
+                if execute_at_str:
+                    execute_at = ensure_naive_datetime(datetime.fromisoformat(execute_at_str))
+                    if execute_at <= now:
+                        ready.append(action)
+            except (ValueError, KeyError):
+                logger.warning(f"Invalid action: {action.get('id')}")
+        return ready
 
 
 def mark_action_executed(action_id: str) -> bool:
@@ -329,7 +383,8 @@ def cleanup_old_actions(max_age_days: int = 7) -> int:
             new_actions = []
             for a in data["pending_actions"]:
                 try:
-                    if datetime.fromisoformat(a["created_at"]) > cutoff:
+                    created_at = ensure_naive_datetime(datetime.fromisoformat(a["created_at"]))
+                    if created_at > cutoff:
                         new_actions.append(a)
                 except (ValueError, KeyError):
                     logger.warning(f"Invalid created_at in action: {a.get('id')}")

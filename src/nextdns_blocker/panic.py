@@ -7,14 +7,19 @@ Panic mode provides an emergency lockdown that:
 - Cannot be disabled (must wait for expiration)
 """
 
-import contextlib
 import logging
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from .common import audit_log, get_log_dir, read_secure_file, write_secure_file
+from .common import (
+    audit_log,
+    ensure_naive_datetime,
+    get_log_dir,
+    read_secure_file,
+    write_secure_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,18 +70,16 @@ def _get_panic_info() -> tuple[bool, Optional[datetime]]:
         return False, None
 
     try:
-        panic_until = datetime.fromisoformat(content)
+        panic_until = ensure_naive_datetime(datetime.fromisoformat(content))
         if datetime.now() < panic_until:
             return True, panic_until
-        # Expired, clean up (missing_ok handles race conditions)
-        with contextlib.suppress(OSError):
-            panic_file.unlink(missing_ok=True)
+        # Expired, clean up
+        panic_file.unlink(missing_ok=True)
         return False, None
     except ValueError:
         # Invalid content, clean up
         logger.warning(f"Invalid panic file content, removing: {content[:50]}")
-        with contextlib.suppress(OSError):
-            panic_file.unlink(missing_ok=True)
+        panic_file.unlink(missing_ok=True)
         return False, None
 
 
@@ -98,7 +101,9 @@ def get_panic_remaining() -> Optional[str]:
         return None
 
     remaining = panic_until - datetime.now()
-    total_seconds = int(remaining.total_seconds())
+    # Use max(0, ...) to handle any microsecond-level timing edge cases
+    # where remaining could be slightly negative due to timing between checks
+    total_seconds = max(0, int(remaining.total_seconds()))
 
     if total_seconds <= 0:
         return "< 1m"
@@ -228,6 +233,10 @@ def parse_duration(duration_str: str) -> int:
 
     value = int(match.group(1))
     unit = match.group(2).lower()
+
+    # Validate value is positive
+    if value <= 0:
+        raise ValueError(f"Duration must be a positive number, got: {value}")
 
     if unit == "m":
         return value

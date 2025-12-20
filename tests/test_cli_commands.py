@@ -721,7 +721,12 @@ class TestUpdateCommand:
 
     def test_update_pypi_error(self, runner):
         """Should handle PyPI connection error."""
-        with patch("urllib.request.urlopen", side_effect=Exception("Network error")):
+        import urllib.error
+
+        with patch(
+            "urllib.request.urlopen",
+            side_effect=urllib.error.URLError("Network error"),
+        ):
             result = runner.invoke(main, ["update"])
 
         assert result.exit_code == 1
@@ -870,7 +875,7 @@ class TestUpdateCommandEdgeCases:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         with patch("urllib.request.urlopen", return_value=mock_response):
-            with patch("subprocess.run", side_effect=Exception("subprocess error")):
+            with patch("subprocess.run", side_effect=OSError("subprocess error")):
                 result = runner.invoke(main, ["update", "-y"])
 
         assert result.exit_code == 1
@@ -1450,7 +1455,7 @@ class TestUninstallCommand:
         assert result.exit_code == 0
         assert "Already removed" in result.output
 
-    @patch("nextdns_blocker.watchdog._uninstall_launchd_jobs", side_effect=Exception("Job error"))
+    @patch("nextdns_blocker.watchdog._uninstall_launchd_jobs", side_effect=OSError("Job error"))
     @patch("nextdns_blocker.cli.is_macos", return_value=True)
     @patch("nextdns_blocker.config.get_data_dir")
     @patch("nextdns_blocker.config.get_config_dir")

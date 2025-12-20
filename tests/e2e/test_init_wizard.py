@@ -530,7 +530,7 @@ class TestRunInitialSync:
         from nextdns_blocker.init import run_initial_sync
 
         mock_exe_args.return_value = ["/usr/local/bin/nextdns-blocker"]
-        mock_run.side_effect = Exception("Network error")
+        mock_run.side_effect = OSError("Network error")
 
         result = run_initial_sync()
 
@@ -745,7 +745,7 @@ class TestInstallLaunchdErrors:
         from nextdns_blocker.init import _install_launchd
 
         mock_log_dir.return_value = tmp_path / "logs"
-        mock_exe_args.side_effect = Exception("Unexpected error")
+        mock_exe_args.side_effect = OSError("Unexpected error")
 
         with patch.object(Path, "home", return_value=tmp_path):
             success, message = _install_launchd()
@@ -794,7 +794,7 @@ class TestInstallCronErrors:
         from nextdns_blocker.init import _install_cron
 
         mock_log_dir.return_value = tmp_path / "logs"
-        mock_exe_path.side_effect = Exception("Unexpected error")
+        mock_exe_path.side_effect = OSError("Unexpected error")
 
         success, message = _install_cron()
 
@@ -844,7 +844,7 @@ class TestInstallWindowsTaskErrors:
         from nextdns_blocker.init import _install_windows_task
 
         mock_log_dir.return_value = tmp_path / "logs"
-        mock_exe_path.side_effect = Exception("Unexpected error")
+        mock_exe_path.side_effect = OSError("Unexpected error")
 
         success, message = _install_windows_task()
 

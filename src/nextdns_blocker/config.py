@@ -15,12 +15,16 @@ from platformdirs import user_config_dir, user_data_dir
 from .common import (
     APP_NAME,
     VALID_DAYS,
+    get_log_dir,
     parse_env_value,
     safe_int,
     validate_domain,
     validate_time_format,
 )
 from .exceptions import ConfigurationError
+
+# Re-export get_log_dir for backward compatibility
+__all__ = ["get_log_dir"]
 
 # =============================================================================
 # CREDENTIAL VALIDATION PATTERNS
@@ -33,8 +37,13 @@ API_KEY_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{8,}$")
 # NextDNS Profile ID pattern: alphanumeric, typically 6 characters like "abc123"
 PROFILE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,30}$")
 
-# Discord Webhook pattern: Follows Regex for default rl
-DISCORD_WEBHOOK_PATTERN = re.compile(r"^https://discord\.com/api/webhooks/\d+/[a-zA-Z0-9_-]+$")
+# Discord Webhook pattern: Stricter validation
+# - Webhook ID: 17-20 digit snowflake (Discord uses snowflakes as IDs)
+# - Token: 60-100 character alphanumeric with underscores/hyphens/dots
+#   (extended range to accommodate Discord's varying token lengths)
+DISCORD_WEBHOOK_PATTERN = re.compile(
+    r"^https://discord\.com/api/webhooks/\d{17,20}/[a-zA-Z0-9_.-]{60,100}$"
+)
 
 # =============================================================================
 # UNBLOCK DELAY SETTINGS
@@ -183,16 +192,6 @@ def get_data_dir() -> Path:
         ~/Library/Application Support/nextdns-blocker on macOS)
     """
     return Path(user_data_dir(APP_NAME))
-
-
-def get_log_dir() -> Path:
-    """
-    Get the log directory path.
-
-    Returns:
-        Path to the log directory (data_dir/logs)
-    """
-    return get_data_dir() / "logs"
 
 
 # =============================================================================
@@ -466,11 +465,15 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
         raise ConfigurationError("Config must be a JSON object with 'blocklist' array")
 
     domains = config.get("blocklist", [])
+    if not isinstance(domains, list):
+        raise ConfigurationError("'blocklist' must be an array")
     if not domains:
         raise ConfigurationError("No domains configured (missing 'blocklist' array)")
 
     # Load allowlist (optional, defaults to empty)
     allowlist = config.get("allowlist", [])
+    if not isinstance(allowlist, list):
+        raise ConfigurationError("'allowlist' must be an array")
 
     # Validate each domain in denylist
     all_errors: list[str] = []
@@ -513,12 +516,20 @@ def _load_timezone_setting(config_dir: Path) -> str:
         try:
             with open(config_file, encoding="utf-8") as f:
                 config_data = json.load(f)
-            settings = config_data.get("settings", {})
-            timezone_value = settings.get("timezone")
-            if timezone_value and isinstance(timezone_value, str):
-                return str(timezone_value)
-        except (json.JSONDecodeError, OSError, TypeError, AttributeError):
-            pass  # Fall through to env/default
+            # Type-safe access: ensure config_data is a dict
+            if not isinstance(config_data, dict):
+                logger.debug("config.json root is not a dict")
+            else:
+                settings = config_data.get("settings")
+                # Ensure settings is a dict before accessing timezone
+                if isinstance(settings, dict):
+                    timezone_value = settings.get("timezone")
+                    if timezone_value and isinstance(timezone_value, str):
+                        return str(timezone_value)
+        except json.JSONDecodeError as e:
+            logger.debug(f"Could not parse timezone from config.json: {e}")
+        except OSError as e:
+            logger.debug(f"Could not read config.json for timezone: {e}")
 
     # Fall back to environment variable (legacy support)
     env_tz = os.getenv("TIMEZONE")
@@ -527,6 +538,145 @@ def _load_timezone_setting(config_dir: Path) -> str:
 
     # Default
     return DEFAULT_TIMEZONE
+
+
+def _load_env_file(env_file: Path) -> None:
+    """
+    Load environment variables from a .env file.
+
+    Validates each line and sets valid key-value pairs as environment variables.
+    Invalid lines are logged as warnings and skipped.
+
+    Args:
+        env_file: Path to the .env file
+    """
+    # Pattern for valid environment variable names (POSIX-compliant)
+    env_key_pattern = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+    max_value_length = 32768  # Reasonable limit for env var values
+
+    with open(env_file, encoding="utf-8-sig") as f:  # utf-8-sig handles BOM
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+
+            # Skip empty lines and comments
+            if not line or line.startswith("#"):
+                continue
+
+            # Validate line format
+            if "=" not in line:
+                logger.warning(f".env line {line_num}: missing '=' separator, skipping")
+                continue
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+
+            if not key:
+                logger.warning(f".env line {line_num}: empty key, skipping")
+                continue
+
+            # Validate key format (POSIX-compliant env var name)
+            if not env_key_pattern.match(key):
+                logger.warning(f".env line {line_num}: invalid key format '{key[:20]}', skipping")
+                continue
+
+            # Parse and validate value
+            try:
+                parsed_value = parse_env_value(value)
+            except ValueError as e:
+                logger.warning(f".env line {line_num}: {e}, skipping")
+                continue
+
+            # Check for null bytes (security issue)
+            if "\x00" in parsed_value:
+                logger.warning(f".env line {line_num}: value contains null byte, skipping")
+                continue
+
+            # Check for excessive length
+            if len(parsed_value) > max_value_length:
+                logger.warning(
+                    f".env line {line_num}: value too long ({len(parsed_value)} chars), skipping"
+                )
+                continue
+
+            os.environ[key] = parsed_value
+
+
+def _build_config_dict(config_dir: Path) -> dict[str, Any]:
+    """
+    Build the configuration dictionary from environment variables.
+
+    Args:
+        config_dir: Configuration directory path
+
+    Returns:
+        Configuration dictionary with raw values
+    """
+    return {
+        "api_key": os.getenv("NEXTDNS_API_KEY"),
+        "profile_id": os.getenv("NEXTDNS_PROFILE_ID"),
+        "discord_webhook_url": os.getenv("DISCORD_WEBHOOK_URL"),
+        "timeout": safe_int(os.getenv("API_TIMEOUT"), DEFAULT_TIMEOUT, "API_TIMEOUT"),
+        "retries": safe_int(os.getenv("API_RETRIES"), DEFAULT_RETRIES, "API_RETRIES"),
+        "script_dir": str(config_dir),
+    }
+
+
+def _validate_required_credentials(config: dict[str, Any]) -> None:
+    """
+    Validate required API credentials.
+
+    Args:
+        config: Configuration dictionary
+
+    Raises:
+        ConfigurationError: If credentials are missing or invalid
+    """
+    if not config["api_key"]:
+        raise ConfigurationError("Missing NEXTDNS_API_KEY in .env or environment")
+
+    if not validate_api_key(config["api_key"]):
+        raise ConfigurationError("Invalid NEXTDNS_API_KEY format")
+
+    if not config["profile_id"]:
+        raise ConfigurationError("Missing NEXTDNS_PROFILE_ID in .env or environment")
+
+    if not validate_profile_id(config["profile_id"]):
+        raise ConfigurationError("Invalid NEXTDNS_PROFILE_ID format")
+
+
+def _validate_timezone(timezone: str) -> None:
+    """
+    Validate timezone string.
+
+    Args:
+        timezone: Timezone string to validate
+
+    Raises:
+        ConfigurationError: If timezone is invalid
+    """
+    try:
+        ZoneInfo(timezone)
+    except KeyError as e:
+        raise ConfigurationError(
+            f"Invalid TIMEZONE '{timezone}'. "
+            f"See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+        ) from e
+
+
+def _validate_optional_webhook(config: dict[str, Any]) -> None:
+    """
+    Validate and sanitize Discord webhook URL if provided.
+
+    Args:
+        config: Configuration dictionary (modified in place)
+    """
+    webhook_url = config.get("discord_webhook_url")
+    if webhook_url and not validate_discord_webhook(webhook_url):
+        logger.warning(
+            "Invalid DISCORD_WEBHOOK_URL format - notifications disabled. "
+            "Expected format: https://discord.com/api/webhooks/{id}/{token}"
+        )
+        config["discord_webhook_url"] = None
 
 
 def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
@@ -546,73 +696,21 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
     if config_dir is None:
         config_dir = get_config_dir()
 
+    # Load .env file if it exists
     env_file = config_dir / ".env"
-
     if env_file.exists():
-        with open(env_file, encoding="utf-8-sig") as f:  # utf-8-sig handles BOM
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
+        _load_env_file(env_file)
 
-                # Skip empty lines and comments
-                if not line or line.startswith("#"):
-                    continue
-
-                # Validate line format
-                if "=" not in line:
-                    logger.warning(f".env line {line_num}: missing '=' separator, skipping")
-                    continue
-
-                key, value = line.split("=", 1)
-                key = key.strip()
-
-                if not key:
-                    logger.warning(f".env line {line_num}: empty key, skipping")
-                    continue
-
-                os.environ[key] = parse_env_value(value)
-
-    # Build configuration with validated values
-    config: dict[str, Any] = {
-        "api_key": os.getenv("NEXTDNS_API_KEY"),
-        "profile_id": os.getenv("NEXTDNS_PROFILE_ID"),
-        "discord_webhook_url": os.getenv("DISCORD_WEBHOOK_URL"),
-        "timeout": safe_int(os.getenv("API_TIMEOUT"), DEFAULT_TIMEOUT, "API_TIMEOUT"),
-        "retries": safe_int(os.getenv("API_RETRIES"), DEFAULT_RETRIES, "API_RETRIES"),
-        "script_dir": str(config_dir),
-    }
+    # Build configuration dictionary
+    config = _build_config_dict(config_dir)
 
     # Load timezone from config.json (or legacy .env)
     config["timezone"] = _load_timezone_setting(config_dir)
 
-    # Validate required fields and their format
-    if not config["api_key"]:
-        raise ConfigurationError("Missing NEXTDNS_API_KEY in .env or environment")
-
-    if not validate_api_key(config["api_key"]):
-        raise ConfigurationError("Invalid NEXTDNS_API_KEY format")
-
-    if not config["profile_id"]:
-        raise ConfigurationError("Missing NEXTDNS_PROFILE_ID in .env or environment")
-
-    if not validate_profile_id(config["profile_id"]):
-        raise ConfigurationError("Invalid NEXTDNS_PROFILE_ID format")
-
-    # Validate timezone early to fail fast
-    try:
-        ZoneInfo(config["timezone"])
-    except KeyError:
-        raise ConfigurationError(
-            f"Invalid TIMEZONE '{config['timezone']}'. "
-            f"See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
-        )
-
-    # Validate Discord Webhook if provided
-    webhook_url = config.get("discord_webhook_url")
-    if webhook_url and not validate_discord_webhook(webhook_url):
-        logger.warning(f"Invalid DISCORD_WEBHOOK_URL format: {webhook_url}")
-        logger.warning("Expected format: https://discord.com/api/webhooks/{id}/{token}")
-        # Option: Set to None to prevent usage, or keep it to let it fail loudly later
-        # config["discord_webhook_url"] = None
+    # Validate all configuration
+    _validate_required_credentials(config)
+    _validate_timezone(config["timezone"])
+    _validate_optional_webhook(config)
 
     return config
 

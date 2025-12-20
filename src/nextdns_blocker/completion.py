@@ -1,5 +1,6 @@
 """Shell completion functions for CLI commands."""
 
+import json
 import logging
 import os
 import subprocess
@@ -68,9 +69,21 @@ def complete_blocklist_domains(
 
         return completions
 
-    except Exception:
-        # Silently fail - completion errors shouldn't break the CLI
-        logger.debug("Failed to load domains for completion", exc_info=True)
+    except (FileNotFoundError, PermissionError) as e:
+        # Specific file access errors - log at debug level (common during initial setup)
+        logger.debug(f"Config file not accessible for completion: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        # JSON parsing error - more serious, log at warning
+        logger.warning(f"Invalid JSON in config file for completion: {e}")
+        return []
+    except (KeyError, TypeError) as e:
+        # Data structure errors - log at warning
+        logger.warning(f"Invalid config structure for completion: {e}")
+        return []
+    except OSError as e:
+        # Other I/O errors - log at warning
+        logger.warning(f"I/O error loading domains for completion: {e}")
         return []
 
 
@@ -123,8 +136,17 @@ def complete_allowlist_domains(
 
         return completions
 
-    except Exception:
-        logger.debug("Failed to load allowlist for completion", exc_info=True)
+    except (FileNotFoundError, PermissionError) as e:
+        logger.debug(f"Config file not accessible for allowlist completion: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid JSON in config file for allowlist completion: {e}")
+        return []
+    except (KeyError, TypeError) as e:
+        logger.warning(f"Invalid config structure for allowlist completion: {e}")
+        return []
+    except OSError as e:
+        logger.warning(f"I/O error loading allowlist for completion: {e}")
         return []
 
 
@@ -167,8 +189,17 @@ def complete_pending_action_ids(
 
         return completions
 
-    except Exception:
-        logger.debug("Failed to load pending actions for completion", exc_info=True)
+    except (FileNotFoundError, PermissionError) as e:
+        logger.debug(f"Pending file not accessible for completion: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid JSON in pending file for completion: {e}")
+        return []
+    except (KeyError, TypeError) as e:
+        logger.warning(f"Invalid pending data structure for completion: {e}")
+        return []
+    except OSError as e:
+        logger.warning(f"I/O error loading pending actions for completion: {e}")
         return []
 
 
@@ -234,8 +265,8 @@ def detect_shell() -> Optional[str]:
         parent_name = result.stdout.strip()
         if parent_name in ("bash", "zsh", "fish", "-bash", "-zsh", "-fish"):
             return parent_name.lstrip("-")
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+        logger.debug(f"Could not detect shell from parent process: {e}")
 
     return None
 
@@ -297,8 +328,8 @@ def is_completion_installed(shell: str) -> bool:
             return True
         if shell == "fish" and COMPLETION_LINE_FISH in content:
             return True
-    except Exception:
-        pass
+    except (OSError, UnicodeDecodeError) as e:
+        logger.debug(f"Could not check completion status for {shell}: {e}")
 
     return False
 
@@ -343,8 +374,10 @@ def install_completion(shell: str) -> tuple[bool, str]:
 
     except PermissionError:
         return False, f"Permission denied: {rc_file}"
-    except Exception as e:
+    except OSError as e:
         return False, f"Failed to install: {e}"
+    except (UnicodeDecodeError, UnicodeEncodeError) as e:
+        return False, f"Encoding error during install: {e}"
 
 
 def uninstall_completion(shell: str) -> tuple[bool, str]:
@@ -388,5 +421,9 @@ def uninstall_completion(shell: str) -> tuple[bool, str]:
         rc_file.write_text("".join(new_lines), encoding="utf-8")
         return True, f"Removed from {rc_file}"
 
-    except Exception as e:
+    except PermissionError:
+        return False, f"Permission denied: {rc_file}"
+    except OSError as e:
         return False, f"Failed to remove: {e}"
+    except (UnicodeDecodeError, UnicodeEncodeError) as e:
+        return False, f"Encoding error during removal: {e}"

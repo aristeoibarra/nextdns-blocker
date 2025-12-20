@@ -65,7 +65,11 @@ def _block_all_domains() -> int:
 
         return len(blocked_domains)
 
-    except Exception as e:
+    except (OSError, KeyError, TypeError, ValueError) as e:
+        # Handle specific exceptions that might occur during blocking:
+        # - OSError: Network/file system errors
+        # - KeyError: Missing config keys
+        # - TypeError/ValueError: Data format issues
         console.print(f"  [yellow]Warning: Could not block all domains: {e}[/yellow]")
         return len(blocked_domains)
 
@@ -159,7 +163,9 @@ class DurationCommand(click.Command):
     def invoke(self, ctx: click.Context) -> None:
         # Get the command name which is the duration
         duration = ctx.info_name
-        assert duration is not None  # info_name is always set for registered commands
+        if duration is None:
+            # Should never happen for registered commands, but handle gracefully
+            raise click.ClickException("Duration command invoked without info_name")
         _do_activate(duration)
 
 
