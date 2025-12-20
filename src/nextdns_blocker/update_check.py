@@ -167,8 +167,7 @@ def _fetch_latest_version() -> Optional[str]:
         # 1. URL is hardcoded constant, not user-controlled
         # 2. Uses HTTPS with certificate validation
         # 3. Only fetches public package metadata (read-only)
-        # nosec B310: URL is constant and HTTPS-only
-        with urllib.request.urlopen(PYPI_URL, timeout=PYPI_TIMEOUT) as response:
+        with urllib.request.urlopen(PYPI_URL, timeout=PYPI_TIMEOUT) as response:  # nosec B310
             data: dict[str, Any] = json.loads(response.read().decode())
             # Safely access nested keys
             info = data.get("info")
