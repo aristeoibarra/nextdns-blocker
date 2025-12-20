@@ -438,8 +438,7 @@ def _sync_denylist(
         elif not should_block and is_blocked:
             # Domain should be unblocked
             unblocked = _handle_unblock(
-                domain, domain_config, domains, client, config,
-                dry_run, verbose, panic_active
+                domain, domain_config, domains, client, config, dry_run, verbose, panic_active
             )
             if unblocked:
                 unblocked_count += 1
@@ -503,15 +502,12 @@ def _handle_unblock(
 
         if dry_run:
             console.print(
-                f"  [yellow]Would schedule UNBLOCK: {domain} "
-                f"(delay: {domain_delay})[/yellow]"
+                f"  [yellow]Would schedule UNBLOCK: {domain} " f"(delay: {domain_delay})[/yellow]"
             )
         else:
             action = create_pending_action(domain, domain_delay, requested_by="sync")
             if action and verbose:
-                console.print(
-                    f"  [yellow]Scheduled unblock: {domain} ({domain_delay})[/yellow]"
-                )
+                console.print(f"  [yellow]Scheduled unblock: {domain} ({domain_delay})[/yellow]")
         return False
 
     # Immediate unblock (no delay)
@@ -653,9 +649,7 @@ def sync(
         )
 
         # Sync allowlist (schedule-aware)
-        allowed_count, disallowed_count = _sync_allowlist(
-            allowlist, client, evaluator, dry_run
-        )
+        allowed_count, disallowed_count = _sync_allowlist(allowlist, client, evaluator, dry_run)
 
         # Print summary
         if not dry_run:

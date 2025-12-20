@@ -169,9 +169,7 @@ class DomainCache:
         with self._lock:
             self._data = data
             # Filter out entries without valid id to prevent false positives
-            self._domains = {
-                entry.get("id") for entry in data if entry.get("id")
-            }
+            self._domains = {entry.get("id") for entry in data if entry.get("id")}
             self._timestamp = time.monotonic()
 
     def contains(self, domain: str) -> Optional[bool]:

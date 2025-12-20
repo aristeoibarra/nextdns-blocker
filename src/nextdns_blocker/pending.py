@@ -179,8 +179,7 @@ def _load_pending_data() -> dict[str, Any]:
             )
         else:
             logger.error(
-                "Failed to create backup of corrupted pending.json. "
-                "Pending actions may be lost."
+                "Failed to create backup of corrupted pending.json. " "Pending actions may be lost."
             )
         return {"version": PENDING_VERSION, "pending_actions": []}
 

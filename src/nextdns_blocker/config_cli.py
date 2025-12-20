@@ -30,11 +30,29 @@ NEW_CONFIG_FILE = "config.json"
 CONFIG_VERSION = "1.0"
 
 # Safe editors whitelist for security (prevents arbitrary command execution)
-SAFE_EDITORS = frozenset({
-    "vim", "vi", "nvim", "nano", "emacs", "pico", "micro", "joe", "ne",
-    "code", "subl", "atom", "gedit", "kate", "notepad", "notepad++",
-    "sublime_text", "TextEdit", "open"
-})
+SAFE_EDITORS = frozenset(
+    {
+        "vim",
+        "vi",
+        "nvim",
+        "nano",
+        "emacs",
+        "pico",
+        "micro",
+        "joe",
+        "ne",
+        "code",
+        "subl",
+        "atom",
+        "gedit",
+        "kate",
+        "notepad",
+        "notepad++",
+        "sublime_text",
+        "TextEdit",
+        "open",
+    }
+)
 
 
 # =============================================================================
@@ -157,9 +175,7 @@ def save_config_file(config_path: Path, config: dict[str, Any]) -> None:
 
     # Write to temporary file first
     temp_fd, temp_path = tempfile.mkstemp(
-        dir=config_path.parent,
-        prefix=f".{config_path.name}.",
-        suffix=".tmp"
+        dir=config_path.parent, prefix=f".{config_path.name}.", suffix=".tmp"
     )
     try:
         with os.fdopen(temp_fd, "w", encoding="utf-8") as f:

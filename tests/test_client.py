@@ -1,7 +1,6 @@
 """Tests for NextDNSClient class."""
 
 from collections import deque
-from datetime import datetime
 from unittest.mock import patch
 
 import pytest
