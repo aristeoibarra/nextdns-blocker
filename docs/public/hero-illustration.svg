@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e3a5f"/>
+      <stop offset="100%" style="stop-color:#0f172a"/>
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#2563eb"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#22c55e"/>
+      <stop offset="100%" style="stop-color:#16a34a"/>
+    </linearGradient>
+    <linearGradient id="redGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ef4444"/>
+      <stop offset="100%" style="stop-color:#dc2626"/>
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#60a5fa"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+
+    <!-- Glow filter -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Shadow filter -->
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background elements -->
+  <circle cx="320" cy="60" r="80" fill="#3b82f6" opacity="0.1"/>
+  <circle cx="80" cy="240" r="60" fill="#22c55e" opacity="0.08"/>
+  <circle cx="350" cy="220" r="40" fill="#ef4444" opacity="0.08"/>
+
+  <!-- Grid lines (subtle) -->
+  <g stroke="#3b82f6" stroke-width="0.5" opacity="0.1">
+    <line x1="0" y1="75" x2="400" y2="75"/>
+    <line x1="0" y1="150" x2="400" y2="150"/>
+    <line x1="0" y1="225" x2="400" y2="225"/>
+    <line x1="100" y1="0" x2="100" y2="300"/>
+    <line x1="200" y1="0" x2="200" y2="300"/>
+    <line x1="300" y1="0" x2="300" y2="300"/>
+  </g>
+
+  <!-- Central Shield -->
+  <g transform="translate(200, 150)" filter="url(#shadow)">
+    <!-- Shield shape -->
+    <path d="M0 -70 L50 -50 L50 20 Q50 60 0 80 Q-50 60 -50 20 L-50 -50 Z"
+          fill="url(#shieldGrad)" opacity="0.95"/>
+    <!-- Shield inner -->
+    <path d="M0 -55 L38 -38 L38 18 Q38 50 0 66 Q-38 50 -38 18 L-38 -38 Z"
+          fill="#1e40af" opacity="0.5"/>
+    <!-- Checkmark -->
+    <path d="M-18 5 L-5 18 L22 -10"
+          stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  </g>
+
+  <!-- Clock icon (left) -->
+  <g transform="translate(70, 100)">
+    <circle cx="0" cy="0" r="30" fill="url(#blueGrad)" opacity="0.9" filter="url(#shadow)"/>
+    <circle cx="0" cy="0" r="22" fill="none" stroke="#fff" stroke-width="2" opacity="0.3"/>
+    <line x1="0" y1="0" x2="0" y2="-12" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <line x1="0" y1="0" x2="8" y2="4" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="0" cy="0" r="3" fill="#fff"/>
+  </g>
+
+  <!-- Block icon (right top) -->
+  <g transform="translate(330, 80)">
+    <circle cx="0" cy="0" r="28" fill="url(#redGrad)" opacity="0.9" filter="url(#shadow)"/>
+    <circle cx="0" cy="0" r="14" fill="none" stroke="#fff" stroke-width="3"/>
+    <line x1="-10" y1="10" x2="10" y2="-10" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- Check icon (right bottom) -->
+  <g transform="translate(320, 200)">
+    <circle cx="0" cy="0" r="26" fill="url(#greenGrad)" opacity="0.9" filter="url(#shadow)"/>
+    <path d="M-10 0 L-3 7 L10 -7" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Connection lines -->
+  <g stroke="#3b82f6" stroke-width="2" stroke-dasharray="6,4" opacity="0.4">
+    <!-- Clock to shield -->
+    <path d="M100 100 Q150 100 150 130" fill="none"/>
+    <!-- Block to shield -->
+    <path d="M302 80 Q260 80 250 100" fill="none"/>
+    <!-- Check to shield -->
+    <path d="M294 200 Q260 200 250 180" fill="none"/>
+  </g>
+
+  <!-- Floating particles -->
+  <g fill="#3b82f6" opacity="0.6">
+    <circle cx="40" cy="50" r="3"/>
+    <circle cx="360" cy="270" r="2"/>
+    <circle cx="180" cy="40" r="2"/>
+    <circle cx="250" cy="260" r="3"/>
+    <circle cx="30" cy="180" r="2"/>
+  </g>
+
+  <!-- DNS text label -->
+  <g transform="translate(70, 220)">
+    <rect x="-35" y="-15" width="70" height="30" rx="6" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="0" y="5" font-family="system-ui, sans-serif" font-size="12" font-weight="600" fill="#60a5fa" text-anchor="middle">DNS</text>
+  </g>
+
+  <!-- Schedule label -->
+  <g transform="translate(70, 145)">
+    <rect x="-40" y="-12" width="80" height="24" rx="5" fill="#1e3a5f" opacity="0.8"/>
+    <text x="0" y="5" font-family="system-ui, sans-serif" font-size="10" font-weight="500" fill="#94a3b8" text-anchor="middle">SCHEDULE</text>
+  </g>
+</svg>
