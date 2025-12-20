@@ -1,6 +1,5 @@
 """Tests for common utility functions."""
 
-
 from nextdns_blocker.common import is_subdomain, validate_domain
 
 
