@@ -528,20 +528,38 @@ def _sync_allowlist(
     allowlist: list[dict[str, Any]],
     client: "NextDNSClient",
     evaluator: "ScheduleEvaluator",
+    config: dict[str, Any],
     dry_run: bool,
+    verbose: bool,
+    panic_active: bool,
 ) -> tuple[int, int]:
     """
     Synchronize allowlist domains based on schedules.
+
+    During panic mode, ALL allowlist operations are skipped to prevent
+    scheduled allowlist entries from creating security holes. The allowlist
+    has highest priority in NextDNS and would bypass all blocks.
 
     Args:
         allowlist: List of allowlist configurations
         client: NextDNS API client
         evaluator: Schedule evaluator
+        config: Application configuration (for webhook URL)
         dry_run: If True, only show what would be done
+        verbose: If True, show detailed output
+        panic_active: If True, skip all allowlist operations
 
     Returns:
         Tuple of (allowed_count, disallowed_count)
     """
+    # During panic mode, skip ALL allowlist operations
+    # This prevents scheduled allowlist entries from creating security holes
+    # (allowlist has highest priority in NextDNS and would bypass all blocks)
+    if panic_active:
+        if verbose:
+            console.print("  [red]Skipping allowlist sync (panic mode active)[/red]")
+        return 0, 0
+
     allowed_count = 0
     disallowed_count = 0
 
@@ -557,6 +575,9 @@ def _sync_allowlist(
             else:
                 if client.allow(domain):
                     audit_log("ALLOW", domain)
+                    send_discord_notification(
+                        domain, "allow", webhook_url=config.get("discord_webhook_url")
+                    )
                     allowed_count += 1
 
         elif not should_allow and is_allowed:
@@ -566,6 +587,9 @@ def _sync_allowlist(
             else:
                 if client.disallow(domain):
                     audit_log("DISALLOW", domain)
+                    send_discord_notification(
+                        domain, "disallow", webhook_url=config.get("discord_webhook_url")
+                    )
                     disallowed_count += 1
 
     return allowed_count, disallowed_count
@@ -626,7 +650,7 @@ def sync(
         click.echo(f"  Paused ({remaining} remaining), skipping sync")
         return
 
-    # Check panic mode - blocks allowed, unblocks skipped
+    # Check panic mode - blocks continue, unblocks and allowlist changes skipped
     from .panic import is_panic_mode
 
     panic_active = is_panic_mode()
@@ -643,13 +667,33 @@ def sync(
         if dry_run:
             console.print("\n  [yellow]DRY RUN MODE - No changes will be made[/yellow]\n")
 
+        # =========================================================================
+        # SYNC ORDER: Denylist first, then Allowlist
+        #
+        # This order matters because NextDNS processes allowlist with higher
+        # priority. By syncing denylist first, we ensure blocks are applied
+        # before exceptions. The allowlist sync then adds/removes exceptions.
+        #
+        # Priority in NextDNS (highest to lowest):
+        # 1. Allowlist (always wins - bypasses everything)
+        # 2. Denylist (your custom blocks)
+        # 3. Third-party blocklists (OISD, HaGeZi, etc.)
+        # 4. Security features (Threat Intelligence, NRDs, etc.)
+        #
+        # During panic mode:
+        # - Denylist: blocks continue, unblocks skipped
+        # - Allowlist: completely skipped (prevents security holes)
+        # =========================================================================
+
         # Sync denylist domains
         blocked_count, unblocked_count = _sync_denylist(
             domains, client, evaluator, config, dry_run, verbose, panic_active
         )
 
-        # Sync allowlist (schedule-aware)
-        allowed_count, disallowed_count = _sync_allowlist(allowlist, client, evaluator, dry_run)
+        # Sync allowlist (schedule-aware, panic-aware)
+        allowed_count, disallowed_count = _sync_allowlist(
+            allowlist, client, evaluator, config, dry_run, verbose, panic_active
+        )
 
         # Print summary
         if not dry_run:
@@ -837,6 +881,9 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
 
         if client.allow(domain):
             audit_log("ALLOW", domain)
+            send_discord_notification(
+                domain, "allow", webhook_url=config.get("discord_webhook_url")
+            )
             console.print(f"\n  [green]Added to allowlist: {domain}[/green]\n")
         else:
             console.print("\n  [red]Error: Failed to add to allowlist[/red]\n", highlight=False)
@@ -873,6 +920,9 @@ def disallow(domain: str, config_dir: Optional[Path]) -> None:
 
         if client.disallow(domain):
             audit_log("DISALLOW", domain)
+            send_discord_notification(
+                domain, "disallow", webhook_url=config.get("discord_webhook_url")
+            )
             console.print(f"\n  [green]Removed from allowlist: {domain}[/green]\n")
         else:
             console.print(

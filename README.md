@@ -522,6 +522,46 @@ nextdns-blocker disallow aws.amazon.com
 nextdns-blocker status
 ```
 
+#### Blocklist and Allowlist Interaction
+
+NextDNS processes these lists with specific priority rules:
+
+1. **Allowlist has highest priority** - If a domain is in both lists, NextDNS will ALLOW it
+2. **Subdomain inheritance** - Blocking `amazon.com` blocks all subdomains (`*.amazon.com`)
+3. **Subdomain exceptions** - You can allow `aws.amazon.com` while blocking `amazon.com`
+
+Example configuration:
+
+```json
+{
+  "blocklist": [
+    {"domain": "amazon.com", "schedule": null}
+  ],
+  "allowlist": [
+    {"domain": "aws.amazon.com"}
+  ]
+}
+```
+
+Result in NextDNS:
+- `amazon.com` → Blocked
+- `www.amazon.com` → Blocked (inherits from parent)
+- `aws.amazon.com` → **Allowed** (allowlist overrides)
+- `console.aws.amazon.com` → **Allowed** (inherits from allowlist entry)
+
+> **Note:** This tool validates that the exact same domain doesn't appear in both lists.
+> Subdomain relationships are allowed and will generate an informational warning during config load.
+
+#### Panic Mode and Allowlist
+
+During [panic mode](#panic-mode), **all allowlist operations are blocked**:
+- The `allow` command is hidden
+- The `disallow` command is hidden
+- Scheduled allowlist sync is completely skipped
+
+This prevents scheduled allowlist entries from creating security holes during emergency lockdown.
+The allowlist has highest priority in NextDNS and would bypass all blocks if allowed to sync.
+
 ### Timezone
 
 The timezone is auto-detected during `init` based on your system settings:

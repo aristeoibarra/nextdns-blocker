@@ -27,12 +27,15 @@ logger = logging.getLogger(__name__)
 MIN_PANIC_DURATION_MINUTES = 15
 
 # Commands to hide during panic mode (top-level commands)
+# Note: "allow" is included because allowlist has highest priority in NextDNS
+# and could bypass all blocks during panic mode (security risk)
 DANGEROUS_COMMANDS = frozenset(
     {
         "unblock",
         "pause",
         "resume",
         "disallow",
+        "allow",
     }
 )
 

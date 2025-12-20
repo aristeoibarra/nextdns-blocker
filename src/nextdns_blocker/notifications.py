@@ -17,6 +17,8 @@ COLOR_UNBLOCK = 3066993  # Green
 COLOR_PENDING = 16776960  # Yellow
 COLOR_CANCEL = 9807270  # Gray
 COLOR_PANIC = 9109504  # Dark Red
+COLOR_ALLOW = 3066993  # Green (same as unblock - adding to allowlist is permissive)
+COLOR_DISALLOW = 15105570  # Orange (removing from allowlist is restrictive)
 
 # Notification timeout in seconds
 NOTIFICATION_TIMEOUT = 5
@@ -147,6 +149,12 @@ def send_discord_notification(
     elif event_type == "panic":
         title = "Panic Mode Activated"
         color = COLOR_PANIC
+    elif event_type == "allow":
+        title = "Domain Added to Allowlist"
+        color = COLOR_ALLOW
+    elif event_type == "disallow":
+        title = "Domain Removed from Allowlist"
+        color = COLOR_DISALLOW
     else:
         logger.warning(f"Unknown event type: {event_type}, skipping notification")
         return
