@@ -192,7 +192,7 @@ class DomainCache:
         """Invalidate the cache."""
         with self._lock:
             self._data = None
-            self._domains = set()
+            self._domains.clear()  # More efficient than creating new set
             self._timestamp = 0
 
     def add_domain(self, domain: str) -> None:
@@ -379,7 +379,8 @@ class NextDNSClient:
                 return None
             except requests.exceptions.HTTPError as e:
                 # Retry on 429 (rate limit) and 5xx errors
-                status_code = e.response.status_code if e.response else 0
+                # Use getattr for safer access in case response is malformed
+                status_code = getattr(e.response, "status_code", 0) if e.response else 0
                 if status_code == 429 or (500 <= status_code < 600):
                     if attempt < self.retries:
                         backoff = self._calculate_backoff(attempt)

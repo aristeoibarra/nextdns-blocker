@@ -13,7 +13,13 @@ from typing import Any, Optional
 import click
 
 from .common import audit_log as _base_audit_log
-from .common import get_log_dir, read_secure_file, safe_int, write_secure_file
+from .common import (
+    ensure_naive_datetime,
+    get_log_dir,
+    read_secure_file,
+    safe_int,
+    write_secure_file,
+)
 from .exceptions import APIError, ConfigurationError, DomainValidationError
 from .platform_utils import (
     get_executable_args,
@@ -29,9 +35,11 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # Subprocess timeout in seconds (configurable via environment variable)
-SUBPROCESS_TIMEOUT = safe_int(
+# Enforce minimum of 10 seconds and maximum of 300 seconds to prevent misconfiguration
+_raw_subprocess_timeout = safe_int(
     os.environ.get("NEXTDNS_SUBPROCESS_TIMEOUT"), 60, "NEXTDNS_SUBPROCESS_TIMEOUT"
 )
+SUBPROCESS_TIMEOUT = min(300, max(10, _raw_subprocess_timeout))
 
 # Cleanup interval in hours (run cleanup once per day)
 CLEANUP_INTERVAL_HOURS = 24
@@ -126,10 +134,7 @@ def _should_run_cleanup() -> bool:
         if cleanup_file.exists():
             content = read_secure_file(cleanup_file)
             if content:
-                last_cleanup = datetime.fromisoformat(content)
-                # Ensure we're comparing naive datetimes (strip timezone if present)
-                if last_cleanup.tzinfo is not None:
-                    last_cleanup = last_cleanup.replace(tzinfo=None)
+                last_cleanup = ensure_naive_datetime(datetime.fromisoformat(content))
                 hours_since = (datetime.now() - last_cleanup).total_seconds() / 3600
                 if hours_since < CLEANUP_INTERVAL_HOURS:
                     return False
@@ -167,10 +172,7 @@ def is_disabled() -> bool:
         if content == "permanent":
             return True
 
-        disabled_until = datetime.fromisoformat(content)
-        # Ensure we're comparing naive datetimes (strip timezone if present)
-        if disabled_until.tzinfo is not None:
-            disabled_until = disabled_until.replace(tzinfo=None)
+        disabled_until = ensure_naive_datetime(datetime.fromisoformat(content))
         if datetime.now() < disabled_until:
             return True
 
@@ -194,10 +196,7 @@ def get_disabled_remaining() -> str:
         if content == "permanent":
             return "permanently"
 
-        disabled_until = datetime.fromisoformat(content)
-        # Ensure we're comparing naive datetimes (strip timezone if present)
-        if disabled_until.tzinfo is not None:
-            disabled_until = disabled_until.replace(tzinfo=None)
+        disabled_until = ensure_naive_datetime(datetime.fromisoformat(content))
         remaining = disabled_until - datetime.now()
 
         if remaining.total_seconds() <= 0:
@@ -1022,8 +1021,15 @@ def _process_pending_actions() -> None:
                     click.echo(f"  Executed pending unblock: {domain}")
                 else:
                     logger.error(f"Failed to unblock {domain} (pending: {action_id})")
-            except (OSError, DomainValidationError, APIError) as e:
-                logger.error(f"Error processing pending action {action_id}: {e}")
+            except DomainValidationError as e:
+                # Domain validation failed - log and skip this action
+                logger.error(f"Invalid domain in pending action {action_id}: {e}")
+            except APIError as e:
+                # API error - may be temporary, will retry on next check
+                logger.error(f"API error processing pending action {action_id}: {e}")
+            except OSError as e:
+                # File system or network error
+                logger.error(f"I/O error processing pending action {action_id}: {e}")
 
     # Periodic cleanup of old actions (time-based, once per day)
     if _should_run_cleanup():

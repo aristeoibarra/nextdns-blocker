@@ -14,7 +14,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from .common import audit_log, get_log_dir, read_secure_file, write_secure_file
+from .common import (
+    audit_log,
+    ensure_naive_datetime,
+    get_log_dir,
+    read_secure_file,
+    write_secure_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +71,7 @@ def _get_panic_info() -> tuple[bool, Optional[datetime]]:
         return False, None
 
     try:
-        panic_until = datetime.fromisoformat(content)
-        # Ensure we're comparing naive datetimes (strip timezone if present)
-        if panic_until.tzinfo is not None:
-            panic_until = panic_until.replace(tzinfo=None)
+        panic_until = ensure_naive_datetime(datetime.fromisoformat(content))
         if datetime.now() < panic_until:
             return True, panic_until
         # Expired, clean up (missing_ok handles race conditions)
@@ -231,6 +234,10 @@ def parse_duration(duration_str: str) -> int:
 
     value = int(match.group(1))
     unit = match.group(2).lower()
+
+    # Validate value is positive
+    if value <= 0:
+        raise ValueError(f"Duration must be a positive number, got: {value}")
 
     if unit == "m":
         return value

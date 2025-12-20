@@ -25,6 +25,7 @@ from .common import (
     _lock_file,
     _unlock_file,
     audit_log,
+    ensure_naive_datetime,
     read_secure_file,
     write_secure_file,
 )
@@ -132,7 +133,13 @@ def generate_action_id() -> str:
 
 
 def _load_pending_data() -> dict[str, Any]:
-    """Load pending actions from file."""
+    """
+    Load pending actions from file.
+
+    Returns:
+        dict containing 'version' and 'pending_actions' list.
+        Returns empty structure if file doesn't exist or is corrupted.
+    """
     pending_file = get_pending_file()
     content = read_secure_file(pending_file)
     if not content:
@@ -307,10 +314,7 @@ def get_ready_actions() -> list[dict[str, Any]]:
         try:
             execute_at_str = action.get("execute_at", "")
             if execute_at_str:
-                execute_at = datetime.fromisoformat(execute_at_str)
-                # Ensure we're comparing naive datetimes (strip timezone if present)
-                if execute_at.tzinfo is not None:
-                    execute_at = execute_at.replace(tzinfo=None)
+                execute_at = ensure_naive_datetime(datetime.fromisoformat(execute_at_str))
                 if execute_at <= now:
                     ready.append(action)
         except (ValueError, KeyError):
@@ -355,10 +359,7 @@ def cleanup_old_actions(max_age_days: int = 7) -> int:
             new_actions = []
             for a in data["pending_actions"]:
                 try:
-                    created_at = datetime.fromisoformat(a["created_at"])
-                    # Ensure we're comparing naive datetimes (strip timezone if present)
-                    if created_at.tzinfo is not None:
-                        created_at = created_at.replace(tzinfo=None)
+                    created_at = ensure_naive_datetime(datetime.fromisoformat(a["created_at"]))
                     if created_at > cutoff:
                         new_actions.append(a)
                 except (ValueError, KeyError):

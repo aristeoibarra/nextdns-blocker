@@ -2,6 +2,7 @@
 
 import contextlib
 import logging
+import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -15,6 +16,7 @@ from .client import NextDNSClient
 from .common import (
     audit_log,
     ensure_log_dir,
+    ensure_naive_datetime,
     get_audit_log_file,
     get_log_dir,
     read_secure_file,
@@ -129,10 +131,7 @@ def _get_pause_info() -> tuple[bool, Optional[datetime]]:
         return False, None
 
     try:
-        pause_until = datetime.fromisoformat(content)
-        # Ensure we're comparing naive datetimes (strip timezone if present)
-        if pause_until.tzinfo is not None:
-            pause_until = pause_until.replace(tzinfo=None)
+        pause_until = ensure_naive_datetime(datetime.fromisoformat(content))
         if datetime.now() < pause_until:
             return True, pause_until
         # Expired, clean up (missing_ok handles race conditions)
@@ -335,11 +334,10 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
         # Handle delay (if set and not forcing)
         delay_seconds = parse_unblock_delay_seconds(unblock_delay or "0")
 
-        if delay_seconds and delay_seconds > 0 and not force:
+        if delay_seconds and delay_seconds > 0 and not force and unblock_delay is not None:
             # Create pending action
-            # Note: unblock_delay is guaranteed non-None here because delay_seconds > 0
-            # only when parse_unblock_delay_seconds returns a positive int from a valid string
-            action = create_pending_action(domain, unblock_delay, requested_by="cli")  # type: ignore[arg-type]
+            # unblock_delay is guaranteed non-None by the condition above
+            action = create_pending_action(domain, unblock_delay, requested_by="cli")
             if action:
                 send_discord_notification(
                     domain=f"{domain} (scheduled)",
@@ -468,7 +466,7 @@ def sync(
 
                 delay_seconds = parse_unblock_delay_seconds(domain_delay or "0")
 
-                if delay_seconds and delay_seconds > 0:
+                if delay_seconds and delay_seconds > 0 and domain_delay is not None:
                     # Check if already pending
                     existing = get_pending_for_domain(domain)
                     if existing:
@@ -482,9 +480,8 @@ def sync(
                             f"(delay: {domain_delay})[/yellow]"
                         )
                     else:
-                        # Note: domain_delay is guaranteed non-None here because delay_seconds > 0
-                        # only when parse_unblock_delay_seconds returns a positive int from a valid string
-                        action = create_pending_action(domain, domain_delay, requested_by="sync")  # type: ignore[arg-type]
+                        # domain_delay is guaranteed non-None by the condition above
+                        action = create_pending_action(domain, domain_delay, requested_by="sync")
                         if action and verbose:
                             console.print(
                                 f"  [yellow]Scheduled unblock: {domain} ({domain_delay})[/yellow]"
@@ -938,7 +935,7 @@ def uninstall(yes: bool) -> None:
         else:
             _uninstall_cron_jobs()
         console.print("          [green]Done[/green]")
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
         console.print(f"          [yellow]Warning: {e}[/yellow]")
 
     # Remove directories
@@ -951,7 +948,7 @@ def uninstall(yes: bool) -> None:
                 console.print("          [green]Done[/green]")
             else:
                 console.print("          [yellow]Already removed[/yellow]")
-        except Exception as e:
+        except (OSError, PermissionError) as e:
             console.print(f"          [red]Error: {e}[/red]")
 
     console.print("\n  [green]Uninstall complete![/green]")
@@ -1122,7 +1119,7 @@ def fix() -> None:
             console.print(f"        Sync: [red]FAILED - {result.stderr}[/red]")
     except subprocess.TimeoutExpired:
         console.print("        Sync: [red]TIMEOUT[/red]")
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         console.print(f"        Sync: [red]FAILED - {e}[/red]")
 
     # Step 5: Shell completion
@@ -1279,7 +1276,7 @@ def update(yes: bool) -> None:
         else:
             console.print(f"  [red]Update failed: {result.stderr}[/red]\n", highlight=False)
             sys.exit(1)
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
         console.print(f"  [red]Update failed: {e}[/red]\n", highlight=False)
         sys.exit(1)
 

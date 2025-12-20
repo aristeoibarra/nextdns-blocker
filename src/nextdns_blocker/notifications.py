@@ -180,7 +180,9 @@ def send_discord_notification(
         logger.warning(f"Discord notification payload error for {event_type}: {domain} - {e}")
     except Exception as e:
         # Catch any other unexpected errors to ensure silent failure
-        # Log as error (not warning) to make these more visible for debugging
+        # Log as error with exception type to help debugging
         logger.error(
-            f"Unexpected error sending Discord notification for {event_type}: {domain} - {e}"
+            f"Unexpected error sending Discord notification for {event_type}: {domain} - "
+            f"{type(e).__name__}: {e}",
+            exc_info=True,  # Include traceback for debugging unexpected errors
         )

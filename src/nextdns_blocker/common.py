@@ -222,6 +222,25 @@ def ensure_log_dir() -> None:
     get_log_dir().mkdir(parents=True, exist_ok=True)
 
 
+def ensure_naive_datetime(dt: datetime) -> datetime:
+    """
+    Ensure a datetime is naive (timezone-unaware) for consistent comparisons.
+
+    This function centralizes the handling of naive vs aware datetimes throughout
+    the codebase. All datetime comparisons should use naive datetimes to avoid
+    TypeError when comparing aware and naive datetimes.
+
+    Args:
+        dt: A datetime object (can be naive or aware)
+
+    Returns:
+        A naive datetime (tzinfo stripped if present)
+    """
+    if dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 # =============================================================================
 # VALIDATION FUNCTIONS
 # =============================================================================
@@ -309,7 +328,13 @@ def parse_env_value(value: str) -> str:
 
     Returns:
         Cleaned value with quotes removed
+
+    Raises:
+        ValueError: If value is None or not a string
     """
+    if value is None or not isinstance(value, str):
+        raise ValueError("Environment value must be a non-None string")
+
     value = value.strip()
     if len(value) >= 2 and (
         (value.startswith('"') and value.endswith('"'))
@@ -401,20 +426,23 @@ def write_secure_file(path: Path, content: str) -> None:
     Raises:
         OSError: If file operations fail
     """
-    log_dir = get_log_dir()
+    # Resolve the path to catch symlink attacks and path traversal
+    resolved_path = path.resolve()
+
     # Ensure log directory exists if writing to log dir
-    if path.parent == log_dir:
+    log_dir = get_log_dir().resolve()
+    if resolved_path.parent == log_dir or log_dir in resolved_path.parents:
         ensure_log_dir()
     else:
         # Create parent directories if needed for other paths
-        path.parent.mkdir(parents=True, exist_ok=True)
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Set secure permissions before writing if file exists
-    if path.exists():
-        os.chmod(path, SECURE_FILE_MODE)
+    if resolved_path.exists():
+        os.chmod(resolved_path, SECURE_FILE_MODE)
 
     # Write with exclusive lock
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECURE_FILE_MODE)
+    fd = os.open(resolved_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECURE_FILE_MODE)
     fd_closed = False
     try:
         # os.fdopen takes ownership of fd - it will close it when the file object closes

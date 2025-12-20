@@ -15,12 +15,16 @@ from platformdirs import user_config_dir, user_data_dir
 from .common import (
     APP_NAME,
     VALID_DAYS,
+    get_log_dir,
     parse_env_value,
     safe_int,
     validate_domain,
     validate_time_format,
 )
 from .exceptions import ConfigurationError
+
+# Re-export get_log_dir for backward compatibility
+__all__ = ["get_log_dir"]
 
 # =============================================================================
 # CREDENTIAL VALIDATION PATTERNS
@@ -35,9 +39,10 @@ PROFILE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,30}$")
 
 # Discord Webhook pattern: Stricter validation
 # - Webhook ID: 17-20 digit snowflake (Discord uses snowflakes as IDs)
-# - Token: 60-80 character alphanumeric with underscores/hyphens
+# - Token: 60-90 character alphanumeric with underscores/hyphens/dots
+#   (extended range to accommodate Discord's varying token lengths)
 DISCORD_WEBHOOK_PATTERN = re.compile(
-    r"^https://discord\.com/api/webhooks/\d{17,20}/[a-zA-Z0-9_-]{60,80}$"
+    r"^https://discord\.com/api/webhooks/\d{17,20}/[a-zA-Z0-9_.-]{60,90}$"
 )
 
 # =============================================================================
@@ -187,16 +192,6 @@ def get_data_dir() -> Path:
         ~/Library/Application Support/nextdns-blocker on macOS)
     """
     return Path(user_data_dir(APP_NAME))
-
-
-def get_log_dir() -> Path:
-    """
-    Get the log directory path.
-
-    Returns:
-        Path to the log directory (data_dir/logs)
-    """
-    return get_data_dir() / "logs"
 
 
 # =============================================================================
@@ -517,12 +512,22 @@ def _load_timezone_setting(config_dir: Path) -> str:
         try:
             with open(config_file, encoding="utf-8") as f:
                 config_data = json.load(f)
-            settings = config_data.get("settings", {})
-            timezone_value = settings.get("timezone")
-            if timezone_value and isinstance(timezone_value, str):
-                return str(timezone_value)
-        except (json.JSONDecodeError, OSError, TypeError, AttributeError):
-            pass  # Fall through to env/default
+            # Type-safe access: ensure config_data is a dict
+            if not isinstance(config_data, dict):
+                logger.debug("config.json root is not a dict")
+            else:
+                settings = config_data.get("settings")
+                # Ensure settings is a dict before accessing timezone
+                if isinstance(settings, dict):
+                    timezone_value = settings.get("timezone")
+                    if timezone_value and isinstance(timezone_value, str):
+                        return str(timezone_value)
+        except json.JSONDecodeError as e:
+            logger.debug(f"Could not parse timezone from config.json: {e}")
+        except OSError as e:
+            logger.debug(f"Could not read config.json for timezone: {e}")
+        except (TypeError, AttributeError) as e:
+            logger.debug(f"Invalid config.json structure for timezone: {e}")
 
     # Fall back to environment variable (legacy support)
     env_tz = os.getenv("TIMEZONE")
