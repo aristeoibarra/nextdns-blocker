@@ -39,10 +39,10 @@ PROFILE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,30}$")
 
 # Discord Webhook pattern: Stricter validation
 # - Webhook ID: 17-20 digit snowflake (Discord uses snowflakes as IDs)
-# - Token: 60-90 character alphanumeric with underscores/hyphens/dots
+# - Token: 60-100 character alphanumeric with underscores/hyphens/dots
 #   (extended range to accommodate Discord's varying token lengths)
 DISCORD_WEBHOOK_PATTERN = re.compile(
-    r"^https://discord\.com/api/webhooks/\d{17,20}/[a-zA-Z0-9_.-]{60,90}$"
+    r"^https://discord\.com/api/webhooks/\d{17,20}/[a-zA-Z0-9_.-]{60,100}$"
 )
 
 # =============================================================================
@@ -595,6 +595,84 @@ def _load_env_file(env_file: Path) -> None:
             os.environ[key] = parsed_value
 
 
+def _build_config_dict(config_dir: Path) -> dict[str, Any]:
+    """
+    Build the configuration dictionary from environment variables.
+
+    Args:
+        config_dir: Configuration directory path
+
+    Returns:
+        Configuration dictionary with raw values
+    """
+    return {
+        "api_key": os.getenv("NEXTDNS_API_KEY"),
+        "profile_id": os.getenv("NEXTDNS_PROFILE_ID"),
+        "discord_webhook_url": os.getenv("DISCORD_WEBHOOK_URL"),
+        "timeout": safe_int(os.getenv("API_TIMEOUT"), DEFAULT_TIMEOUT, "API_TIMEOUT"),
+        "retries": safe_int(os.getenv("API_RETRIES"), DEFAULT_RETRIES, "API_RETRIES"),
+        "script_dir": str(config_dir),
+    }
+
+
+def _validate_required_credentials(config: dict[str, Any]) -> None:
+    """
+    Validate required API credentials.
+
+    Args:
+        config: Configuration dictionary
+
+    Raises:
+        ConfigurationError: If credentials are missing or invalid
+    """
+    if not config["api_key"]:
+        raise ConfigurationError("Missing NEXTDNS_API_KEY in .env or environment")
+
+    if not validate_api_key(config["api_key"]):
+        raise ConfigurationError("Invalid NEXTDNS_API_KEY format")
+
+    if not config["profile_id"]:
+        raise ConfigurationError("Missing NEXTDNS_PROFILE_ID in .env or environment")
+
+    if not validate_profile_id(config["profile_id"]):
+        raise ConfigurationError("Invalid NEXTDNS_PROFILE_ID format")
+
+
+def _validate_timezone(timezone: str) -> None:
+    """
+    Validate timezone string.
+
+    Args:
+        timezone: Timezone string to validate
+
+    Raises:
+        ConfigurationError: If timezone is invalid
+    """
+    try:
+        ZoneInfo(timezone)
+    except KeyError:
+        raise ConfigurationError(
+            f"Invalid TIMEZONE '{timezone}'. "
+            f"See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+        )
+
+
+def _validate_optional_webhook(config: dict[str, Any]) -> None:
+    """
+    Validate and sanitize Discord webhook URL if provided.
+
+    Args:
+        config: Configuration dictionary (modified in place)
+    """
+    webhook_url = config.get("discord_webhook_url")
+    if webhook_url and not validate_discord_webhook(webhook_url):
+        logger.warning(
+            "Invalid DISCORD_WEBHOOK_URL format - notifications disabled. "
+            "Expected format: https://discord.com/api/webhooks/{id}/{token}"
+        )
+        config["discord_webhook_url"] = None
+
+
 def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
     """
     Load configuration from .env file and environment variables.
@@ -612,53 +690,21 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
     if config_dir is None:
         config_dir = get_config_dir()
 
+    # Load .env file if it exists
     env_file = config_dir / ".env"
     if env_file.exists():
         _load_env_file(env_file)
 
-    # Build configuration with validated values
-    config: dict[str, Any] = {
-        "api_key": os.getenv("NEXTDNS_API_KEY"),
-        "profile_id": os.getenv("NEXTDNS_PROFILE_ID"),
-        "discord_webhook_url": os.getenv("DISCORD_WEBHOOK_URL"),
-        "timeout": safe_int(os.getenv("API_TIMEOUT"), DEFAULT_TIMEOUT, "API_TIMEOUT"),
-        "retries": safe_int(os.getenv("API_RETRIES"), DEFAULT_RETRIES, "API_RETRIES"),
-        "script_dir": str(config_dir),
-    }
+    # Build configuration dictionary
+    config = _build_config_dict(config_dir)
 
     # Load timezone from config.json (or legacy .env)
     config["timezone"] = _load_timezone_setting(config_dir)
 
-    # Validate required fields and their format
-    if not config["api_key"]:
-        raise ConfigurationError("Missing NEXTDNS_API_KEY in .env or environment")
-
-    if not validate_api_key(config["api_key"]):
-        raise ConfigurationError("Invalid NEXTDNS_API_KEY format")
-
-    if not config["profile_id"]:
-        raise ConfigurationError("Missing NEXTDNS_PROFILE_ID in .env or environment")
-
-    if not validate_profile_id(config["profile_id"]):
-        raise ConfigurationError("Invalid NEXTDNS_PROFILE_ID format")
-
-    # Validate timezone early to fail fast
-    try:
-        ZoneInfo(config["timezone"])
-    except KeyError:
-        raise ConfigurationError(
-            f"Invalid TIMEZONE '{config['timezone']}'. "
-            f"See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
-        )
-
-    # Validate Discord Webhook if provided - set to None if invalid to prevent usage
-    webhook_url = config.get("discord_webhook_url")
-    if webhook_url and not validate_discord_webhook(webhook_url):
-        logger.warning(
-            "Invalid DISCORD_WEBHOOK_URL format - notifications disabled. "
-            "Expected format: https://discord.com/api/webhooks/{id}/{token}"
-        )
-        config["discord_webhook_url"] = None
+    # Validate all configuration
+    _validate_required_credentials(config)
+    _validate_timezone(config["timezone"])
+    _validate_optional_webhook(config)
 
     return config
 

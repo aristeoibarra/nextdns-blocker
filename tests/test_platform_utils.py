@@ -120,8 +120,10 @@ class TestIsWsl:
     def test_is_wsl_exception_handling(self):
         """Should return False when platform.release() raises exception."""
         with patch("nextdns_blocker.platform_utils.sys.platform", "linux"):
+            # Use OSError as a realistic exception that platform.release() could raise
             with patch(
-                "nextdns_blocker.platform_utils.platform.release", side_effect=Exception("error")
+                "nextdns_blocker.platform_utils.platform.release",
+                side_effect=OSError("Error reading platform info"),
             ):
                 assert is_wsl() is False
 

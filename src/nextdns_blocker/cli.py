@@ -107,6 +107,14 @@ def setup_logging(verbose: bool = False) -> None:
 logger = logging.getLogger(__name__)
 console = Console(highlight=False)
 
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# Port validation constants
+MIN_PORT = 1
+MAX_PORT = 65535
+
 
 # =============================================================================
 # PAUSE MANAGEMENT
@@ -378,6 +386,222 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
         sys.exit(1)
 
 
+# =============================================================================
+# SYNC HELPER FUNCTIONS
+# =============================================================================
+
+
+def _sync_denylist(
+    domains: list[dict[str, Any]],
+    client: "NextDNSClient",
+    evaluator: "ScheduleEvaluator",
+    config: dict[str, Any],
+    dry_run: bool,
+    verbose: bool,
+    panic_active: bool,
+) -> tuple[int, int]:
+    """
+    Synchronize denylist domains based on schedules.
+
+    Args:
+        domains: List of domain configurations
+        client: NextDNS API client
+        evaluator: Schedule evaluator
+        config: Application configuration
+        dry_run: If True, only show what would be done
+        verbose: If True, show detailed output
+        panic_active: If True, skip unblocks
+
+    Returns:
+        Tuple of (blocked_count, unblocked_count)
+    """
+    from .config import get_unblock_delay, parse_unblock_delay_seconds
+    from .pending import create_pending_action, get_pending_for_domain
+
+    blocked_count = 0
+    unblocked_count = 0
+
+    for domain_config in domains:
+        domain = domain_config["domain"]
+        should_block = evaluator.should_block_domain(domain_config)
+        is_blocked = client.is_blocked(domain)
+
+        if should_block and not is_blocked:
+            # Domain should be blocked but isn't
+            if dry_run:
+                console.print(f"  [yellow]Would BLOCK: {domain}[/yellow]")
+            else:
+                if client.block(domain):
+                    audit_log("BLOCK", domain)
+                    send_discord_notification(
+                        domain, "block", webhook_url=config.get("discord_webhook_url")
+                    )
+                    blocked_count += 1
+
+        elif not should_block and is_blocked:
+            # Domain should be unblocked
+            unblocked = _handle_unblock(
+                domain, domain_config, domains, client, config,
+                dry_run, verbose, panic_active
+            )
+            if unblocked:
+                unblocked_count += 1
+
+    return blocked_count, unblocked_count
+
+
+def _handle_unblock(
+    domain: str,
+    domain_config: dict[str, Any],
+    domains: list[dict[str, Any]],
+    client: "NextDNSClient",
+    config: dict[str, Any],
+    dry_run: bool,
+    verbose: bool,
+    panic_active: bool,
+) -> bool:
+    """
+    Handle unblocking a domain with delay logic.
+
+    Args:
+        domain: Domain name to unblock
+        domain_config: Domain configuration dict
+        domains: All domain configurations (for delay lookup)
+        client: NextDNS API client
+        config: Application configuration
+        dry_run: If True, only show what would be done
+        verbose: If True, show detailed output
+        panic_active: If True, skip unblocks
+
+    Returns:
+        True if domain was unblocked immediately, False otherwise
+    """
+    from .config import get_unblock_delay, parse_unblock_delay_seconds
+    from .pending import create_pending_action, get_pending_for_domain
+
+    # Skip unblocks during panic mode
+    if panic_active:
+        if verbose:
+            console.print(f"  [red]Skipping unblock (panic mode): {domain}[/red]")
+        return False
+
+    # Check unblock_delay for this domain
+    domain_delay = get_unblock_delay(domains, domain)
+
+    # Handle 'never' - cannot unblock
+    if domain_delay == "never":
+        if verbose:
+            console.print(f"  [blue]Cannot unblock (never): {domain}[/blue]")
+        return False
+
+    delay_seconds = parse_unblock_delay_seconds(domain_delay or "0")
+
+    # Handle delayed unblock
+    if delay_seconds and delay_seconds > 0 and domain_delay is not None:
+        existing = get_pending_for_domain(domain)
+        if existing:
+            if verbose:
+                console.print(f"  [yellow]Already pending: {domain}[/yellow]")
+            return False
+
+        if dry_run:
+            console.print(
+                f"  [yellow]Would schedule UNBLOCK: {domain} "
+                f"(delay: {domain_delay})[/yellow]"
+            )
+        else:
+            action = create_pending_action(domain, domain_delay, requested_by="sync")
+            if action and verbose:
+                console.print(
+                    f"  [yellow]Scheduled unblock: {domain} ({domain_delay})[/yellow]"
+                )
+        return False
+
+    # Immediate unblock (no delay)
+    if dry_run:
+        console.print(f"  [green]Would UNBLOCK: {domain}[/green]")
+        return False
+    else:
+        if client.unblock(domain):
+            audit_log("UNBLOCK", domain)
+            send_discord_notification(
+                domain, "unblock", webhook_url=config.get("discord_webhook_url")
+            )
+            return True
+    return False
+
+
+def _sync_allowlist(
+    allowlist: list[dict[str, Any]],
+    client: "NextDNSClient",
+    evaluator: "ScheduleEvaluator",
+    dry_run: bool,
+) -> tuple[int, int]:
+    """
+    Synchronize allowlist domains based on schedules.
+
+    Args:
+        allowlist: List of allowlist configurations
+        client: NextDNS API client
+        evaluator: Schedule evaluator
+        dry_run: If True, only show what would be done
+
+    Returns:
+        Tuple of (allowed_count, disallowed_count)
+    """
+    allowed_count = 0
+    disallowed_count = 0
+
+    for allowlist_config in allowlist:
+        domain = allowlist_config["domain"]
+        should_allow = evaluator.should_allow_domain(allowlist_config)
+        is_allowed = client.is_allowed(domain)
+
+        if should_allow and not is_allowed:
+            # Should be in allowlist but isn't - add it
+            if dry_run:
+                console.print(f"  [green]Would ADD to allowlist: {domain}[/green]")
+            else:
+                if client.allow(domain):
+                    audit_log("ALLOW", domain)
+                    allowed_count += 1
+
+        elif not should_allow and is_allowed:
+            # Should NOT be in allowlist but is - remove it
+            if dry_run:
+                console.print(f"  [yellow]Would REMOVE from allowlist: {domain}[/yellow]")
+            else:
+                if client.disallow(domain):
+                    audit_log("DISALLOW", domain)
+                    disallowed_count += 1
+
+    return allowed_count, disallowed_count
+
+
+def _print_sync_summary(
+    blocked_count: int,
+    unblocked_count: int,
+    allowed_count: int,
+    disallowed_count: int,
+    verbose: bool,
+) -> None:
+    """Print sync operation summary."""
+    has_changes = blocked_count or unblocked_count or allowed_count or disallowed_count
+    if has_changes:
+        parts = []
+        if blocked_count or unblocked_count:
+            parts.append(
+                f"[red]{blocked_count} blocked[/red], [green]{unblocked_count} unblocked[/green]"
+            )
+        if allowed_count or disallowed_count:
+            parts.append(
+                f"[green]{allowed_count} allowed[/green], [yellow]{disallowed_count} disallowed[/yellow]"
+            )
+        console.print(f"  Sync: {', '.join(parts)}")
+    elif verbose:
+        console.print("  Sync: [green]No changes needed[/green]")
+
+
 @main.command()
 @click.option("--dry-run", is_flag=True, help="Show changes without applying")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
@@ -415,9 +639,6 @@ def sync(
     panic_active = is_panic_mode()
 
     try:
-        from .config import get_unblock_delay, parse_unblock_delay_seconds
-        from .pending import create_pending_action, get_pending_for_domain
-
         config = load_config(config_dir)
         domains, allowlist = load_domains(config["script_dir"])
 
@@ -430,116 +651,20 @@ def sync(
             console.print("\n  [yellow]DRY RUN MODE - No changes will be made[/yellow]\n")
 
         # Sync denylist domains
-        blocked_count = 0
-        unblocked_count = 0
-
-        for domain_config in domains:
-            domain = domain_config["domain"]
-            should_block = evaluator.should_block_domain(domain_config)
-            is_blocked = client.is_blocked(domain)
-
-            if should_block and not is_blocked:
-                if dry_run:
-                    console.print(f"  [yellow]Would BLOCK: {domain}[/yellow]")
-                else:
-                    if client.block(domain):
-                        audit_log("BLOCK", domain)
-                        send_discord_notification(
-                            domain, "block", webhook_url=config.get("discord_webhook_url")
-                        )
-                        blocked_count += 1
-            elif not should_block and is_blocked:
-                # Skip unblocks during panic mode
-                if panic_active:
-                    if verbose:
-                        console.print(f"  [red]Skipping unblock (panic mode): {domain}[/red]")
-                    continue
-
-                # Check unblock_delay for this domain
-                domain_delay = get_unblock_delay(domains, domain)
-
-                # Handle 'never' - cannot unblock
-                if domain_delay == "never":
-                    if verbose:
-                        console.print(f"  [blue]Cannot unblock (never): {domain}[/blue]")
-                    continue
-
-                delay_seconds = parse_unblock_delay_seconds(domain_delay or "0")
-
-                if delay_seconds and delay_seconds > 0 and domain_delay is not None:
-                    # Check if already pending
-                    existing = get_pending_for_domain(domain)
-                    if existing:
-                        if verbose:
-                            console.print(f"  [yellow]Already pending: {domain}[/yellow]")
-                        continue
-
-                    if dry_run:
-                        console.print(
-                            f"  [yellow]Would schedule UNBLOCK: {domain} "
-                            f"(delay: {domain_delay})[/yellow]"
-                        )
-                    else:
-                        # domain_delay is guaranteed non-None by the condition above
-                        action = create_pending_action(domain, domain_delay, requested_by="sync")
-                        if action and verbose:
-                            console.print(
-                                f"  [yellow]Scheduled unblock: {domain} ({domain_delay})[/yellow]"
-                            )
-                    continue
-
-                # Immediate unblock (no delay)
-                if dry_run:
-                    console.print(f"  [green]Would UNBLOCK: {domain}[/green]")
-                else:
-                    if client.unblock(domain):
-                        audit_log("UNBLOCK", domain)
-                        send_discord_notification(
-                            domain, "unblock", webhook_url=config.get("discord_webhook_url")
-                        )
-                        unblocked_count += 1
+        blocked_count, unblocked_count = _sync_denylist(
+            domains, client, evaluator, config, dry_run, verbose, panic_active
+        )
 
         # Sync allowlist (schedule-aware)
-        allowed_count = 0
-        disallowed_count = 0
-        for allowlist_config in allowlist:
-            domain = allowlist_config["domain"]
-            should_allow = evaluator.should_allow_domain(allowlist_config)
-            is_allowed = client.is_allowed(domain)
+        allowed_count, disallowed_count = _sync_allowlist(
+            allowlist, client, evaluator, dry_run
+        )
 
-            if should_allow and not is_allowed:
-                # Should be in allowlist but isn't - add it
-                if dry_run:
-                    console.print(f"  [green]Would ADD to allowlist: {domain}[/green]")
-                else:
-                    if client.allow(domain):
-                        audit_log("ALLOW", domain)
-                        allowed_count += 1
-
-            elif not should_allow and is_allowed:
-                # Should NOT be in allowlist but is - remove it
-                if dry_run:
-                    console.print(f"  [yellow]Would REMOVE from allowlist: {domain}[/yellow]")
-                else:
-                    if client.disallow(domain):
-                        audit_log("DISALLOW", domain)
-                        disallowed_count += 1
-
+        # Print summary
         if not dry_run:
-            has_changes = blocked_count or unblocked_count or allowed_count or disallowed_count
-            if has_changes:
-                parts = []
-                if blocked_count or unblocked_count:
-                    parts.append(
-                        f"[red]{blocked_count} blocked[/red], [green]{unblocked_count} unblocked[/green]"
-                    )
-                if allowed_count or disallowed_count:
-                    parts.append(
-                        f"[green]{allowed_count} allowed[/green], [yellow]{disallowed_count} disallowed[/yellow]"
-                    )
-                console.print(f"  Sync: {', '.join(parts)}")
-            elif verbose:
-                console.print("  Sync: [green]No changes needed[/green]")
+            _print_sync_summary(
+                blocked_count, unblocked_count, allowed_count, disallowed_count, verbose
+            )
 
     except ConfigurationError as e:
         console.print(f"  [red]Config error: {e}[/red]", highlight=False)

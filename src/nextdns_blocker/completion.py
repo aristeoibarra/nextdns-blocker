@@ -236,8 +236,8 @@ def detect_shell() -> Optional[str]:
         parent_name = result.stdout.strip()
         if parent_name in ("bash", "zsh", "fish", "-bash", "-zsh", "-fish"):
             return parent_name.lstrip("-")
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+        logger.debug(f"Could not detect shell from parent process: {e}")
 
     return None
 
@@ -299,8 +299,8 @@ def is_completion_installed(shell: str) -> bool:
             return True
         if shell == "fish" and COMPLETION_LINE_FISH in content:
             return True
-    except Exception:
-        pass
+    except (OSError, UnicodeDecodeError) as e:
+        logger.debug(f"Could not check completion status for {shell}: {e}")
 
     return False
 

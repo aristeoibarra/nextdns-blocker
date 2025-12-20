@@ -54,7 +54,10 @@ def is_wsl() -> bool:
     try:
         release = platform.release().lower()
         return "microsoft" in release or "wsl" in release
-    except Exception:
+    except (OSError, AttributeError, RuntimeError, TypeError):
+        # OSError: File system errors reading /proc
+        # AttributeError: If release() returns unexpected type
+        # RuntimeError/TypeError: Other platform-specific errors
         return False
 
 

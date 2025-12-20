@@ -183,9 +183,10 @@ def cmd_cancel(action_id: str, yes: bool, config_dir: Optional[Path]) -> None:
         try:
             config = load_config(config_dir)
             webhook_url = config.get("discord_webhook_url")
-        except Exception:
+        except (OSError, ValueError, KeyError) as e:
             # Ignore errors loading config; Discord notification is optional
-            pass
+            import logging
+            logging.getLogger(__name__).debug(f"Could not load config for webhook: {e}")
 
         # Send notification
         send_discord_notification(

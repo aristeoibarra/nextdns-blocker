@@ -219,13 +219,41 @@ class DomainCache:
 
 
 class DenylistCache(DomainCache):
-    """Cache for denylist to reduce API calls."""
+    """Cache for denylist (blocked domains) to reduce API calls.
+
+    This specialized cache is used for storing blocked domains fetched from
+    the NextDNS API. It inherits all functionality from DomainCache.
+
+    The separate class allows for:
+    - Type-safe distinction between denylist and allowlist caches
+    - Future extensibility for denylist-specific behavior
+    - Clear semantic meaning in code that handles both lists
+
+    Example:
+        cache = DenylistCache(ttl=60)
+        cache.set([{"id": "example.com", "active": True}])
+        is_blocked = cache.contains("example.com")
+    """
 
     pass
 
 
 class AllowlistCache(DomainCache):
-    """Cache for allowlist to reduce API calls."""
+    """Cache for allowlist (allowed domains) to reduce API calls.
+
+    This specialized cache is used for storing allowed domains fetched from
+    the NextDNS API. It inherits all functionality from DomainCache.
+
+    The separate class allows for:
+    - Type-safe distinction between denylist and allowlist caches
+    - Future extensibility for allowlist-specific behavior
+    - Clear semantic meaning in code that handles both lists
+
+    Example:
+        cache = AllowlistCache(ttl=60)
+        cache.set([{"id": "trusted.com", "active": True}])
+        is_allowed = cache.contains("trusted.com")
+    """
 
     pass
 

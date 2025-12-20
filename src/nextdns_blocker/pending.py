@@ -111,8 +111,8 @@ def _create_backup(file_path: Path) -> Optional[Path]:
             try:
                 old_backup.unlink()
                 logger.debug(f"Removed old backup: {old_backup}")
-            except OSError:
-                pass
+            except OSError as e:
+                logger.debug(f"Could not remove old backup {old_backup}: {e}")
 
         return backup_path
     except OSError as e:

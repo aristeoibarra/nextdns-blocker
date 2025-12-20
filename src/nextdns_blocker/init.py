@@ -100,7 +100,7 @@ def detect_system_timezone() -> str:
             ZoneInfo(tz_env)
             return tz_env
         except KeyError:
-            pass
+            logger.debug(f"TZ environment variable '{tz_env}' is not a valid timezone")
 
     # Try reading /etc/localtime symlink (macOS/Linux)
     if not is_windows():
@@ -114,8 +114,10 @@ def detect_system_timezone() -> str:
                         tz_name = target.split(marker)[-1]
                         ZoneInfo(tz_name)
                         return tz_name
-        except (OSError, KeyError):
-            pass
+        except OSError as e:
+            logger.debug(f"Could not read /etc/localtime symlink: {e}")
+        except KeyError:
+            logger.debug(f"Timezone '{tz_name}' from /etc/localtime is not valid")
 
     # Try Windows tzutil command
     if is_windows():
@@ -153,8 +155,10 @@ def detect_system_timezone() -> str:
             }
             if windows_tz in windows_to_iana:
                 return windows_to_iana[windows_tz]
-        except (subprocess.SubprocessError, OSError):
-            pass
+            else:
+                logger.debug(f"Windows timezone '{windows_tz}' has no IANA mapping")
+        except (subprocess.SubprocessError, OSError) as e:
+            logger.debug(f"Could not detect Windows timezone: {e}")
 
     return "UTC"
 
