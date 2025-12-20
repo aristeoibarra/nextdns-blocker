@@ -298,18 +298,61 @@ class TestValidateAllowlistConfig:
         assert len(errors) == 1
         assert "Invalid domain format" in errors[0]
 
-    def test_schedule_not_allowed(self):
-        """Test that schedule field is not allowed in allowlist."""
+    def test_valid_schedule_accepted(self):
+        """Test that valid schedule is accepted in allowlist."""
+        config = {
+            "domain": "youtube.com",
+            "schedule": {
+                "available_hours": [
+                    {
+                        "days": ["monday", "tuesday", "wednesday"],
+                        "time_ranges": [{"start": "20:00", "end": "22:00"}],
+                    }
+                ]
+            },
+        }
+        errors = validate_allowlist_config(config, 0)
+        assert errors == []
+
+    def test_invalid_schedule_rejected(self):
+        """Test that invalid schedule generates errors."""
+        config = {
+            "domain": "youtube.com",
+            "schedule": {
+                "available_hours": [
+                    {
+                        "days": ["invalid_day"],
+                        "time_ranges": [{"start": "25:00", "end": "22:00"}],
+                    }
+                ]
+            },
+        }
+        errors = validate_allowlist_config(config, 0)
+        assert len(errors) >= 1
+        # Should have errors for invalid day and invalid time format
+        error_text = " ".join(errors)
+        assert "invalid day" in error_text or "invalid time" in error_text
+
+    def test_empty_schedule_accepted(self):
+        """Test that empty schedule (no available_hours) is accepted."""
         config = {"domain": "aws.amazon.com", "schedule": {"available_hours": []}}
         errors = validate_allowlist_config(config, 0)
-        assert len(errors) == 1
-        assert "schedule" in errors[0]
-        assert "not allowed" in errors[0]
+        assert errors == []
 
     def test_null_schedule_ok(self):
-        """Test that null schedule is ok (will be ignored)."""
+        """Test that null schedule is ok (always in allowlist)."""
         config = {"domain": "aws.amazon.com", "schedule": None}
         errors = validate_allowlist_config(config, 0)
+        assert errors == []
+
+    def test_schedule_missing_time_ranges(self):
+        """Test schedule with missing time_ranges."""
+        config = {
+            "domain": "youtube.com",
+            "schedule": {"available_hours": [{"days": ["monday"]}]},  # Missing time_ranges
+        }
+        errors = validate_allowlist_config(config, 0)
+        # Should be valid - empty time_ranges is allowed
         assert errors == []
 
 
@@ -504,7 +547,7 @@ class TestSyncWithAllowlist:
         return CliRunner()
 
     @responses.activate
-    @patch("nextdns_blocker.client.sleep")
+    @patch("nextdns_blocker.client.time.sleep")
     def test_sync_adds_to_allowlist(self, mock_sleep, runner, tmp_path):
         """Test sync adds domains to allowlist."""
         responses.add(

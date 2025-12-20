@@ -186,16 +186,35 @@ class TestNextDNSClient:
         assert client.profile_id == "abc123"
         assert client.timeout == 10
         assert client.retries == 3
-        assert "X-Api-Key" in client.headers
+        # Verify headers are built correctly via _get_headers() method
+        headers = client._get_headers()
+        assert "X-Api-Key" in headers
+        assert headers["X-Api-Key"] == "test-key"
+        assert headers["Content-Type"] == "application/json"
 
     def test_calculate_backoff(self) -> None:
-        """Test backoff calculation."""
+        """Test backoff calculation with jitter.
+
+        Backoff now uses full jitter strategy: random value between 0 and
+        the calculated exponential delay (capped at BACKOFF_MAX=30).
+        """
         client = NextDNSClient("key", "profile")
 
-        assert client._calculate_backoff(0) == 1.0  # 1 * 2^0
-        assert client._calculate_backoff(1) == 2.0  # 1 * 2^1
-        assert client._calculate_backoff(2) == 4.0  # 1 * 2^2
-        assert client._calculate_backoff(10) == 30.0  # Capped at max
+        # Attempt 0: delay = 1 * 2^0 = 1, jitter in [0, 1]
+        backoff_0 = client._calculate_backoff(0)
+        assert 0 <= backoff_0 <= 1.0
+
+        # Attempt 1: delay = 1 * 2^1 = 2, jitter in [0, 2]
+        backoff_1 = client._calculate_backoff(1)
+        assert 0 <= backoff_1 <= 2.0
+
+        # Attempt 2: delay = 1 * 2^2 = 4, jitter in [0, 4]
+        backoff_2 = client._calculate_backoff(2)
+        assert 0 <= backoff_2 <= 4.0
+
+        # Attempt 10: delay = 1 * 2^10 = 1024, capped at 30, jitter in [0, 30]
+        backoff_10 = client._calculate_backoff(10)
+        assert 0 <= backoff_10 <= 30.0
 
     @responses.activate
     def test_request_get_success(self) -> None:
@@ -282,7 +301,7 @@ class TestNextDNSClient:
         )
 
         client = NextDNSClient("test-key", "abc123", retries=1)
-        with patch("nextdns_blocker.client.sleep"):  # Speed up test
+        with patch("nextdns_blocker.client.time.sleep"):  # Speed up test
             result = client.request("GET", "/profiles/abc123/denylist")
 
         assert result == {"data": []}
@@ -304,7 +323,7 @@ class TestNextDNSClient:
         )
 
         client = NextDNSClient("test-key", "abc123", retries=1)
-        with patch("nextdns_blocker.client.sleep"):
+        with patch("nextdns_blocker.client.time.sleep"):
             result = client.request("GET", "/profiles/abc123/denylist")
 
         assert result is None
@@ -375,7 +394,7 @@ class TestNextDNSClient:
         )
 
         client = NextDNSClient("test-key", "abc123", retries=1)
-        with patch("nextdns_blocker.client.sleep"):
+        with patch("nextdns_blocker.client.time.sleep"):
             result = client.request("GET", "/profiles/abc123/denylist")
 
         assert result == {"data": []}

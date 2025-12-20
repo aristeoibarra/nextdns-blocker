@@ -289,3 +289,80 @@ Changes take effect on the next sync (every 2 minutes). To force:
 ```bash
 nextdns-blocker sync
 ```
+
+## Allowlist Schedules
+
+Allowlist entries now support schedules, enabling time-based allowlisting for domains blocked by NextDNS categories or services.
+
+### Use Case
+
+When NextDNS blocks domains via:
+- **Categories** (e.g., "Streaming" blocks youtube.com, netflix.com)
+- **Services/Apps** (e.g., "TikTok" blocks multiple tiktok domains)
+
+You can use scheduled allowlist entries to temporarily unblock these domains during specific hours.
+
+### Allowlist Schedule Behavior
+
+| Schedule | Behavior |
+|----------|----------|
+| `null` or missing | Always in allowlist (24/7) |
+| defined | Only in allowlist during scheduled hours |
+
+**Logic (inverse of blocklist)**:
+- **Outside schedule**: Domain is NOT in allowlist → category/service blocks it
+- **During schedule**: Domain IS in allowlist → unblocked
+
+### Example: Streaming in Evening Only
+
+```json
+{
+  "allowlist": [
+    {
+      "domain": "youtube.com",
+      "description": "Streaming - blocked by category, allow evenings",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [{ "start": "20:00", "end": "22:30" }]
+          },
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [{ "start": "10:00", "end": "23:00" }]
+          }
+        ]
+      }
+    },
+    {
+      "domain": "aws.amazon.com",
+      "description": "AWS Console - always accessible (no schedule)"
+    }
+  ]
+}
+```
+
+In this example:
+- **youtube.com**: Only accessible during evenings (weekdays 20:00-22:30, weekends 10:00-23:00)
+- **aws.amazon.com**: Always accessible (no schedule = always in allowlist)
+
+### Overnight Ranges
+
+Allowlist schedules support overnight ranges just like blocklist schedules:
+
+```json
+{
+  "domain": "netflix.com",
+  "description": "Streaming - late night only",
+  "schedule": {
+    "available_hours": [
+      {
+        "days": ["friday", "saturday"],
+        "time_ranges": [{ "start": "22:00", "end": "02:00" }]
+      }
+    ]
+  }
+}
+```
+
+This allows Netflix on Friday and Saturday nights from 10 PM to 2 AM.

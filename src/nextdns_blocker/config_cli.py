@@ -1,7 +1,10 @@
 """Config command group for NextDNS Blocker."""
 
+import contextlib
 import json
+import logging
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -15,6 +18,8 @@ from .common import audit_log
 from .config import get_config_dir
 from .exceptions import ConfigurationError
 
+logger = logging.getLogger(__name__)
+
 console = Console(highlight=False)
 
 # =============================================================================
@@ -23,6 +28,31 @@ console = Console(highlight=False)
 
 NEW_CONFIG_FILE = "config.json"
 CONFIG_VERSION = "1.0"
+
+# Safe editors whitelist for security (prevents arbitrary command execution)
+SAFE_EDITORS = frozenset(
+    {
+        "vim",
+        "vi",
+        "nvim",
+        "nano",
+        "emacs",
+        "pico",
+        "micro",
+        "joe",
+        "ne",
+        "code",
+        "subl",
+        "atom",
+        "gedit",
+        "kate",
+        "notepad",
+        "notepad++",
+        "sublime_text",
+        "TextEdit",
+        "open",
+    }
+)
 
 
 # =============================================================================
@@ -39,7 +69,12 @@ def get_config_file_path(config_dir: Optional[Path] = None) -> Path:
 
 
 def get_editor() -> str:
-    """Get the preferred editor."""
+    """
+    Get the preferred editor command.
+
+    Returns:
+        Editor command string (may include arguments if set via EDITOR env var)
+    """
     # Check environment variable
     editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
     if editor:
@@ -53,18 +88,110 @@ def get_editor() -> str:
     return "vi"  # Fallback
 
 
+def _parse_editor_command(editor: str) -> list[str]:
+    """
+    Parse editor command string into list of arguments.
+
+    Safely handles editor commands that may include arguments
+    (e.g., "code --wait" or "vim -u NONE").
+
+    Args:
+        editor: Editor command string
+
+    Returns:
+        List of command arguments safe for subprocess
+
+    Raises:
+        ValueError: If editor command is empty, malformed, or not in safe list
+    """
+    if not editor or not editor.strip():
+        raise ValueError("Editor command cannot be empty")
+
+    try:
+        parts = shlex.split(editor)
+        if not parts:
+            raise ValueError("Editor command cannot be empty")
+
+        # Validate that the base editor is in the safe list
+        base_editor = Path(parts[0]).name  # Get just the executable name
+        if base_editor not in SAFE_EDITORS:
+            raise ValueError(
+                f"Editor '{base_editor}' is not in the safe editors list. "
+                f"Allowed editors: {', '.join(sorted(SAFE_EDITORS))}"
+            )
+
+        return parts
+    except ValueError as e:
+        # Re-raise ValueError (includes our validation errors)
+        if "not in the safe editors list" in str(e) or "Editor command" in str(e):
+            raise
+        # shlex.split can raise ValueError on malformed input (unclosed quotes)
+        raise ValueError(f"Invalid editor command format: {e}")
+
+
 def load_config_file(config_path: Path) -> dict[str, Any]:
-    """Load and parse a config file."""
-    with open(config_path, encoding="utf-8") as f:
-        result: dict[str, Any] = json.load(f)
-        return result
+    """
+    Load and parse a config file.
+
+    Args:
+        config_path: Path to the config file
+
+    Returns:
+        Parsed config dictionary
+
+    Raises:
+        ConfigurationError: If file cannot be read, parsed, or has invalid structure
+    """
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            result = json.load(f)
+            # Validate that the result is a dictionary
+            if not isinstance(result, dict):
+                raise ConfigurationError(
+                    f"Invalid config format in {config_path.name}: expected object, got {type(result).__name__}"
+                )
+            return result
+    except json.JSONDecodeError as e:
+        raise ConfigurationError(f"Invalid JSON in {config_path.name}: {e}")
+    except OSError as e:
+        raise ConfigurationError(f"Failed to read {config_path.name}: {e}")
 
 
 def save_config_file(config_path: Path, config: dict[str, Any]) -> None:
-    """Save config to file with pretty formatting."""
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    """
+    Save config to file with atomic write for safety.
+
+    Uses temporary file + rename pattern to prevent corruption
+    if write is interrupted.
+
+    Args:
+        config_path: Path to save config to
+        config: Config dictionary to save
+
+    Raises:
+        OSError: If file operations fail
+    """
+    import tempfile
+
+    # Write to temporary file first
+    temp_fd, temp_path = tempfile.mkstemp(
+        dir=config_path.parent, prefix=f".{config_path.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+
+        # Atomic rename (on POSIX; on Windows this may not be atomic)
+        Path(temp_path).replace(config_path)
+    except (OSError, TypeError, ValueError) as e:
+        # Clean up temp file on error
+        logger.debug(f"Failed to save config file: {e}")
+        with contextlib.suppress(OSError):
+            Path(temp_path).unlink()
+        raise
 
 
 # =============================================================================
@@ -90,6 +217,13 @@ def config_cli() -> None:
 )
 def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
     """Open config file in editor."""
+    from .panic import is_panic_mode
+
+    # Block config edit during panic mode
+    if is_panic_mode():
+        console.print("\n  [red]Error: Cannot edit config during panic mode[/red]\n")
+        sys.exit(1)
+
     # Get config file path
     config_path = get_config_file_path(config_dir)
 
@@ -102,18 +236,25 @@ def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
         sys.exit(1)
 
     # Get editor
-    editor_cmd = editor or get_editor()
+    editor_str = editor or get_editor()
 
-    console.print(f"\n  Opening {config_path.name} in {editor_cmd}...\n")
+    console.print(f"\n  Opening {config_path.name} in {editor_str}...\n")
 
-    # Open editor
+    # Parse editor command safely (handles editors with arguments like "code --wait")
     try:
-        subprocess.run([editor_cmd, str(config_path)], check=True)
+        editor_args = _parse_editor_command(editor_str)
+    except ValueError as e:
+        console.print(f"\n  [red]Error: {e}[/red]\n")
+        sys.exit(1)
+
+    # Open editor with config file path appended
+    try:
+        subprocess.run(editor_args + [str(config_path)], check=True)
     except subprocess.CalledProcessError as e:
         console.print(f"\n  [red]Error: Editor exited with code {e.returncode}[/red]\n")
         sys.exit(1)
     except FileNotFoundError:
-        console.print(f"\n  [red]Error: Editor '{editor_cmd}' not found[/red]\n")
+        console.print(f"\n  [red]Error: Editor '{editor_args[0]}' not found[/red]\n")
         sys.exit(1)
 
     audit_log("CONFIG_EDIT", str(config_path))
@@ -167,10 +308,8 @@ def cmd_show(config_dir: Optional[Path], output_json: bool) -> None:
             console.print(f"  [bold]Allowlist:[/bold] {len(allowlist)} domains\n")
 
     except ConfigurationError as e:
+        # Note: load_config_file() already converts JSONDecodeError to ConfigurationError
         console.print(f"\n  [red]Config error: {e}[/red]\n")
-        sys.exit(1)
-    except json.JSONDecodeError as e:
-        console.print(f"\n  [red]JSON error: {e}[/red]\n")
         sys.exit(1)
 
 

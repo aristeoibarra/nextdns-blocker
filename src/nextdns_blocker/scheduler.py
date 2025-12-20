@@ -4,7 +4,7 @@ from datetime import datetime, time, timedelta
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
-from .common import DAYS_MAP
+from .common import WEEKDAY_TO_DAY
 
 
 class ScheduleEvaluator:
@@ -23,8 +23,8 @@ class ScheduleEvaluator:
         """
         try:
             self.tz = ZoneInfo(timezone_str)
-        except KeyError:
-            raise ValueError(f"Invalid timezone: {timezone_str}")
+        except KeyError as e:
+            raise ValueError(f"Invalid timezone: {timezone_str}") from e
 
     def _get_current_time(self) -> datetime:
         """Get current time in the configured timezone."""
@@ -43,32 +43,48 @@ class ScheduleEvaluator:
         Raises:
             ValueError: If time format is invalid
         """
-        if not time_str or not isinstance(time_str, str):
-            raise ValueError(f"Invalid time format: {time_str}")
+        # Validate input type and presence
+        if time_str is None:
+            raise ValueError("Invalid time format: None")
+        if not isinstance(time_str, str):
+            raise ValueError(f"Invalid time format: expected string, got {type(time_str).__name__}")
+        if not time_str:
+            raise ValueError("Invalid time format: empty string")
 
+        # Validate format before splitting
         if ":" not in time_str:
             raise ValueError(f"Invalid time format: {time_str}")
 
-        try:
-            parts = time_str.split(":")
-            if len(parts) != 2:
-                raise ValueError(f"Invalid time format: {time_str}")
-
-            hours = int(parts[0])
-            minutes = int(parts[1])
-
-            if not (0 <= hours <= 23) or not (0 <= minutes <= 59):
-                raise ValueError(f"Invalid time format: {time_str}")
-
-            return time(hours, minutes)
-        except (ValueError, TypeError):
+        parts = time_str.split(":")
+        if len(parts) != 2:
             raise ValueError(f"Invalid time format: {time_str}")
+
+        # Validate that parts are ASCII digits only (isdigit accepts Unicode digits)
+        hour_part, minute_part = parts[0], parts[1]
+        if not hour_part or not minute_part:
+            raise ValueError(f"Invalid time format: {time_str}")
+        if not (hour_part.isascii() and hour_part.isdigit()):
+            raise ValueError(f"Invalid time format: {time_str}")
+        if not (minute_part.isascii() and minute_part.isdigit()):
+            raise ValueError(f"Invalid time format: {time_str}")
+
+        hours = int(hour_part)
+        minutes = int(minute_part)
+
+        if not (0 <= hours <= 23) or not (0 <= minutes <= 59):
+            raise ValueError(f"Invalid time format: {time_str}")
+
+        return time(hours, minutes)
 
     def is_time_in_range(self, current: time, start: time, end: time) -> bool:
         """
         Check if current time is within a time range.
 
-        Handles overnight ranges (e.g., 22:00 - 02:00).
+        Handles overnight ranges (e.g., 22:00 - 02:00) where start > end.
+        For same-day ranges, start must be <= end (e.g., 09:00 - 17:00).
+
+        Note: When start == end, this represents a single point in time,
+        so current must exactly match to be "in range".
 
         Args:
             current: Current time to check
@@ -79,10 +95,11 @@ class ScheduleEvaluator:
             True if current is within range
         """
         if start <= end:
-            # Normal range (e.g., 09:00 - 17:00)
+            # Normal range (e.g., 09:00 - 17:00) or single point (start == end)
             return start <= current <= end
         else:
             # Overnight range (e.g., 22:00 - 02:00)
+            # Current is in range if it's after start OR before/at end
             return current >= start or current <= end
 
     def _check_overnight_yesterday(self, now: datetime, schedule: dict[str, Any]) -> bool:
@@ -120,7 +137,7 @@ class ScheduleEvaluator:
             True if current time is within yesterday's overnight window
         """
         yesterday = now - timedelta(days=1)
-        yesterday_day = list(DAYS_MAP.keys())[yesterday.weekday()]
+        yesterday_day = WEEKDAY_TO_DAY[yesterday.weekday()]
         current_time = now.time()
 
         for block in schedule.get("available_hours", []):
@@ -155,7 +172,7 @@ class ScheduleEvaluator:
             return True
 
         now = self._get_current_time()
-        current_day = list(DAYS_MAP.keys())[now.weekday()]
+        current_day = WEEKDAY_TO_DAY[now.weekday()]
         current_time = now.time()
 
         # Check today's schedule
@@ -190,6 +207,43 @@ class ScheduleEvaluator:
             True if domain should be blocked, False if available
         """
         return self.should_block(domain_config.get("schedule"))
+
+    def should_allow(self, schedule: Optional[dict[str, Any]]) -> bool:
+        """
+        Determine if a domain should be in the allowlist based on its schedule.
+
+        This is the inverse logic of should_block, used for allowlist entries.
+        - No schedule = always in allowlist (return True)
+        - Has schedule = only in allowlist during available_hours
+
+        Args:
+            schedule: Schedule configuration (the 'schedule' field from allowlist config)
+
+        Returns:
+            True if domain should be in allowlist, False if not
+        """
+        # No schedule = always in allowlist
+        if not schedule or "available_hours" not in schedule:
+            return True
+
+        # Has schedule = only allow during available hours (inverse of should_block)
+        # should_block returns True when OUTSIDE available hours
+        # so we return the opposite: True when INSIDE available hours
+        return not self.should_block(schedule)
+
+    def should_allow_domain(self, domain_config: dict[str, Any]) -> bool:
+        """
+        Determine if a domain should be in the allowlist based on its config.
+
+        This is a convenience wrapper that extracts the schedule from domain_config.
+
+        Args:
+            domain_config: Allowlist domain configuration containing schedule
+
+        Returns:
+            True if domain should be in allowlist, False if not
+        """
+        return self.should_allow(domain_config.get("schedule"))
 
     def get_blocking_status(self, domain_config: dict[str, Any]) -> dict[str, Any]:
         """

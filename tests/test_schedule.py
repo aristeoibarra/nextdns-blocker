@@ -327,3 +327,126 @@ class TestGetBlockingStatus:
         status = evaluator.get_blocking_status(sample_domain_config)
         assert isinstance(status, dict)
         assert len(status) == 3  # domain, currently_blocked, has_schedule
+
+
+class TestShouldAllow:
+    """Tests for should_allow method (inverse of should_block for allowlist)."""
+
+    def _mock_datetime(self, year, month, day, hour, minute):
+        """Create a mock datetime for testing."""
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("America/Mexico_City")
+        return datetime(year, month, day, hour, minute, tzinfo=tz)
+
+    def test_should_allow_no_schedule(self):
+        """Test that no schedule means always allow (True)."""
+        evaluator = ScheduleEvaluator()
+        assert evaluator.should_allow(None) is True
+        assert evaluator.should_allow({}) is True
+        assert evaluator.should_allow({"other_key": "value"}) is True
+
+    def test_should_allow_empty_available_hours(self):
+        """Test that empty available_hours means never allow (no available hours defined)."""
+        evaluator = ScheduleEvaluator()
+        schedule = {"available_hours": []}
+        # Empty available_hours = no hours available = never in allowlist
+        # This is consistent with blocklist behavior where empty = always blocked
+        assert evaluator.should_allow(schedule) is False
+
+    def test_should_allow_during_available_hours(self):
+        """Test should_allow returns True during available hours."""
+        evaluator = ScheduleEvaluator("America/Mexico_City")
+        schedule = {
+            "available_hours": [
+                {
+                    "days": ["wednesday"],
+                    "time_ranges": [{"start": "09:00", "end": "17:00"}],
+                }
+            ]
+        }
+        # Wednesday at 10:00 - within available hours
+        mock_now = self._mock_datetime(2025, 11, 26, 10, 0)
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            assert evaluator.should_allow(schedule) is True
+
+    def test_should_not_allow_outside_available_hours(self):
+        """Test should_allow returns False outside available hours."""
+        evaluator = ScheduleEvaluator("America/Mexico_City")
+        schedule = {
+            "available_hours": [
+                {
+                    "days": ["wednesday"],
+                    "time_ranges": [{"start": "09:00", "end": "17:00"}],
+                }
+            ]
+        }
+        # Wednesday at 20:00 - outside available hours
+        mock_now = self._mock_datetime(2025, 11, 26, 20, 0)
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            assert evaluator.should_allow(schedule) is False
+
+    def test_should_allow_overnight_range(self):
+        """Test should_allow with overnight range (e.g., 20:00-02:00)."""
+        evaluator = ScheduleEvaluator("America/Mexico_City")
+        schedule = {
+            "available_hours": [
+                {
+                    "days": ["friday", "saturday"],
+                    "time_ranges": [{"start": "20:00", "end": "02:00"}],
+                }
+            ]
+        }
+        # Friday at 23:00 - within overnight range
+        mock_now = self._mock_datetime(2025, 11, 28, 23, 0)  # Friday
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            assert evaluator.should_allow(schedule) is True
+
+        # Saturday at 01:00 - still within Friday's overnight range
+        mock_now = self._mock_datetime(2025, 11, 29, 1, 0)  # Saturday early
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            assert evaluator.should_allow(schedule) is True
+
+    def test_should_allow_domain_wrapper(self):
+        """Test should_allow_domain extracts schedule from config."""
+        evaluator = ScheduleEvaluator()
+        config = {"domain": "youtube.com", "schedule": None}
+        assert evaluator.should_allow_domain(config) is True
+
+        config_with_no_schedule_key = {"domain": "youtube.com"}
+        assert evaluator.should_allow_domain(config_with_no_schedule_key) is True
+
+    def test_should_allow_inverse_of_should_block(self):
+        """Test that should_allow is inverse of should_block when schedule exists."""
+        evaluator = ScheduleEvaluator("America/Mexico_City")
+        schedule = {
+            "available_hours": [
+                {
+                    "days": ["wednesday"],
+                    "time_ranges": [{"start": "09:00", "end": "17:00"}],
+                }
+            ]
+        }
+        # Wednesday at 10:00 - within available hours
+        mock_now = self._mock_datetime(2025, 11, 26, 10, 0)
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            should_block = evaluator.should_block(schedule)
+            should_allow = evaluator.should_allow(schedule)
+            # should_block=False means available, should_allow=True means in allowlist
+            assert should_block is False
+            assert should_allow is True
+
+        # Wednesday at 20:00 - outside available hours
+        mock_now = self._mock_datetime(2025, 11, 26, 20, 0)
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            should_block = evaluator.should_block(schedule)
+            should_allow = evaluator.should_allow(schedule)
+            # should_block=True means blocked, should_allow=False means not in allowlist
+            assert should_block is True
+            assert should_allow is False

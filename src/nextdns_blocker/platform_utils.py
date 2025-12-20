@@ -8,7 +8,7 @@ import platform
 import shutil
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 # Platform type for type hints
 PlatformName = Literal["macos", "windows", "wsl", "linux", "unknown"]
@@ -54,7 +54,10 @@ def is_wsl() -> bool:
     try:
         release = platform.release().lower()
         return "microsoft" in release or "wsl" in release
-    except Exception:
+    except (OSError, AttributeError, RuntimeError, TypeError):
+        # OSError: File system errors reading /proc
+        # AttributeError: If release() returns unexpected type
+        # RuntimeError/TypeError: Other platform-specific errors
         return False
 
 
@@ -109,6 +112,60 @@ def get_scheduler_type() -> Literal["launchd", "cron", "task_scheduler", "none"]
     return "none"
 
 
+def _find_executable() -> Optional[str]:
+    """Find the nextdns-blocker executable path.
+
+    Searches in order:
+    1. System PATH (shutil.which)
+    2. pipx default location (~/.local/bin)
+    3. Windows Python Scripts folder
+    4. Homebrew locations (macOS/Linux)
+
+    Returns:
+        Path to the executable, or None if not found.
+    """
+    # First, check system PATH
+    exe_path = shutil.which("nextdns-blocker")
+    if exe_path:
+        return exe_path
+
+    # Fallback: check pipx default location
+    if is_windows():
+        # Windows pipx location
+        pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker.exe"
+        if pipx_exe.exists():
+            return str(pipx_exe)
+        # Also check Scripts folder for pip installs
+        scripts_exe = (
+            Path.home()
+            / "AppData"
+            / "Local"
+            / "Programs"
+            / "Python"
+            / "Scripts"
+            / "nextdns-blocker.exe"
+        )
+        if scripts_exe.exists():
+            return str(scripts_exe)
+    else:
+        pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
+        if pipx_exe.exists():
+            return str(pipx_exe)
+
+    # Fallback: check Homebrew locations (macOS/Linux)
+    if not is_windows():
+        homebrew_paths = [
+            Path("/opt/homebrew/bin/nextdns-blocker"),  # macOS ARM (Apple Silicon)
+            Path("/usr/local/bin/nextdns-blocker"),  # macOS Intel / Homebrew on Linux
+            Path("/home/linuxbrew/.linuxbrew/bin/nextdns-blocker"),  # Linuxbrew
+        ]
+        for brew_path in homebrew_paths:
+            if brew_path.exists():
+                return str(brew_path)
+
+    return None
+
+
 def get_executable_path() -> str:
     """Get the full path to the nextdns-blocker executable.
 
@@ -118,43 +175,7 @@ def get_executable_path() -> str:
     Returns:
         Path to the executable or fallback command string.
     """
-    exe_path = shutil.which("nextdns-blocker")
-
-    # Fallback: check pipx default location if not found in PATH
-    if not exe_path:
-        if is_windows():
-            # Windows pipx location
-            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker.exe"
-            if not pipx_exe.exists():
-                # Also check Scripts folder for pip installs
-                pipx_exe = (
-                    Path.home()
-                    / "AppData"
-                    / "Local"
-                    / "Programs"
-                    / "Python"
-                    / "Scripts"
-                    / "nextdns-blocker.exe"
-                )
-            if pipx_exe.exists():
-                exe_path = str(pipx_exe)
-        else:
-            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
-            if pipx_exe.exists():
-                exe_path = str(pipx_exe)
-
-    # Fallback: check Homebrew locations (macOS/Linux)
-    if not exe_path and not is_windows():
-        homebrew_paths = [
-            Path("/opt/homebrew/bin/nextdns-blocker"),  # macOS ARM (Apple Silicon)
-            Path("/usr/local/bin/nextdns-blocker"),  # macOS Intel / Homebrew on Linux
-            Path("/home/linuxbrew/.linuxbrew/bin/nextdns-blocker"),  # Linuxbrew
-        ]
-        for brew_path in homebrew_paths:
-            if brew_path.exists():
-                exe_path = str(brew_path)
-                break
-
+    exe_path = _find_executable()
     if exe_path:
         return exe_path
     # Fallback to sys.executable module invocation
@@ -169,41 +190,7 @@ def get_executable_args() -> list[str]:
     Returns:
         List of command arguments.
     """
-    exe_path = shutil.which("nextdns-blocker")
-
-    # Fallback: check pipx default location if not found in PATH
-    if not exe_path:
-        if is_windows():
-            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker.exe"
-            if not pipx_exe.exists():
-                pipx_exe = (
-                    Path.home()
-                    / "AppData"
-                    / "Local"
-                    / "Programs"
-                    / "Python"
-                    / "Scripts"
-                    / "nextdns-blocker.exe"
-                )
-            if pipx_exe.exists():
-                exe_path = str(pipx_exe)
-        else:
-            pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
-            if pipx_exe.exists():
-                exe_path = str(pipx_exe)
-
-    # Fallback: check Homebrew locations (macOS/Linux)
-    if not exe_path and not is_windows():
-        homebrew_paths = [
-            Path("/opt/homebrew/bin/nextdns-blocker"),  # macOS ARM (Apple Silicon)
-            Path("/usr/local/bin/nextdns-blocker"),  # macOS Intel / Homebrew on Linux
-            Path("/home/linuxbrew/.linuxbrew/bin/nextdns-blocker"),  # Linuxbrew
-        ]
-        for brew_path in homebrew_paths:
-            if brew_path.exists():
-                exe_path = str(brew_path)
-                break
-
+    exe_path = _find_executable()
     if exe_path:
         return [exe_path]
     # Fallback to sys.executable module invocation

@@ -1,5 +1,6 @@
 """Pending command group for NextDNS Blocker."""
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -8,10 +9,13 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from .completion import complete_pending_action_ids
 from .pending import (
     cancel_pending_action,
     get_pending_actions,
 )
+
+logger = logging.getLogger(__name__)
 
 console = Console(highlight=False)
 
@@ -63,8 +67,9 @@ def cmd_list(show_all: bool) -> None:
                 time_str,
                 action.get("status", "-"),
             )
-        except (KeyError, ValueError):
-            # Skip malformed actions
+        except (KeyError, ValueError) as e:
+            # Skip malformed actions but log for debugging
+            logger.debug(f"Skipping malformed pending action: {e}")
             continue
 
     console.print()
@@ -73,7 +78,7 @@ def cmd_list(show_all: bool) -> None:
 
 
 @pending_cli.command("show")
-@click.argument("action_id")
+@click.argument("action_id", shell_complete=complete_pending_action_ids)
 def cmd_show(action_id: str) -> None:
     """Show details of a pending action."""
     # Support partial ID matching
@@ -120,15 +125,15 @@ def cmd_show(action_id: str) -> None:
                     console.print(f"\n  [yellow]Time remaining: {hours}h {minutes}m[/yellow]")
                 else:
                     console.print("\n  [green]Ready for execution[/green]")
-        except (ValueError, KeyError):
-            # Invalid datetime format
-            pass
+        except (ValueError, KeyError) as e:
+            # Invalid datetime format - log for debugging
+            logger.debug(f"Could not parse execute_at datetime: {e}")
 
     console.print()
 
 
 @pending_cli.command("cancel")
-@click.argument("action_id")
+@click.argument("action_id", shell_complete=complete_pending_action_ids)
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation")
 @click.option(
     "--config-dir",
@@ -137,6 +142,15 @@ def cmd_show(action_id: str) -> None:
 )
 def cmd_cancel(action_id: str, yes: bool, config_dir: Optional[Path]) -> None:
     """Cancel a pending unblock action."""
+    import sys
+
+    from .panic import is_panic_mode
+
+    # Block cancel during panic mode
+    if is_panic_mode():
+        console.print("\n  [red]Error: Cannot cancel pending actions during panic mode[/red]\n")
+        sys.exit(1)
+
     from .config import load_config
     from .notifications import send_discord_notification
 
@@ -173,9 +187,9 @@ def cmd_cancel(action_id: str, yes: bool, config_dir: Optional[Path]) -> None:
         try:
             config = load_config(config_dir)
             webhook_url = config.get("discord_webhook_url")
-        except Exception:
+        except (OSError, ValueError, KeyError) as e:
             # Ignore errors loading config; Discord notification is optional
-            pass
+            logger.debug(f"Could not load config for webhook: {e}")
 
         # Send notification
         send_discord_notification(

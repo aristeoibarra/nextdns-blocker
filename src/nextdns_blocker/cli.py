@@ -1,6 +1,8 @@
 """Command-line interface for NextDNS Blocker using Click."""
 
 import logging
+import re
+import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -14,11 +16,20 @@ from .client import NextDNSClient
 from .common import (
     audit_log,
     ensure_log_dir,
+    ensure_naive_datetime,
     get_audit_log_file,
     get_log_dir,
     read_secure_file,
     validate_domain,
     write_secure_file,
+)
+from .completion import (
+    complete_allowlist_domains,
+    complete_blocklist_domains,
+    detect_shell,
+    get_completion_script,
+    install_completion,
+    is_completion_installed,
 )
 from .config import (
     DEFAULT_PAUSE_MINUTES,
@@ -96,6 +107,17 @@ def setup_logging(verbose: bool = False) -> None:
 logger = logging.getLogger(__name__)
 console = Console(highlight=False)
 
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# Port validation constants
+MIN_PORT = 1
+MAX_PORT = 65535
+
+# PyPI API URL for update checking
+PYPI_PACKAGE_URL = "https://pypi.org/pypi/nextdns-blocker/json"
+
 
 # =============================================================================
 # PAUSE MANAGEMENT
@@ -109,6 +131,10 @@ def _get_pause_info() -> tuple[bool, Optional[datetime]]:
     Returns:
         Tuple of (is_paused, pause_until_datetime).
         If not paused or error, returns (False, None).
+
+    Note:
+        Uses missing_ok=True for unlink to handle race conditions where
+        another process may have already cleaned up the file.
     """
     pause_file = get_pause_file()
     content = read_secure_file(pause_file)
@@ -116,7 +142,7 @@ def _get_pause_info() -> tuple[bool, Optional[datetime]]:
         return False, None
 
     try:
-        pause_until = datetime.fromisoformat(content)
+        pause_until = ensure_naive_datetime(datetime.fromisoformat(content))
         if datetime.now() < pause_until:
             return True, pause_until
         # Expired, clean up
@@ -174,14 +200,48 @@ def clear_pause() -> bool:
 # =============================================================================
 
 
-@click.group(invoke_without_command=True)
+class PanicAwareGroup(click.Group):
+    """Click Group that hides dangerous commands during panic mode."""
+
+    def get_command(self, ctx: click.Context, cmd_name: str) -> Optional[click.Command]:
+        """Get a command, returning None if hidden during panic mode."""
+        from .panic import DANGEROUS_COMMANDS, is_panic_mode
+
+        cmd = super().get_command(ctx, cmd_name)
+        if cmd is None:
+            return None
+
+        # Check if this top-level command should be hidden
+        if is_panic_mode() and cmd_name in DANGEROUS_COMMANDS:
+            return None  # Returns "No such command" error
+
+        return cmd
+
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        """List commands, excluding hidden ones during panic mode."""
+        from .panic import DANGEROUS_COMMANDS, is_panic_mode
+
+        commands = list(super().list_commands(ctx))
+        if is_panic_mode():
+            commands = [c for c in commands if c not in DANGEROUS_COMMANDS]
+        return commands
+
+
+@click.group(cls=PanicAwareGroup, invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="nextdns-blocker")
 @click.option("--no-color", is_flag=True, help="Disable colored output")
 @click.pass_context
 def main(ctx: click.Context, no_color: bool) -> None:
     """NextDNS Blocker - Domain blocking with per-domain scheduling."""
+    from .panic import get_panic_remaining, is_panic_mode
+
     if no_color:
         console.no_color = True
+
+    # Show panic mode banner if active
+    if is_panic_mode():
+        remaining = get_panic_remaining()
+        console.print(f"\n  [red bold]PANIC MODE ACTIVE ({remaining} remaining)[/red bold]\n")
 
     if ctx.invoked_subcommand is None:
         console.print(ctx.get_help())
@@ -234,7 +294,7 @@ def resume() -> None:
 
 
 @main.command()
-@click.argument("domain")
+@click.argument("domain", shell_complete=complete_blocklist_domains)
 @click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -283,11 +343,8 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
         # Handle delay (if set and not forcing)
         delay_seconds = parse_unblock_delay_seconds(unblock_delay or "0")
 
-        if delay_seconds and delay_seconds > 0 and not force:
+        if delay_seconds and delay_seconds > 0 and not force and unblock_delay:
             # Create pending action
-            # At this point, unblock_delay is guaranteed to be a valid non-None string
-            # because delay_seconds is > 0
-            assert unblock_delay is not None  # Type assertion for mypy
             action = create_pending_action(domain, unblock_delay, requested_by="cli")
             if action:
                 send_discord_notification(
@@ -329,6 +386,239 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
         sys.exit(1)
 
 
+# =============================================================================
+# SYNC HELPER FUNCTIONS
+# =============================================================================
+
+
+def _sync_denylist(
+    domains: list[dict[str, Any]],
+    client: "NextDNSClient",
+    evaluator: "ScheduleEvaluator",
+    config: dict[str, Any],
+    dry_run: bool,
+    verbose: bool,
+    panic_active: bool,
+) -> tuple[int, int]:
+    """
+    Synchronize denylist domains based on schedules.
+
+    Args:
+        domains: List of domain configurations
+        client: NextDNS API client
+        evaluator: Schedule evaluator
+        config: Application configuration
+        dry_run: If True, only show what would be done
+        verbose: If True, show detailed output
+        panic_active: If True, skip unblocks
+
+    Returns:
+        Tuple of (blocked_count, unblocked_count)
+    """
+    blocked_count = 0
+    unblocked_count = 0
+
+    for domain_config in domains:
+        domain = domain_config["domain"]
+        should_block = evaluator.should_block_domain(domain_config)
+        is_blocked = client.is_blocked(domain)
+
+        if should_block and not is_blocked:
+            # Domain should be blocked but isn't
+            if dry_run:
+                console.print(f"  [yellow]Would BLOCK: {domain}[/yellow]")
+            else:
+                if client.block(domain):
+                    audit_log("BLOCK", domain)
+                    send_discord_notification(
+                        domain, "block", webhook_url=config.get("discord_webhook_url")
+                    )
+                    blocked_count += 1
+
+        elif not should_block and is_blocked:
+            # Domain should be unblocked
+            unblocked = _handle_unblock(
+                domain, domain_config, domains, client, config, dry_run, verbose, panic_active
+            )
+            if unblocked:
+                unblocked_count += 1
+
+    return blocked_count, unblocked_count
+
+
+def _handle_unblock(
+    domain: str,
+    domain_config: dict[str, Any],
+    domains: list[dict[str, Any]],
+    client: "NextDNSClient",
+    config: dict[str, Any],
+    dry_run: bool,
+    verbose: bool,
+    panic_active: bool,
+) -> bool:
+    """
+    Handle unblocking a domain with delay logic.
+
+    Args:
+        domain: Domain name to unblock
+        domain_config: Domain configuration dict
+        domains: All domain configurations (for delay lookup)
+        client: NextDNS API client
+        config: Application configuration
+        dry_run: If True, only show what would be done
+        verbose: If True, show detailed output
+        panic_active: If True, skip unblocks
+
+    Returns:
+        True if domain was unblocked immediately, False otherwise
+    """
+    from .config import get_unblock_delay, parse_unblock_delay_seconds
+    from .pending import create_pending_action, get_pending_for_domain
+
+    # Skip unblocks during panic mode
+    if panic_active:
+        if verbose:
+            console.print(f"  [red]Skipping unblock (panic mode): {domain}[/red]")
+        return False
+
+    # Check unblock_delay for this domain
+    domain_delay = get_unblock_delay(domains, domain)
+
+    # Handle 'never' - cannot unblock
+    if domain_delay == "never":
+        if verbose:
+            console.print(f"  [blue]Cannot unblock (never): {domain}[/blue]")
+        return False
+
+    delay_seconds = parse_unblock_delay_seconds(domain_delay or "0")
+
+    # Handle delayed unblock
+    if delay_seconds and delay_seconds > 0 and domain_delay is not None:
+        existing = get_pending_for_domain(domain)
+        if existing:
+            if verbose:
+                console.print(f"  [yellow]Already pending: {domain}[/yellow]")
+            return False
+
+        if dry_run:
+            console.print(
+                f"  [yellow]Would schedule UNBLOCK: {domain} " f"(delay: {domain_delay})[/yellow]"
+            )
+        else:
+            action = create_pending_action(domain, domain_delay, requested_by="sync")
+            if action and verbose:
+                console.print(f"  [yellow]Scheduled unblock: {domain} ({domain_delay})[/yellow]")
+        return False
+
+    # Immediate unblock (no delay)
+    if dry_run:
+        console.print(f"  [green]Would UNBLOCK: {domain}[/green]")
+        return False
+    else:
+        if client.unblock(domain):
+            audit_log("UNBLOCK", domain)
+            send_discord_notification(
+                domain, "unblock", webhook_url=config.get("discord_webhook_url")
+            )
+            return True
+    return False
+
+
+def _sync_allowlist(
+    allowlist: list[dict[str, Any]],
+    client: "NextDNSClient",
+    evaluator: "ScheduleEvaluator",
+    config: dict[str, Any],
+    dry_run: bool,
+    verbose: bool,
+    panic_active: bool,
+) -> tuple[int, int]:
+    """
+    Synchronize allowlist domains based on schedules.
+
+    During panic mode, ALL allowlist operations are skipped to prevent
+    scheduled allowlist entries from creating security holes. The allowlist
+    has highest priority in NextDNS and would bypass all blocks.
+
+    Args:
+        allowlist: List of allowlist configurations
+        client: NextDNS API client
+        evaluator: Schedule evaluator
+        config: Application configuration (for webhook URL)
+        dry_run: If True, only show what would be done
+        verbose: If True, show detailed output
+        panic_active: If True, skip all allowlist operations
+
+    Returns:
+        Tuple of (allowed_count, disallowed_count)
+    """
+    # During panic mode, skip ALL allowlist operations
+    # This prevents scheduled allowlist entries from creating security holes
+    # (allowlist has highest priority in NextDNS and would bypass all blocks)
+    if panic_active:
+        if verbose:
+            console.print("  [red]Skipping allowlist sync (panic mode active)[/red]")
+        return 0, 0
+
+    allowed_count = 0
+    disallowed_count = 0
+
+    for allowlist_config in allowlist:
+        domain = allowlist_config["domain"]
+        should_allow = evaluator.should_allow_domain(allowlist_config)
+        is_allowed = client.is_allowed(domain)
+
+        if should_allow and not is_allowed:
+            # Should be in allowlist but isn't - add it
+            if dry_run:
+                console.print(f"  [green]Would ADD to allowlist: {domain}[/green]")
+            else:
+                if client.allow(domain):
+                    audit_log("ALLOW", domain)
+                    send_discord_notification(
+                        domain, "allow", webhook_url=config.get("discord_webhook_url")
+                    )
+                    allowed_count += 1
+
+        elif not should_allow and is_allowed:
+            # Should NOT be in allowlist but is - remove it
+            if dry_run:
+                console.print(f"  [yellow]Would REMOVE from allowlist: {domain}[/yellow]")
+            else:
+                if client.disallow(domain):
+                    audit_log("DISALLOW", domain)
+                    send_discord_notification(
+                        domain, "disallow", webhook_url=config.get("discord_webhook_url")
+                    )
+                    disallowed_count += 1
+
+    return allowed_count, disallowed_count
+
+
+def _print_sync_summary(
+    blocked_count: int,
+    unblocked_count: int,
+    allowed_count: int,
+    disallowed_count: int,
+    verbose: bool,
+) -> None:
+    """Print sync operation summary."""
+    has_changes = blocked_count or unblocked_count or allowed_count or disallowed_count
+    if has_changes:
+        parts = []
+        if blocked_count or unblocked_count:
+            parts.append(
+                f"[red]{blocked_count} blocked[/red], [green]{unblocked_count} unblocked[/green]"
+            )
+        if allowed_count or disallowed_count:
+            parts.append(
+                f"[green]{allowed_count} allowed[/green], [yellow]{disallowed_count} disallowed[/yellow]"
+            )
+        console.print(f"  Sync: {', '.join(parts)}")
+    elif verbose:
+        console.print("  Sync: [green]No changes needed[/green]")
+
+
 @main.command()
 @click.option("--dry-run", is_flag=True, help="Show changes without applying")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
@@ -360,10 +650,12 @@ def sync(
         click.echo(f"  Paused ({remaining} remaining), skipping sync")
         return
 
-    try:
-        from .config import get_unblock_delay, parse_unblock_delay_seconds
-        from .pending import create_pending_action, get_pending_for_domain
+    # Check panic mode - blocks continue, unblocks and allowlist changes skipped
+    from .panic import is_panic_mode
 
+    panic_active = is_panic_mode()
+
+    try:
         config = load_config(config_dir)
         domains, allowlist = load_domains(config["script_dir"])
 
@@ -375,89 +667,39 @@ def sync(
         if dry_run:
             console.print("\n  [yellow]DRY RUN MODE - No changes will be made[/yellow]\n")
 
+        # =========================================================================
+        # SYNC ORDER: Denylist first, then Allowlist
+        #
+        # This order matters because NextDNS processes allowlist with higher
+        # priority. By syncing denylist first, we ensure blocks are applied
+        # before exceptions. The allowlist sync then adds/removes exceptions.
+        #
+        # Priority in NextDNS (highest to lowest):
+        # 1. Allowlist (always wins - bypasses everything)
+        # 2. Denylist (your custom blocks)
+        # 3. Third-party blocklists (OISD, HaGeZi, etc.)
+        # 4. Security features (Threat Intelligence, NRDs, etc.)
+        #
+        # During panic mode:
+        # - Denylist: blocks continue, unblocks skipped
+        # - Allowlist: completely skipped (prevents security holes)
+        # =========================================================================
+
         # Sync denylist domains
-        blocked_count = 0
-        unblocked_count = 0
+        blocked_count, unblocked_count = _sync_denylist(
+            domains, client, evaluator, config, dry_run, verbose, panic_active
+        )
 
-        for domain_config in domains:
-            domain = domain_config["domain"]
-            should_block = evaluator.should_block_domain(domain_config)
-            is_blocked = client.is_blocked(domain)
+        # Sync allowlist (schedule-aware, panic-aware)
+        allowed_count, disallowed_count = _sync_allowlist(
+            allowlist, client, evaluator, config, dry_run, verbose, panic_active
+        )
 
-            if should_block and not is_blocked:
-                if dry_run:
-                    console.print(f"  [yellow]Would BLOCK: {domain}[/yellow]")
-                else:
-                    if client.block(domain):
-                        audit_log("BLOCK", domain)
-                        send_discord_notification(
-                            domain, "block", webhook_url=config.get("discord_webhook_url")
-                        )
-                        blocked_count += 1
-            elif not should_block and is_blocked:
-                # Check unblock_delay for this domain
-                domain_delay = get_unblock_delay(domains, domain)
-
-                # Handle 'never' - cannot unblock
-                if domain_delay == "never":
-                    if verbose:
-                        console.print(f"  [blue]Cannot unblock (never): {domain}[/blue]")
-                    continue
-
-                delay_seconds = parse_unblock_delay_seconds(domain_delay or "0")
-
-                if delay_seconds and delay_seconds > 0:
-                    # Check if already pending
-                    existing = get_pending_for_domain(domain)
-                    if existing:
-                        if verbose:
-                            console.print(f"  [yellow]Already pending: {domain}[/yellow]")
-                        continue
-
-                    if dry_run:
-                        console.print(
-                            f"  [yellow]Would schedule UNBLOCK: {domain} "
-                            f"(delay: {domain_delay})[/yellow]"
-                        )
-                    else:
-                        # At this point, domain_delay is guaranteed to be a valid non-None string
-                        # because delay_seconds is > 0
-                        assert domain_delay is not None  # Type assertion for mypy
-                        action = create_pending_action(domain, domain_delay, requested_by="sync")
-                        if action and verbose:
-                            console.print(
-                                f"  [yellow]Scheduled unblock: {domain} ({domain_delay})[/yellow]"
-                            )
-                    continue
-
-                # Immediate unblock (no delay)
-                if dry_run:
-                    console.print(f"  [green]Would UNBLOCK: {domain}[/green]")
-                else:
-                    if client.unblock(domain):
-                        audit_log("UNBLOCK", domain)
-                        send_discord_notification(
-                            domain, "unblock", webhook_url=config.get("discord_webhook_url")
-                        )
-                        unblocked_count += 1
-
-        # Sync allowlist
-        for allowlist_config in allowlist:
-            domain = allowlist_config["domain"]
-            if not client.is_allowed(domain):
-                if dry_run:
-                    console.print(f"  [green]Would ADD to allowlist: {domain}[/green]")
-                else:
-                    if client.allow(domain):
-                        audit_log("ALLOW", domain)
-
+        # Print summary
         if not dry_run:
-            if blocked_count or unblocked_count:
-                console.print(
-                    f"  Sync: [red]{blocked_count} blocked[/red], [green]{unblocked_count} unblocked[/green]"
-                )
-            elif verbose:
-                console.print("  Sync: [green]No changes needed[/green]")
+            _print_sync_summary(
+                blocked_count, unblocked_count, allowed_count, disallowed_count, verbose
+            )
 
     except ConfigurationError as e:
         console.print(f"  [red]Config error: {e}[/red]", highlight=False)
@@ -470,8 +712,15 @@ def sync(
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Config directory (default: auto-detect)",
 )
-def status(config_dir: Optional[Path]) -> None:
+@click.option(
+    "--no-update-check",
+    is_flag=True,
+    help="Skip checking for updates",
+)
+def status(config_dir: Optional[Path], no_update_check: bool) -> None:
     """Show current blocking status."""
+    from .update_check import check_for_update
+
     try:
         config = load_config(config_dir)
         domains, allowlist = load_domains(config["script_dir"])
@@ -492,6 +741,17 @@ def status(config_dir: Optional[Path]) -> None:
             console.print(f"  Pause: [yellow]ACTIVE ({remaining})[/yellow]")
         else:
             console.print("  Pause: [green]inactive[/green]")
+
+        # Check for updates (unless disabled)
+        if not no_update_check:
+            update_info = check_for_update(__version__)
+            if update_info:
+                console.print()
+                console.print(
+                    f"  [yellow]⚠️  Update available: "
+                    f"{update_info.current_version} → {update_info.latest_version}[/yellow]"
+                )
+                console.print("      Run: [cyan]nextdns-blocker update[/cyan]")
 
         console.print(f"\n  [bold]Domains ({len(domains)}):[/bold]")
 
@@ -532,8 +792,27 @@ def status(config_dir: Optional[Path]) -> None:
             for item in allowlist:
                 domain = item["domain"]
                 is_allowed = client.is_allowed(domain)
-                status_icon = "[green]✓[/green]" if is_allowed else "[red]✗[/red]"
-                console.print(f"    {status_icon} {domain}")
+                has_schedule = item.get("schedule") is not None
+                should_allow = evaluator.should_allow_domain(item)
+
+                if has_schedule:
+                    # Scheduled allowlist entry
+                    expected = "allow" if should_allow else "disallow"
+                    match = (
+                        "[green]✓[/green]"
+                        if (should_allow == is_allowed)
+                        else "[red]✗ MISMATCH[/red]"
+                    )
+                    status_text = (
+                        "[green]allowed[/green]" if is_allowed else "[yellow]not allowed[/yellow]"
+                    )
+                    console.print(
+                        f"    {domain:<20} {status_text} (should: {expected}) {match} [cyan]\\[scheduled][/cyan]"
+                    )
+                else:
+                    # Always-allowed entry (no schedule)
+                    status_icon = "[green]✓[/green]" if is_allowed else "[red]✗[/red]"
+                    console.print(f"    {status_icon} {domain}")
 
         # Scheduler status
         console.print("\n  [bold]Scheduler:[/bold]")
@@ -602,6 +881,9 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
 
         if client.allow(domain):
             audit_log("ALLOW", domain)
+            send_discord_notification(
+                domain, "allow", webhook_url=config.get("discord_webhook_url")
+            )
             console.print(f"\n  [green]Added to allowlist: {domain}[/green]\n")
         else:
             console.print("\n  [red]Error: Failed to add to allowlist[/red]\n", highlight=False)
@@ -616,7 +898,7 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
 
 
 @main.command()
-@click.argument("domain")
+@click.argument("domain", shell_complete=complete_allowlist_domains)
 @click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -638,6 +920,9 @@ def disallow(domain: str, config_dir: Optional[Path]) -> None:
 
         if client.disallow(domain):
             audit_log("DISALLOW", domain)
+            send_discord_notification(
+                domain, "disallow", webhook_url=config.get("discord_webhook_url")
+            )
             console.print(f"\n  [green]Removed from allowlist: {domain}[/green]\n")
         else:
             console.print(
@@ -816,7 +1101,7 @@ def uninstall(yes: bool) -> None:
         else:
             _uninstall_cron_jobs()
         console.print("          [green]Done[/green]")
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
         console.print(f"          [yellow]Warning: {e}[/yellow]")
 
     # Remove directories
@@ -829,7 +1114,7 @@ def uninstall(yes: bool) -> None:
                 console.print("          [green]Done[/green]")
             else:
                 console.print("          [yellow]Already removed[/yellow]")
-        except Exception as e:
+        except (OSError, PermissionError) as e:
             console.print(f"          [red]Error: {e}[/red]")
 
     console.print("\n  [green]Uninstall complete![/green]")
@@ -886,7 +1171,7 @@ def fix() -> None:
     click.echo("  -------------------\n")
 
     # Step 1: Verify config
-    console.print("  [bold][1/4] Checking configuration...[/bold]")
+    console.print("  [bold][1/5] Checking configuration...[/bold]")
     try:
         load_config()  # Validates config exists and is valid
         console.print("        Config: [green]OK[/green]")
@@ -896,7 +1181,7 @@ def fix() -> None:
         sys.exit(1)
 
     # Step 2: Find executable
-    console.print("  [bold][2/4] Detecting installation...[/bold]")
+    console.print("  [bold][2/5] Detecting installation...[/bold]")
     detected_path = get_executable_path()
     exe_cmd: Optional[str] = detected_path
     # Detect installation type
@@ -909,10 +1194,10 @@ def fix() -> None:
         console.print("        Type: system")
 
     # Step 3: Reinstall scheduler
-    console.print("  [bold][3/4] Reinstalling scheduler...[/bold]")
+    console.print("  [bold][3/5] Reinstalling scheduler...[/bold]")
     try:
         if is_macos():
-            # Uninstall launchd jobs
+            # Uninstall launchd jobs with timeout protection
             subprocess.run(
                 [
                     "launchctl",
@@ -920,6 +1205,8 @@ def fix() -> None:
                     str(Path.home() / "Library/LaunchAgents/com.nextdns-blocker.sync.plist"),
                 ],
                 capture_output=True,
+                timeout=30,
+                check=False,  # Don't raise on non-zero exit
             )
             subprocess.run(
                 [
@@ -928,16 +1215,22 @@ def fix() -> None:
                     str(Path.home() / "Library/LaunchAgents/com.nextdns-blocker.watchdog.plist"),
                 ],
                 capture_output=True,
+                timeout=30,
+                check=False,
             )
         elif is_windows():
-            # Uninstall Windows Task Scheduler tasks
+            # Uninstall Windows Task Scheduler tasks with timeout protection
             subprocess.run(
                 ["schtasks", "/delete", "/tn", WINDOWS_TASK_SYNC_NAME, "/f"],
                 capture_output=True,
+                timeout=30,
+                check=False,
             )
             subprocess.run(
                 ["schtasks", "/delete", "/tn", WINDOWS_TASK_WATCHDOG_NAME, "/f"],
                 capture_output=True,
+                timeout=30,
+                check=False,
             )
 
         # Use the watchdog install command
@@ -946,12 +1239,14 @@ def fix() -> None:
                 [exe_cmd, "watchdog", "install"],
                 capture_output=True,
                 text=True,
+                timeout=60,
             )
         else:
             result = subprocess.run(
                 [sys.executable, "-m", "nextdns_blocker", "watchdog", "install"],
                 capture_output=True,
                 text=True,
+                timeout=60,
             )
 
         if result.returncode == 0:
@@ -959,12 +1254,15 @@ def fix() -> None:
         else:
             console.print(f"        Scheduler: [red]FAILED - {result.stderr}[/red]")
             sys.exit(1)
-    except Exception as e:
+    except subprocess.TimeoutExpired:
+        console.print("        Scheduler: [red]FAILED - timeout[/red]")
+        sys.exit(1)
+    except OSError as e:
         console.print(f"        Scheduler: [red]FAILED - {e}[/red]")
         sys.exit(1)
 
     # Step 4: Run sync
-    console.print("  [bold][4/4] Running sync...[/bold]")
+    console.print("  [bold][4/5] Running sync...[/bold]")
     try:
         if exe_cmd:
             result = subprocess.run(
@@ -987,8 +1285,25 @@ def fix() -> None:
             console.print(f"        Sync: [red]FAILED - {result.stderr}[/red]")
     except subprocess.TimeoutExpired:
         console.print("        Sync: [red]TIMEOUT[/red]")
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         console.print(f"        Sync: [red]FAILED - {e}[/red]")
+
+    # Step 5: Shell completion
+    console.print("  [bold][5/5] Checking shell completion...[/bold]")
+    shell = detect_shell()
+    if shell and not is_windows():
+        if is_completion_installed(shell):
+            console.print("        Completion: [green]OK[/green]")
+        else:
+            success, msg = install_completion(shell)
+            if success:
+                console.print("        Completion: [green]INSTALLED[/green]")
+                console.print(f"        {msg}")
+            else:
+                console.print("        Completion: [yellow]SKIPPED[/yellow]")
+                console.print(f"        {msg}")
+    else:
+        console.print("        Completion: [dim]N/A (Windows or unsupported shell)[/dim]")
 
     console.print("\n  [green]Fix complete![/green]\n")
 
@@ -1002,7 +1317,9 @@ def update(yes: bool) -> None:
     and uses the appropriate upgrade command.
     """
     import json
+    import ssl
     import subprocess
+    import urllib.error
     import urllib.request
 
     console.print("\n  Checking for updates...")
@@ -1011,11 +1328,30 @@ def update(yes: bool) -> None:
 
     # Fetch latest version from PyPI
     try:
-        pypi_url = "https://pypi.org/pypi/nextdns-blocker/json"
-        with urllib.request.urlopen(pypi_url, timeout=10) as response:  # nosec B310
+        with urllib.request.urlopen(PYPI_PACKAGE_URL, timeout=10) as response:  # nosec B310
             data = json.loads(response.read().decode())
-            latest_version = data["info"]["version"]
-    except Exception as e:
+            # Safely access nested keys
+            info = data.get("info")
+            if not isinstance(info, dict):
+                console.print("  [red]Error: Invalid PyPI response format[/red]\n", highlight=False)
+                sys.exit(1)
+            latest_version = info.get("version")
+            if not isinstance(latest_version, str):
+                console.print(
+                    "  [red]Error: Missing version in PyPI response[/red]\n", highlight=False
+                )
+                sys.exit(1)
+    except ssl.SSLError as e:
+        # SSLError is the base class and includes SSLCertVerificationError
+        console.print(f"  [red]SSL error: {e}[/red]\n", highlight=False)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        console.print(f"  [red]Network error: {e}[/red]\n", highlight=False)
+        sys.exit(1)
+    except (json.JSONDecodeError, ValueError) as e:
+        console.print(f"  [red]Error parsing PyPI response: {e}[/red]\n", highlight=False)
+        sys.exit(1)
+    except OSError as e:
         console.print(f"  [red]Error checking PyPI: {e}[/red]\n", highlight=False)
         sys.exit(1)
 
@@ -1027,15 +1363,21 @@ def update(yes: bool) -> None:
         console.print("\n  [green]You are already on the latest version.[/green]\n")
         return
 
-    # Parse versions for comparison
+    # Parse versions for comparison (handles semver with suffixes like "1.0.0rc1")
     def parse_version(v: str) -> tuple[int, ...]:
-        return tuple(int(x) for x in v.split("."))
+        # Extract only the numeric parts (e.g., "1.0.0rc1" -> "1.0.0")
+        # This regex captures digits separated by dots, ignoring suffixes
+        numeric_match = re.match(r"^(\d+(?:\.\d+)*)", v)
+        if not numeric_match:
+            raise ValueError(f"Cannot parse version: {v}")
+        numeric_part = numeric_match.group(1)
+        return tuple(int(x) for x in numeric_part.split("."))
 
     try:
         current_tuple = parse_version(current_version)
         latest_tuple = parse_version(latest_version)
     except ValueError:
-        # If parsing fails, just do string comparison
+        # If parsing fails, assume update is available to be safe
         current_tuple = (0,)
         latest_tuple = (1,)
 
@@ -1090,11 +1432,20 @@ def update(yes: bool) -> None:
             )
         if result.returncode == 0:
             console.print(f"  [green]Successfully updated to version {latest_version}[/green]")
+
+            # Check/install shell completion after update
+            shell = detect_shell()
+            if shell and not is_windows():
+                if not is_completion_installed(shell):
+                    success, msg = install_completion(shell)
+                    if success:
+                        console.print(f"  Shell completion installed: {msg}")
+
             console.print("  Please restart the application to use the new version.\n")
         else:
             console.print(f"  [red]Update failed: {result.stderr}[/red]\n", highlight=False)
             sys.exit(1)
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
         console.print(f"  [red]Update failed: {e}[/red]\n", highlight=False)
         sys.exit(1)
 
@@ -1273,6 +1624,37 @@ def validate(
         console.print()
 
     sys.exit(0 if results["valid"] else 1)
+
+
+# =============================================================================
+# SHELL COMPLETION
+# =============================================================================
+
+
+@main.command()
+@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
+def completion(shell: str) -> None:
+    """Generate shell completion script.
+
+    Output the completion script for your shell. To enable completions,
+    add the appropriate line to your shell configuration file.
+
+    Examples:
+
+    \b
+    # Bash - add to ~/.bashrc
+    eval "$(nextdns-blocker completion bash)"
+
+    \b
+    # Zsh - add to ~/.zshrc
+    eval "$(nextdns-blocker completion zsh)"
+
+    \b
+    # Fish - save to completions directory
+    nextdns-blocker completion fish > ~/.config/fish/completions/nextdns-blocker.fish
+    """
+    script = get_completion_script(shell)
+    click.echo(script)
 
 
 # =============================================================================

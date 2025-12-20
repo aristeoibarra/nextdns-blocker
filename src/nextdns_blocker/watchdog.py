@@ -2,8 +2,9 @@
 
 import contextlib
 import logging
+import os
 import plistlib
-import random
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -13,7 +14,14 @@ from typing import Any, Optional
 import click
 
 from .common import audit_log as _base_audit_log
-from .common import get_log_dir, read_secure_file, write_secure_file
+from .common import (
+    ensure_naive_datetime,
+    get_log_dir,
+    read_secure_file,
+    safe_int,
+    write_secure_file,
+)
+from .exceptions import APIError, ConfigurationError, DomainValidationError
 from .platform_utils import (
     get_executable_args,
     get_executable_path,
@@ -27,7 +35,15 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION & CONSTANTS
 # =============================================================================
 
-SUBPROCESS_TIMEOUT = 60
+# Subprocess timeout in seconds (configurable via environment variable)
+# Enforce minimum of 10 seconds and maximum of 300 seconds to prevent misconfiguration
+_raw_subprocess_timeout = safe_int(
+    os.environ.get("NEXTDNS_SUBPROCESS_TIMEOUT"), 60, "NEXTDNS_SUBPROCESS_TIMEOUT"
+)
+SUBPROCESS_TIMEOUT = min(300, max(10, _raw_subprocess_timeout))
+
+# Cleanup interval in hours (run cleanup once per day)
+CLEANUP_INTERVAL_HOURS = 24
 
 # launchd constants for macOS
 LAUNCHD_SYNC_LABEL = "com.nextdns-blocker.sync"
@@ -58,12 +74,27 @@ def get_disabled_file() -> Path:
     return get_log_dir() / ".watchdog_disabled"
 
 
+def _escape_shell_path(path: str) -> str:
+    """
+    Escape a path for safe use in shell commands.
+
+    Args:
+        path: File system path to escape
+
+    Returns:
+        Shell-escaped path safe for use in cron/shell commands
+    """
+    return shlex.quote(path)
+
+
 def get_cron_sync() -> str:
     """Get the sync cron job definition."""
     log_dir = get_log_dir()
     exe = get_executable_path()
     log_file = str(log_dir / "cron.log")
-    return f'*/2 * * * * {exe} sync >> "{log_file}" 2>&1'
+    safe_exe = _escape_shell_path(exe)
+    safe_log = _escape_shell_path(log_file)
+    return f"*/2 * * * * {safe_exe} sync >> {safe_log} 2>&1"
 
 
 def get_cron_watchdog() -> str:
@@ -71,12 +102,56 @@ def get_cron_watchdog() -> str:
     log_dir = get_log_dir()
     exe = get_executable_path()
     log_file = str(log_dir / "wd.log")
-    return f'* * * * * {exe} watchdog check >> "{log_file}" 2>&1'
+    safe_exe = _escape_shell_path(exe)
+    safe_log = _escape_shell_path(log_file)
+    return f"* * * * * {safe_exe} watchdog check >> {safe_log} 2>&1"
 
 
 def audit_log(action: str, detail: str = "") -> None:
     """Wrapper for audit_log with WD prefix."""
     _base_audit_log(action, detail, prefix="WD")
+
+
+def _get_last_cleanup_file() -> Path:
+    """Get the path to the last cleanup timestamp file."""
+    return get_log_dir() / ".last_cleanup"
+
+
+def _should_run_cleanup() -> bool:
+    """
+    Check if cleanup should run based on time since last cleanup.
+
+    Uses a deterministic time-based approach instead of random chance.
+    Cleanup runs once per CLEANUP_INTERVAL_HOURS.
+
+    Returns:
+        True if cleanup should run, False otherwise.
+    """
+    cleanup_file = _get_last_cleanup_file()
+
+    try:
+        if cleanup_file.exists():
+            content = read_secure_file(cleanup_file)
+            if content:
+                last_cleanup = ensure_naive_datetime(datetime.fromisoformat(content))
+                hours_since = (datetime.now() - last_cleanup).total_seconds() / 3600
+                if hours_since < CLEANUP_INTERVAL_HOURS:
+                    return False
+    except ValueError as e:
+        # Invalid date format in cleanup file - will run cleanup to reset
+        logger.debug(f"Invalid cleanup timestamp format, will run cleanup: {e}")
+    except OSError as e:
+        # File access error - will run cleanup
+        logger.debug(f"Cannot read cleanup file, will run cleanup: {e}")
+
+    return True
+
+
+def _mark_cleanup_done() -> None:
+    """Record that cleanup was just performed."""
+    cleanup_file = _get_last_cleanup_file()
+    with contextlib.suppress(OSError):
+        write_secure_file(cleanup_file, datetime.now().isoformat())
 
 
 # =============================================================================
@@ -85,7 +160,12 @@ def audit_log(action: str, detail: str = "") -> None:
 
 
 def is_disabled() -> bool:
-    """Check if watchdog is temporarily or permanently disabled."""
+    """
+    Check if watchdog is temporarily or permanently disabled.
+
+    Note:
+        Cleanup of expired files is handled safely to avoid race conditions.
+    """
     disabled_file = get_disabled_file()
     content = read_secure_file(disabled_file)
     if not content:
@@ -95,14 +175,16 @@ def is_disabled() -> bool:
         if content == "permanent":
             return True
 
-        disabled_until = datetime.fromisoformat(content)
+        disabled_until = ensure_naive_datetime(datetime.fromisoformat(content))
         if datetime.now() < disabled_until:
             return True
 
-        # Expired, clean up
+        # Expired, clean up (safe cleanup handles race conditions)
         _remove_disabled_file()
         return False
     except ValueError:
+        # Invalid content, attempt cleanup
+        _remove_disabled_file()
         return False
 
 
@@ -117,7 +199,7 @@ def get_disabled_remaining() -> str:
         if content == "permanent":
             return "permanently"
 
-        disabled_until = datetime.fromisoformat(content)
+        disabled_until = ensure_naive_datetime(datetime.fromisoformat(content))
         remaining = disabled_until - datetime.now()
 
         if remaining.total_seconds() <= 0:
@@ -166,13 +248,39 @@ def clear_disabled() -> bool:
 
 
 def get_crontab() -> str:
-    """Get the current user's crontab contents."""
+    """
+    Get the current user's crontab contents.
+
+    Returns:
+        Crontab contents as string.
+        Empty string if no crontab exists or on error.
+
+    Note:
+        This function logs errors to distinguish between "no crontab" (normal)
+        and actual failures (permission denied, timeout, etc.).
+    """
     try:
         result = subprocess.run(
             ["crontab", "-l"], capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT
         )
-        return result.stdout if result.returncode == 0 else ""
-    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        if result.returncode == 0:
+            return result.stdout
+        # crontab -l returns non-zero when no crontab exists (common case)
+        # stderr typically contains "no crontab for <user>"
+        if "no crontab" in result.stderr.lower():
+            logger.debug("No crontab exists for current user")
+        else:
+            # Unexpected error - log it
+            logger.warning(f"crontab -l failed: {result.stderr.strip()}")
+        return ""
+    except subprocess.TimeoutExpired:
+        logger.error(f"crontab -l timed out after {SUBPROCESS_TIMEOUT}s")
+        return ""
+    except OSError as e:
+        logger.error(f"Failed to run crontab command: {e}")
+        return ""
+    except subprocess.SubprocessError as e:
+        logger.error(f"Subprocess error running crontab: {e}")
         return ""
 
 
@@ -592,9 +700,25 @@ def _run_sync_after_restore() -> None:
     """Run sync command after restoring scheduled jobs."""
     try:
         exe_args = get_executable_args()
-        subprocess.run(exe_args + ["sync"], timeout=SUBPROCESS_TIMEOUT)
-    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+        result = subprocess.run(
+            exe_args + ["sync"],
+            timeout=SUBPROCESS_TIMEOUT,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            logger.info("Sync completed successfully after restore")
+        else:
+            logger.warning(
+                f"Sync after restore exited with code {result.returncode}: "
+                f"{result.stderr.strip() if result.stderr else 'no error output'}"
+            )
+    except subprocess.TimeoutExpired:
+        logger.warning(f"Sync after restore timed out after {SUBPROCESS_TIMEOUT}s")
+    except OSError as e:
         logger.warning(f"Failed to run sync after restore: {e}")
+    except subprocess.SubprocessError as e:
+        logger.warning(f"Subprocess error running sync after restore: {e}")
 
 
 # =============================================================================
@@ -652,7 +776,16 @@ def _build_task_command(exe: str, args: str, log_file: str) -> str:
 def _run_schtasks(
     args: list[str], timeout: int = SUBPROCESS_TIMEOUT
 ) -> subprocess.CompletedProcess[str]:
-    """Run schtasks command with standard options."""
+    """
+    Run schtasks command with standard options.
+
+    Args:
+        args: List of arguments to pass to schtasks
+        timeout: Command timeout in seconds
+
+    Returns:
+        CompletedProcess with stdout/stderr captured
+    """
     return subprocess.run(
         ["schtasks"] + args,
         capture_output=True,
@@ -851,6 +984,13 @@ def watchdog_cli() -> None:
 
 def _process_pending_actions() -> None:
     """Execute pending actions that are ready."""
+    from .panic import is_panic_mode
+
+    # Skip pending actions during panic mode
+    if is_panic_mode():
+        logger.debug("Panic mode active, skipping pending actions")
+        return
+
     from .client import NextDNSClient
     from .config import load_config
     from .notifications import send_discord_notification
@@ -868,8 +1008,14 @@ def _process_pending_actions() -> None:
             config["timeout"],
             config["retries"],
         )
-    except Exception as e:
-        logger.error(f"Failed to load config for pending actions: {e}")
+    except ConfigurationError as e:
+        logger.error(f"Configuration error for pending actions: {e}")
+        return
+    except KeyError as e:
+        logger.error(f"Missing configuration key for pending actions: {e}")
+        return
+    except OSError as e:
+        logger.error(f"I/O error loading config for pending actions: {e}")
         return
 
     for action in ready_actions:
@@ -877,8 +1023,15 @@ def _process_pending_actions() -> None:
         action_id = action.get("id")
         action_type = action.get("action")
 
-        if domain is None or action_id is None or action_type is None:
-            logger.warning(f"Skipping malformed pending action: {action}")
+        # Validate required fields with proper type checking
+        if not isinstance(domain, str) or not domain:
+            logger.warning(f"Skipping action with invalid domain: {action}")
+            continue
+        if not isinstance(action_id, str) or not action_id:
+            logger.warning(f"Skipping action with invalid id: {action}")
+            continue
+        if action_type is None:
+            logger.warning(f"Skipping action with missing type: {action}")
             continue
 
         if action_type == "unblock":
@@ -894,12 +1047,20 @@ def _process_pending_actions() -> None:
                     click.echo(f"  Executed pending unblock: {domain}")
                 else:
                     logger.error(f"Failed to unblock {domain} (pending: {action_id})")
-            except Exception as e:
-                logger.error(f"Error processing pending action {action_id}: {e}")
+            except DomainValidationError as e:
+                # Domain validation failed - log and skip this action
+                logger.error(f"Invalid domain in pending action {action_id}: {e}")
+            except APIError as e:
+                # API error - may be temporary, will retry on next check
+                logger.error(f"API error processing pending action {action_id}: {e}")
+            except OSError as e:
+                # File system or network error
+                logger.error(f"I/O error processing pending action {action_id}: {e}")
 
-    # Periodic cleanup of old actions
-    if random.random() < 0.01:  # ~1% chance per run
+    # Periodic cleanup of old actions (time-based, once per day)
+    if _should_run_cleanup():
         cleanup_old_actions(max_age_days=7)
+        _mark_cleanup_done()
 
 
 @watchdog_cli.command("check")

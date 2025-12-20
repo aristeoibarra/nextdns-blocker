@@ -3,9 +3,10 @@
 import json
 import logging
 import os
+import random
 import threading
-from datetime import datetime
-from time import sleep
+import time
+from collections import deque
 from typing import Any, Optional
 
 import requests
@@ -21,11 +22,20 @@ from .exceptions import APIError, DomainValidationError
 API_URL = "https://api.nextdns.io"
 
 # Rate limiting and backoff settings (configurable via environment variables)
-RATE_LIMIT_REQUESTS = safe_int(os.environ.get("RATE_LIMIT_REQUESTS"), 30)  # Max requests per window
-RATE_LIMIT_WINDOW = safe_int(os.environ.get("RATE_LIMIT_WINDOW"), 60)  # Window in seconds
+# Minimum bounds enforced to prevent misconfiguration:
+# - RATE_LIMIT_REQUESTS: Max 1000 to prevent API abuse, min 1 to ensure limit exists
+# - RATE_LIMIT_WINDOW: Max 3600s (1 hour) for reasonable window, min 1s to prevent division issues
+_raw_rate_limit_requests = safe_int(os.environ.get("RATE_LIMIT_REQUESTS"), 30)
+RATE_LIMIT_REQUESTS = min(1000, max(1, _raw_rate_limit_requests))
+
+_raw_rate_limit_window = safe_int(os.environ.get("RATE_LIMIT_WINDOW"), 60)
+RATE_LIMIT_WINDOW = min(3600, max(1, _raw_rate_limit_window))
+
 BACKOFF_BASE = 1.0  # Base delay for exponential backoff (seconds)
 BACKOFF_MAX = 30.0  # Maximum backoff delay (seconds)
-CACHE_TTL = safe_int(os.environ.get("CACHE_TTL"), 60)  # Denylist cache TTL in seconds
+
+_raw_cache_ttl = safe_int(os.environ.get("CACHE_TTL"), 60)
+CACHE_TTL = min(3600, max(1, _raw_cache_ttl))  # 1-3600 seconds TTL
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +60,16 @@ class RateLimiter:
         """
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self.requests: list[float] = []
+        # Use deque for O(1) popleft operations when removing expired timestamps
+        self._requests: deque[float] = deque()
         self._condition = threading.Condition()
 
     def acquire(self, timeout: Optional[float] = None) -> float:
         """
         Acquire permission to make a request, waiting if necessary.
+
+        Uses time.monotonic() for accurate interval measurement that is not
+        affected by system clock changes.
 
         Args:
             timeout: Maximum time to wait in seconds (None for no timeout)
@@ -67,27 +81,28 @@ class RateLimiter:
             TimeoutError: If timeout is reached while waiting for rate limit
         """
         total_waited = 0.0
-        deadline = None if timeout is None else datetime.now().timestamp() + timeout
+        deadline = None if timeout is None else time.monotonic() + timeout
 
         with self._condition:
             while True:
-                now = datetime.now().timestamp()
+                now = time.monotonic()
 
                 # Check if we've exceeded the timeout
                 if deadline is not None and now >= deadline:
                     raise TimeoutError("Rate limiter acquire timed out")
 
-                # Remove expired timestamps
+                # Remove expired timestamps from the front (O(1) per removal with deque)
                 cutoff = now - self.window_seconds
-                self.requests = [ts for ts in self.requests if ts > cutoff]
+                while self._requests and self._requests[0] <= cutoff:
+                    self._requests.popleft()
 
                 # Check if we can proceed
-                if len(self.requests) < self.max_requests:
-                    self.requests.append(now)
+                if len(self._requests) < self.max_requests:
+                    self._requests.append(now)
                     return total_waited
 
                 # Calculate wait time until oldest request expires
-                wait_time = self.requests[0] - cutoff
+                wait_time = self._requests[0] - cutoff
                 if wait_time <= 0:
                     # Oldest request already expired, try again
                     continue
@@ -101,8 +116,11 @@ class RateLimiter:
 
                 # Wait with Condition - releases lock during wait, reacquires before returning
                 # This is thread-safe: other threads can check/modify while we wait
+                wait_start = time.monotonic()
                 self._condition.wait(timeout=wait_time)
-                total_waited += wait_time
+                # Track actual time waited (handles spurious wakeups correctly)
+                actual_waited = time.monotonic() - wait_start
+                total_waited += actual_waited
 
 
 # =============================================================================
@@ -111,7 +129,11 @@ class RateLimiter:
 
 
 class DomainCache:
-    """Thread-safe cache class for domain lists to reduce API calls."""
+    """Thread-safe cache class for domain lists to reduce API calls.
+
+    Uses time.monotonic() for cache expiration to ensure accurate timing
+    that is not affected by system clock changes.
+    """
 
     def __init__(self, ttl: int = CACHE_TTL) -> None:
         """
@@ -126,17 +148,19 @@ class DomainCache:
         self._timestamp: float = 0
         self._lock = threading.Lock()
 
+    def _is_valid_unlocked(self) -> bool:
+        """Check if cache is still valid (internal, must hold lock)."""
+        return self._data is not None and (time.monotonic() - self._timestamp) < self.ttl
+
     def is_valid(self) -> bool:
         """Check if cache is still valid."""
         with self._lock:
-            return (
-                self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl
-            )
+            return self._is_valid_unlocked()
 
     def get(self) -> Optional[list[dict[str, Any]]]:
         """Get cached data if valid."""
         with self._lock:
-            if self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl:
+            if self._is_valid_unlocked():
                 return self._data
             return None
 
@@ -144,8 +168,9 @@ class DomainCache:
         """Update cache with new data."""
         with self._lock:
             self._data = data
-            self._domains = {entry.get("id", "") for entry in data}
-            self._timestamp = datetime.now().timestamp()
+            # Filter out entries without valid id to prevent false positives
+            self._domains = {str(entry["id"]) for entry in data if entry.get("id")}
+            self._timestamp = time.monotonic()
 
     def contains(self, domain: str) -> Optional[bool]:
         """
@@ -167,7 +192,7 @@ class DomainCache:
             None if cache is invalid/expired and lookup cannot be performed
         """
         with self._lock:
-            if self._data is None or (datetime.now().timestamp() - self._timestamp) >= self.ttl:
+            if self._data is None or (time.monotonic() - self._timestamp) >= self.ttl:
                 return None
             return domain in self._domains
 
@@ -175,29 +200,68 @@ class DomainCache:
         """Invalidate the cache."""
         with self._lock:
             self._data = None
-            self._domains = set()
+            self._domains.clear()  # More efficient than creating new set
             self._timestamp = 0
 
     def add_domain(self, domain: str) -> None:
-        """Add a domain to the cache (for optimistic updates)."""
+        """
+        Add a domain to the cache (for optimistic updates).
+
+        Thread-safe: uses set for _domains to prevent duplicates,
+        and checks before appending to _data list.
+        """
         with self._lock:
             if self._data is not None:
-                self._domains.add(domain)
+                # Use set.add which handles duplicates automatically
+                if domain not in self._domains:
+                    self._domains.add(domain)
+                    self._data.append({"id": domain, "active": True})
 
     def remove_domain(self, domain: str) -> None:
         """Remove a domain from the cache (for optimistic updates)."""
         with self._lock:
             self._domains.discard(domain)
+            # Keep _data in sync with _domains
+            if self._data is not None:
+                self._data = [entry for entry in self._data if entry.get("id") != domain]
 
 
 class DenylistCache(DomainCache):
-    """Cache for denylist to reduce API calls."""
+    """Cache for denylist (blocked domains) to reduce API calls.
+
+    This specialized cache is used for storing blocked domains fetched from
+    the NextDNS API. It inherits all functionality from DomainCache.
+
+    The separate class allows for:
+    - Type-safe distinction between denylist and allowlist caches
+    - Future extensibility for denylist-specific behavior
+    - Clear semantic meaning in code that handles both lists
+
+    Example:
+        cache = DenylistCache(ttl=60)
+        cache.set([{"id": "example.com", "active": True}])
+        is_blocked = cache.contains("example.com")
+    """
 
     pass
 
 
 class AllowlistCache(DomainCache):
-    """Cache for allowlist to reduce API calls."""
+    """Cache for allowlist (allowed domains) to reduce API calls.
+
+    This specialized cache is used for storing allowed domains fetched from
+    the NextDNS API. It inherits all functionality from DomainCache.
+
+    The separate class allows for:
+    - Type-safe distinction between denylist and allowlist caches
+    - Future extensibility for allowlist-specific behavior
+    - Clear semantic meaning in code that handles both lists
+
+    Example:
+        cache = AllowlistCache(ttl=60)
+        cache.set([{"id": "trusted.com", "active": True}])
+        is_allowed = cache.contains("trusted.com")
+    """
 
     pass
 
@@ -229,23 +293,52 @@ class NextDNSClient:
         self.profile_id = profile_id
         self.timeout = timeout
         self.retries = retries
-        self.headers: dict[str, str] = {"X-Api-Key": api_key, "Content-Type": "application/json"}
+        self._api_key = api_key  # Store privately to avoid accidental exposure
         self._rate_limiter = RateLimiter()
         self._cache = DenylistCache()
         self._allowlist_cache = AllowlistCache()
 
+    def _get_headers(self) -> dict[str, str]:
+        """
+        Build request headers dynamically.
+
+        Headers are constructed on-demand rather than stored as an instance
+        variable to prevent accidental exposure of the API key in logs,
+        stack traces, or object serialization.
+
+        Returns:
+            Dict with required API headers
+        """
+        return {"X-Api-Key": self._api_key, "Content-Type": "application/json"}
+
+    def _redacted_headers(self) -> dict[str, str]:
+        """Return headers with API key fully redacted for safe logging."""
+        return {
+            "X-Api-Key": "***REDACTED***",
+            "Content-Type": "application/json",
+        }
+
+    def __repr__(self) -> str:
+        """Return a safe string representation without exposing API key."""
+        return f"NextDNSClient(profile_id={self.profile_id!r}, timeout={self.timeout}, retries={self.retries})"
+
     def _calculate_backoff(self, attempt: int) -> float:
         """
-        Calculate exponential backoff delay.
+        Calculate exponential backoff delay with jitter.
+
+        Uses "full jitter" strategy to prevent thundering herd problem
+        when multiple clients retry simultaneously.
 
         Args:
             attempt: Current attempt number (0-indexed)
 
         Returns:
-            Delay in seconds
+            Delay in seconds (with random jitter between 0 and calculated delay)
         """
         delay = BACKOFF_BASE * (2**attempt)
-        return float(min(delay, BACKOFF_MAX))
+        capped_delay = min(delay, BACKOFF_MAX)
+        # Full jitter: random value between 0 and capped_delay
+        return random.uniform(0, capped_delay)
 
     def request(
         self, method: str, endpoint: str, data: Optional[dict[str, Any]] = None
@@ -263,27 +356,49 @@ class NextDNSClient:
         """
         url = f"{API_URL}{endpoint}"
 
+        # Validate HTTP method
+        method_upper = method.upper()
+        valid_methods = ("GET", "POST", "DELETE", "PUT", "PATCH")
+        if method_upper not in valid_methods:
+            raise ValueError(
+                f"Unsupported HTTP method: {method}. Valid methods: {', '.join(valid_methods)}"
+            )
+
         for attempt in range(self.retries + 1):
             # Apply rate limiting
             self._rate_limiter.acquire()
 
             try:
-                if method == "GET":
-                    response = requests.get(url, headers=self.headers, timeout=self.timeout)
-                elif method == "POST":
-                    response = requests.post(
-                        url, headers=self.headers, json=data, timeout=self.timeout
-                    )
-                elif method == "DELETE":
-                    response = requests.delete(url, headers=self.headers, timeout=self.timeout)
-                else:
-                    logger.error(f"Unsupported HTTP method: {method}")
-                    return None
+                # Use requests.request() for all methods to reduce code duplication
+                response = requests.request(
+                    method=method_upper,
+                    url=url,
+                    headers=self._get_headers(),
+                    json=data if method_upper in ("POST", "PUT", "PATCH") else None,
+                    timeout=self.timeout,
+                )
 
                 response.raise_for_status()
 
-                # Handle empty responses
-                if not response.text:
+                # Handle empty responses - expected for DELETE (204 No Content)
+                # and some POST operations
+                if not response.text or not response.text.strip():
+                    # 204 No Content is explicitly expected to be empty
+                    if response.status_code == 204:
+                        return {"success": True}
+                    # For other success codes, log but still treat as success
+                    # since raise_for_status() already validated the status
+                    if response.status_code in (200, 201, 202):
+                        logger.debug(
+                            f"Empty response body for {method} {endpoint} "
+                            f"(status: {response.status_code})"
+                        )
+                        return {"success": True}
+                    # Unexpected empty response for other status codes
+                    logger.warning(
+                        f"Unexpected empty response for {method} {endpoint} "
+                        f"(status: {response.status_code})"
+                    )
                     return {"success": True}
 
                 # Parse JSON with error handling
@@ -301,13 +416,14 @@ class NextDNSClient:
                         f"Request timeout for {method} {endpoint}, "
                         f"retry {attempt + 1}/{self.retries} after {backoff:.1f}s"
                     )
-                    sleep(backoff)
+                    time.sleep(backoff)
                     continue
                 logger.error(f"API timeout after {self.retries} retries: {method} {endpoint}")
                 return None
             except requests.exceptions.HTTPError as e:
                 # Retry on 429 (rate limit) and 5xx errors
-                status_code = e.response.status_code if e.response else 0
+                # Use getattr for safer access in case response is malformed
+                status_code = getattr(e.response, "status_code", 0) if e.response else 0
                 if status_code == 429 or (500 <= status_code < 600):
                     if attempt < self.retries:
                         backoff = self._calculate_backoff(attempt)
@@ -315,7 +431,7 @@ class NextDNSClient:
                             f"HTTP {status_code} for {method} {endpoint}, "
                             f"retry {attempt + 1}/{self.retries} after {backoff:.1f}s"
                         )
-                        sleep(backoff)
+                        time.sleep(backoff)
                         continue
                 logger.error(f"API HTTP error for {method} {endpoint}: {e}")
                 return None
@@ -326,7 +442,7 @@ class NextDNSClient:
                         f"Request error for {method} {endpoint}, "
                         f"retry {attempt + 1}/{self.retries} after {backoff:.1f}s"
                     )
-                    sleep(backoff)
+                    time.sleep(backoff)
                     continue
                 logger.error(f"API request error for {method} {endpoint}: {e}")
                 return None

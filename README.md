@@ -1,3 +1,4 @@
+[English](README.md) | [Español](README.es.md)
 # NextDNS Blocker
 
 [![PyPI version](https://img.shields.io/pypi/v/nextdns-blocker)](https://pypi.org/project/nextdns-blocker/)
@@ -281,6 +282,28 @@ nextdns-blocker watchdog install
 nextdns-blocker watchdog uninstall
 ```
 
+### Panic Mode Commands
+
+Emergency lockdown mode that temporarily blocks all domains and hides dangerous commands.
+
+```bash
+# Activate panic mode for 1 hour
+nextdns-blocker panic 60
+
+# Check panic mode status
+nextdns-blocker panic status
+
+# Extend panic mode by 30 minutes
+nextdns-blocker panic extend 30
+```
+
+During panic mode:
+- All domains are immediately blocked
+- Commands like `unblock`, `pause`, `resume`, `allow`, `disallow` are hidden
+- Sync skips unblocks and allowlist operations
+- Pending actions are paused
+- Minimum duration is 15 minutes
+
 ### Logs
 
 ```bash
@@ -299,6 +322,41 @@ tail -f ~/.local/share/nextdns-blocker/logs/wd.log
 # View cron jobs
 crontab -l
 ```
+
+### Shell Completion
+
+Enable tab completion for commands, subcommands, and domain names.
+
+**Bash** - add to `~/.bashrc`:
+
+```bash
+eval "$(nextdns-blocker completion bash)"
+```
+
+**Zsh** - add to `~/.zshrc`:
+
+```bash
+eval "$(nextdns-blocker completion zsh)"
+```
+
+**Fish** - save to completions directory:
+
+```bash
+nextdns-blocker completion fish > ~/.config/fish/completions/nextdns-blocker.fish
+```
+
+After adding the completion script, restart your shell or source the config file.
+
+**What completes:**
+
+| Context | Completions |
+|---------|-------------|
+| `nextdns-blocker <TAB>` | All commands |
+| `nextdns-blocker config <TAB>` | Subcommands: edit, show, sync, etc. |
+| `nextdns-blocker unblock <TAB>` | Domain names from your blocklist |
+| `nextdns-blocker disallow <TAB>` | Domain names from your allowlist |
+| `nextdns-blocker pending cancel <TAB>` | Pending action IDs |
+| `nextdns-blocker --<TAB>` | Flags: --help, --version, --no-color |
 
 ## Configuration
 
@@ -427,7 +485,7 @@ See [SCHEDULE_GUIDE.md](SCHEDULE_GUIDE.md) for complete documentation and exampl
 
 ### Allowlist (Exceptions)
 
-Use the `allowlist` to keep specific subdomains accessible even when their parent domain is blocked:
+Use the `allowlist` to keep specific subdomains accessible even when their parent domain is blocked. Allowlist entries also support **schedules** for time-based access:
 
 ```json
 {
@@ -444,8 +502,16 @@ Use the `allowlist` to keep specific subdomains accessible even when their paren
       "description": "AWS Console - always accessible"
     },
     {
-      "domain": "developer.amazon.com",
-      "description": "Amazon Developer - always accessible"
+      "domain": "youtube.com",
+      "description": "Streaming - blocked by NextDNS category, allow evenings",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+            "time_ranges": [{ "start": "20:00", "end": "22:30" }]
+          }
+        ]
+      }
     }
   ]
 }
@@ -453,7 +519,14 @@ Use the `allowlist` to keep specific subdomains accessible even when their paren
 
 #### Allowlist Behavior
 
-- Allowlist entries are **always active 24/7** (no schedule support)
+| Schedule | Behavior |
+|----------|----------|
+| `null` or missing | Always in allowlist (24/7) |
+| defined | Only in allowlist during scheduled hours |
+
+- **Scheduled allowlist** is useful for domains blocked by NextDNS categories or services
+- Outside schedule hours, the domain is removed from the allowlist (category/service blocks it)
+- During schedule hours, the domain is added to the allowlist (unblocked)
 - A domain cannot be in both `domains` (denylist) and `allowlist`
 - Use for subdomain exceptions: block `amazon.com` but allow `aws.amazon.com`
 - Changes sync automatically every 2 minutes
@@ -470,6 +543,46 @@ nextdns-blocker disallow aws.amazon.com
 # View current status including allowlist
 nextdns-blocker status
 ```
+
+#### Blocklist and Allowlist Interaction
+
+NextDNS processes these lists with specific priority rules:
+
+1. **Allowlist has highest priority** - If a domain is in both lists, NextDNS will ALLOW it
+2. **Subdomain inheritance** - Blocking `amazon.com` blocks all subdomains (`*.amazon.com`)
+3. **Subdomain exceptions** - You can allow `aws.amazon.com` while blocking `amazon.com`
+
+Example configuration:
+
+```json
+{
+  "blocklist": [
+    {"domain": "amazon.com", "schedule": null}
+  ],
+  "allowlist": [
+    {"domain": "aws.amazon.com"}
+  ]
+}
+```
+
+Result in NextDNS:
+- `amazon.com` → Blocked
+- `www.amazon.com` → Blocked (inherits from parent)
+- `aws.amazon.com` → **Allowed** (allowlist overrides)
+- `console.aws.amazon.com` → **Allowed** (inherits from allowlist entry)
+
+> **Note:** This tool validates that the exact same domain doesn't appear in both lists.
+> Subdomain relationships are allowed and will generate an informational warning during config load.
+
+#### Panic Mode and Allowlist
+
+During [panic mode](#panic-mode-commands), **all allowlist operations are blocked**:
+- The `allow` command is hidden
+- The `disallow` command is hidden
+- Scheduled allowlist sync is completely skipped
+
+This prevents scheduled allowlist entries from creating security holes during emergency lockdown.
+The allowlist has highest priority in NextDNS and would bypass all blocks if allowed to sync.
 
 ### Timezone
 

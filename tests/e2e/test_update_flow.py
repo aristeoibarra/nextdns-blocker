@@ -67,8 +67,10 @@ class TestUpdateVersionCheck:
         runner: CliRunner,
     ) -> None:
         """Test that update handles PyPI fetch errors gracefully."""
+        import urllib.error
+
         with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_urlopen.side_effect = Exception("Network error")
+            mock_urlopen.side_effect = urllib.error.URLError("Network error")
 
             result = runner.invoke(main, ["update"])
 

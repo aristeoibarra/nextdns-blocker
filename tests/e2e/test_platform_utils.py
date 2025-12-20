@@ -98,7 +98,8 @@ class TestWSLDetection:
     @patch("platform.release")
     def test_is_wsl_handles_exception(self, mock_release: MagicMock) -> None:
         """Test is_wsl handles exceptions gracefully."""
-        mock_release.side_effect = Exception("Error")
+        # Use OSError as a realistic exception that platform.release() could raise
+        mock_release.side_effect = OSError("Error reading platform info")
 
         assert is_wsl() is False
 

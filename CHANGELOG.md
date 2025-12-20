@@ -5,6 +5,104 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.0] - 2025-12-20
+
+### Added
+- **Shell tab completion** (#134): Native tab completion for bash, zsh, and fish shells
+  - `nextdns-blocker completion bash|zsh|fish` generates shell scripts
+  - Completes commands, subcommands, domain names, and pending action IDs
+  - Auto-installed during `init`, `fix`, and `update` commands
+  - See README for installation instructions
+- **Update notification in status command** (#133): Proactive update awareness
+  - Status command now checks PyPI for available updates
+  - 24-hour cache to minimize network requests
+  - `--no-update-check` flag to skip the check
+  - Graceful handling of network errors
+- **Panic mode command** (#132): Emergency lockdown functionality
+  - `nextdns-blocker panic <duration>` activates panic mode (minimum 15 minutes)
+  - `nextdns-blocker panic status` shows remaining time
+  - `nextdns-blocker panic extend <duration>` extends the lockdown
+  - Immediately blocks all active domains on activation
+  - Hides dangerous commands (unblock, pause, resume, disallow, allow)
+  - Sync skips unblocks and allowlist operations during panic mode
+  - Discord notifications for panic activation
+- **Allowlist schedule support** (#131): Time-based allowlist entries
+  - Add `schedule` field to allowlist entries for dynamic control
+  - `null` or missing schedule: always in allowlist (24/7)
+  - Defined schedule: only in allowlist during `available_hours`
+  - Useful for domains blocked by NextDNS categories or services
+  - New `should_allow()` and `should_allow_domain()` methods in scheduler
+- **Spanish README translation** (#137): Full Spanish documentation
+  - Complete translation in `README.es.md`
+  - Language selector links added to both README files
+  - Thanks to @Manasvisingh12
+
+### Changed
+- **Discord notifications**: Extended to allowlist operations (allow/disallow commands)
+- **Rate limiting**: Discord webhook rate limit increased from 2s to 3s for bulk operations
+- **Rate limiter**: Use `collections.deque` for O(1) operations instead of list
+- **Backup timestamps**: Include microseconds to prevent collision on rapid saves
+- **Cleanup strategy**: Replace random 1% cleanup with deterministic 24-hour interval
+
+### Fixed
+- **Security: Full API key redaction** in logs (was showing first/last 4 characters)
+- **Security: Safe editors whitelist** to prevent command injection via EDITOR environment variable
+- **Security: Editor command parsing** uses `shlex.split()` for proper escaping
+- **Security: Atomic config writes** using temp file + rename pattern
+- **Security: API key dynamic loading** via `_get_headers()` method instead of storing in headers
+- **Security: Stricter Discord webhook validation** with extended token pattern (60-100 chars)
+- **Security: Environment variable validation** with POSIX-compliant key checking and null byte rejection
+- **Security: Leading zeros rejection** in port validation
+- **Race condition: File locking in pending.py** for atomic operations on pending actions
+- **Race condition: RateLimiter** by tracking actual wait time
+- **Race condition: DomainCache sync** between `_data` and `_domains` on add/remove
+- **Bug: Version parsing** now handles semver suffixes (e.g., `1.0.0rc1`)
+- **Bug: WEEKDAY_TO_DAY** now uses tuple instead of dict key order for reliability
+- **Bug: Datetime naive/aware inconsistencies** by stripping timezone info with `ensure_naive_datetime()`
+- **Bug: File descriptor leaks** in `write_secure_file()` and init.py env file creation
+- **Bug: Windows file locking** with proper errno handling (13, 33, 36)
+- **Bug: Deprecated ssl.CertificateError** replaced with `ssl.SSLError`
+- **Bug: Non-existent json.JSONEncodeError** replaced with `TypeError/ValueError`
+- **Exception handling**: Replace broad `except Exception` with specific exception types throughout
+- **Exception handling**: Add `subprocess.TimeoutExpired` handling with proper error messages
+- **Exception handling**: Preserve tracebacks with `from e` in exception chaining
+- **Subprocess safety**: Add timeout (30-60s) to all `subprocess.run()` calls
+- **Subprocess safety**: Add `shlex.quote()` escaping for paths in cron job commands
+- **Cache reliability**: Filter empty domain IDs to prevent false positives
+- **Cache reliability**: `add_domain()` now prevents duplicate entries
+- **Crontab handling**: Distinguish between no crontab and errors in `get_crontab()`
+- **File locking**: Add timeout support (10s default) to prevent indefinite blocking
+- **Disk writes**: Add `fsync()` to `write_secure_file()` for guaranteed persistence
+- **Logging**: Add logging for previously silenced exceptions
+- **Logging**: Elevate audit log failures to warning level
+- **mypy**: Use click package instead of outdated types-click stubs
+
+### Refactored
+- Extract `_load_env_file()` for better code organization
+- Extract `validate_schedule()` function in config.py for reuse
+- Refactor `sync()` into smaller helper functions
+- Refactor `load_config()` into separate validation functions
+- Refactor client.py to use `requests.request()` instead of repetitive get/post/delete
+- Remove duplicated code (`_escape_windows_path`, `_build_task_command`) from init.py
+- Move inline imports to module level for better performance
+- Remove unreachable defensive code blocks and dead code
+- Encapsulate notification rate limiting in class
+
+### Documentation
+- Add comprehensive docstrings to exception classes
+- Add descriptive docstrings to `DenylistCache`/`AllowlistCache`
+- Document blocklist/allowlist interaction and panic mode behavior in README
+- Document datetime handling conventions in pending.py
+- Add rate limiting constants documentation
+- Add comments explaining sync order and NextDNS priority rules
+
+### Tests
+- Add 23 tests for shell completion functions
+- Add 18 tests for blocklist/allowlist consistency
+- Add comprehensive tests for update notification logic
+- Update tests to use specific exception types
+- Fix Windows test compatibility for subprocess calls
+
 ## [6.1.1] - 2025-12-17
 
 ### Fixed
@@ -430,6 +528,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[6.2.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.1.1...v6.2.0
 [6.1.1]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.1.0...v6.1.1
 [6.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.0.0...v6.1.0
 [6.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.4.0...v6.0.0
