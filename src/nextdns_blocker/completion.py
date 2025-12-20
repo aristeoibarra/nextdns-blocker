@@ -69,10 +69,21 @@ def complete_blocklist_domains(
 
         return completions
 
-    except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
-        # Log at warning level so users know completion may not work
-        # but don't break CLI operation
-        logger.warning(f"Failed to load domains for completion: {e}")
+    except (FileNotFoundError, PermissionError) as e:
+        # Specific file access errors - log at debug level (common during initial setup)
+        logger.debug(f"Config file not accessible for completion: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        # JSON parsing error - more serious, log at warning
+        logger.warning(f"Invalid JSON in config file for completion: {e}")
+        return []
+    except (KeyError, TypeError) as e:
+        # Data structure errors - log at warning
+        logger.warning(f"Invalid config structure for completion: {e}")
+        return []
+    except OSError as e:
+        # Other I/O errors - log at warning
+        logger.warning(f"I/O error loading domains for completion: {e}")
         return []
 
 
@@ -125,8 +136,17 @@ def complete_allowlist_domains(
 
         return completions
 
-    except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
-        logger.warning(f"Failed to load allowlist for completion: {e}")
+    except (FileNotFoundError, PermissionError) as e:
+        logger.debug(f"Config file not accessible for allowlist completion: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid JSON in config file for allowlist completion: {e}")
+        return []
+    except (KeyError, TypeError) as e:
+        logger.warning(f"Invalid config structure for allowlist completion: {e}")
+        return []
+    except OSError as e:
+        logger.warning(f"I/O error loading allowlist for completion: {e}")
         return []
 
 
@@ -169,8 +189,17 @@ def complete_pending_action_ids(
 
         return completions
 
-    except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
-        logger.warning(f"Failed to load pending actions for completion: {e}")
+    except (FileNotFoundError, PermissionError) as e:
+        logger.debug(f"Pending file not accessible for completion: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid JSON in pending file for completion: {e}")
+        return []
+    except (KeyError, TypeError) as e:
+        logger.warning(f"Invalid pending data structure for completion: {e}")
+        return []
+    except OSError as e:
+        logger.warning(f"I/O error loading pending actions for completion: {e}")
         return []
 
 

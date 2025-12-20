@@ -77,7 +77,11 @@ class ScheduleEvaluator:
         """
         Check if current time is within a time range.
 
-        Handles overnight ranges (e.g., 22:00 - 02:00).
+        Handles overnight ranges (e.g., 22:00 - 02:00) where start > end.
+        For same-day ranges, start must be <= end (e.g., 09:00 - 17:00).
+
+        Note: When start == end, this represents a single point in time,
+        so current must exactly match to be "in range".
 
         Args:
             current: Current time to check
@@ -88,10 +92,11 @@ class ScheduleEvaluator:
             True if current is within range
         """
         if start <= end:
-            # Normal range (e.g., 09:00 - 17:00)
+            # Normal range (e.g., 09:00 - 17:00) or single point (start == end)
             return start <= current <= end
         else:
             # Overnight range (e.g., 22:00 - 02:00)
+            # Current is in range if it's after start OR before/at end
             return current >= start or current <= end
 
     def _check_overnight_yesterday(self, now: datetime, schedule: dict[str, Any]) -> bool:

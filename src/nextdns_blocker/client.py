@@ -22,12 +22,14 @@ from .exceptions import APIError, DomainValidationError
 API_URL = "https://api.nextdns.io"
 
 # Rate limiting and backoff settings (configurable via environment variables)
-# Minimum bounds enforced to prevent misconfiguration
+# Minimum bounds enforced to prevent misconfiguration:
+# - RATE_LIMIT_REQUESTS: Max 1000 to prevent API abuse, min 1 to ensure limit exists
+# - RATE_LIMIT_WINDOW: Max 3600s (1 hour) for reasonable window, min 1s to prevent division issues
 _raw_rate_limit_requests = safe_int(os.environ.get("RATE_LIMIT_REQUESTS"), 30)
-RATE_LIMIT_REQUESTS = min(1000, max(1, _raw_rate_limit_requests))  # 1-1000 requests per window
+RATE_LIMIT_REQUESTS = min(1000, max(1, _raw_rate_limit_requests))
 
 _raw_rate_limit_window = safe_int(os.environ.get("RATE_LIMIT_WINDOW"), 60)
-RATE_LIMIT_WINDOW = min(3600, max(1, _raw_rate_limit_window))  # 1-3600 seconds window
+RATE_LIMIT_WINDOW = min(3600, max(1, _raw_rate_limit_window))
 
 BACKOFF_BASE = 1.0  # Base delay for exponential backoff (seconds)
 BACKOFF_MAX = 30.0  # Maximum backoff delay (seconds)

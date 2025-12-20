@@ -104,7 +104,9 @@ def get_panic_remaining() -> Optional[str]:
         return None
 
     remaining = panic_until - datetime.now()
-    total_seconds = int(remaining.total_seconds())
+    # Use max(0, ...) to handle any microsecond-level timing edge cases
+    # where remaining could be slightly negative due to timing between checks
+    total_seconds = max(0, int(remaining.total_seconds()))
 
     if total_seconds <= 0:
         return "< 1m"

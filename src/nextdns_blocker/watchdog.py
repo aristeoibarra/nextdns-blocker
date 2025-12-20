@@ -138,8 +138,12 @@ def _should_run_cleanup() -> bool:
                 hours_since = (datetime.now() - last_cleanup).total_seconds() / 3600
                 if hours_since < CLEANUP_INTERVAL_HOURS:
                     return False
-    except (ValueError, OSError):
-        pass  # If we can't read the file, run cleanup
+    except ValueError as e:
+        # Invalid date format in cleanup file - will run cleanup to reset
+        logger.debug(f"Invalid cleanup timestamp format, will run cleanup: {e}")
+    except OSError as e:
+        # File access error - will run cleanup
+        logger.debug(f"Cannot read cleanup file, will run cleanup: {e}")
 
     return True
 

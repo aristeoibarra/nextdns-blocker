@@ -412,7 +412,9 @@ def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
                 _unlock_file(f)
 
     except OSError as e:
-        logger.debug(f"Failed to write audit log: {e}")
+        # Log at WARNING level to ensure audit failures are visible
+        # (audit logs are security-relevant and failures should be noticed)
+        logger.warning(f"Failed to write audit log: {e}")
 
 
 def write_secure_file(path: Path, content: str) -> None:
