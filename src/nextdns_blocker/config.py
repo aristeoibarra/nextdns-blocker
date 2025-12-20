@@ -425,6 +425,39 @@ def validate_no_overlap(
     return errors
 
 
+def check_subdomain_relationships(
+    domains: list[dict[str, Any]], allowlist: list[dict[str, Any]]
+) -> None:
+    """
+    Log warnings when allowlist domains are subdomains of blocked domains.
+
+    This is informational only - the configuration is valid, but the user
+    should understand that the allowlist entry will override the block
+    for that specific subdomain in NextDNS.
+
+    Args:
+        domains: List of denylist domain configurations
+        allowlist: List of allowlist domain configurations
+    """
+    from .common import is_subdomain
+
+    for allow_entry in allowlist:
+        allow_domain = allow_entry.get("domain", "")
+        if not allow_domain or not isinstance(allow_domain, str):
+            continue
+
+        for block_entry in domains:
+            block_domain = block_entry.get("domain", "")
+            if not block_domain or not isinstance(block_domain, str):
+                continue
+
+            if is_subdomain(allow_domain, block_domain):
+                logger.warning(
+                    f"Allowlist '{allow_domain}' is a subdomain of blocked '{block_domain}'. "
+                    f"The allowlist entry will override the block for this subdomain in NextDNS."
+                )
+
+
 # =============================================================================
 # CONFIGURATION LOADING
 # =============================================================================
@@ -491,6 +524,10 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
         for error in all_errors:
             logger.error(error)
         raise ConfigurationError(f"Domain validation failed: {len(all_errors)} error(s)")
+
+    # Check for subdomain relationships (warnings only, not errors)
+    # This helps users understand that allowlist entries will override blocks
+    check_subdomain_relationships(domains, allowlist)
 
     return domains, allowlist
 

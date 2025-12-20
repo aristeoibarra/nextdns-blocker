@@ -290,3 +290,37 @@ class TestGetPanicUntil:
             assert result is not None
             # Allow 1 second tolerance for test execution time
             assert abs((result - future_time).total_seconds()) < 1
+
+
+class TestDangerousCommands:
+    """Tests for DANGEROUS_COMMANDS constant."""
+
+    def test_allow_in_dangerous_commands(self):
+        """Allow command should be in DANGEROUS_COMMANDS to prevent security holes."""
+        from nextdns_blocker.panic import DANGEROUS_COMMANDS
+
+        assert "allow" in DANGEROUS_COMMANDS
+
+    def test_disallow_in_dangerous_commands(self):
+        """Disallow command should be in DANGEROUS_COMMANDS."""
+        from nextdns_blocker.panic import DANGEROUS_COMMANDS
+
+        assert "disallow" in DANGEROUS_COMMANDS
+
+    def test_unblock_in_dangerous_commands(self):
+        """Unblock command should be in DANGEROUS_COMMANDS."""
+        from nextdns_blocker.panic import DANGEROUS_COMMANDS
+
+        assert "unblock" in DANGEROUS_COMMANDS
+
+    def test_pause_in_dangerous_commands(self):
+        """Pause command should be in DANGEROUS_COMMANDS."""
+        from nextdns_blocker.panic import DANGEROUS_COMMANDS
+
+        assert "pause" in DANGEROUS_COMMANDS
+
+    def test_resume_in_dangerous_commands(self):
+        """Resume command should be in DANGEROUS_COMMANDS."""
+        from nextdns_blocker.panic import DANGEROUS_COMMANDS
+
+        assert "resume" in DANGEROUS_COMMANDS

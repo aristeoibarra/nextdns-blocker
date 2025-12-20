@@ -263,6 +263,46 @@ def validate_domain(domain: str) -> bool:
     return DOMAIN_PATTERN.match(domain) is not None
 
 
+def is_subdomain(child: str, parent: str) -> bool:
+    """
+    Check if child is a subdomain of parent.
+
+    This is used to detect when an allowlist entry is a subdomain of a blocked
+    domain, which is a valid configuration but worth warning about since the
+    allowlist entry will override the block for that specific subdomain.
+
+    Args:
+        child: Potential subdomain (e.g., 'aws.amazon.com')
+        parent: Potential parent domain (e.g., 'amazon.com')
+
+    Returns:
+        True if child is a subdomain of parent, False otherwise
+
+    Examples:
+        >>> is_subdomain("aws.amazon.com", "amazon.com")
+        True
+        >>> is_subdomain("a.b.c.example.com", "example.com")
+        True
+        >>> is_subdomain("amazon.com", "amazon.com")
+        False
+        >>> is_subdomain("notamazon.com", "amazon.com")
+        False
+    """
+    if not child or not parent:
+        return False
+
+    child_lower = child.strip().lower()
+    parent_lower = parent.strip().lower()
+
+    # Same domain is not a subdomain relationship
+    if child_lower == parent_lower:
+        return False
+
+    # Child must end with ".parent" to be a valid subdomain
+    # This prevents partial matches like "notamazon.com" matching "amazon.com"
+    return child_lower.endswith("." + parent_lower)
+
+
 def validate_time_format(time_str: str) -> bool:
     """
     Validate a time string in HH:MM format.

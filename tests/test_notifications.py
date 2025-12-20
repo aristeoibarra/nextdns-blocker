@@ -245,3 +245,59 @@ class TestDiscordNotifications:
             mock_post.assert_called_once()
             call_kwargs = mock_post.call_args[1]
             assert call_kwargs["timeout"] == NOTIFICATION_TIMEOUT
+
+
+class TestAllowlistNotifications:
+    """Tests for allowlist notification types (allow/disallow)."""
+
+    def test_allow_notification_has_correct_color(self):
+        """Test that allow notifications use the correct color."""
+        from nextdns_blocker.notifications import COLOR_ALLOW
+
+        assert COLOR_ALLOW == 3066993  # Green
+
+    def test_disallow_notification_has_correct_color(self):
+        """Test that disallow notifications use the correct color."""
+        from nextdns_blocker.notifications import COLOR_DISALLOW
+
+        assert COLOR_DISALLOW == 15105570  # Orange
+
+    @responses.activate
+    def test_allow_notification_sent_with_correct_title(self):
+        """Test that allow notification is sent with correct title."""
+        webhook_url = "https://discord.com/api/webhooks/123/abc"
+        responses.add(responses.POST, webhook_url, status=204)
+
+        with patch.dict(
+            os.environ,
+            {
+                "DISCORD_NOTIFICATIONS_ENABLED": "true",
+                "DISCORD_WEBHOOK_URL": webhook_url,
+            },
+        ):
+            send_discord_notification("aws.amazon.com", "allow")
+
+        assert len(responses.calls) == 1
+        request_body = json.loads(responses.calls[0].request.body)
+        assert request_body["embeds"][0]["title"] == "Domain Added to Allowlist"
+        assert request_body["embeds"][0]["description"] == "aws.amazon.com"
+
+    @responses.activate
+    def test_disallow_notification_sent_with_correct_title(self):
+        """Test that disallow notification is sent with correct title."""
+        webhook_url = "https://discord.com/api/webhooks/123/abc"
+        responses.add(responses.POST, webhook_url, status=204)
+
+        with patch.dict(
+            os.environ,
+            {
+                "DISCORD_NOTIFICATIONS_ENABLED": "true",
+                "DISCORD_WEBHOOK_URL": webhook_url,
+            },
+        ):
+            send_discord_notification("aws.amazon.com", "disallow")
+
+        assert len(responses.calls) == 1
+        request_body = json.loads(responses.calls[0].request.body)
+        assert request_body["embeds"][0]["title"] == "Domain Removed from Allowlist"
+        assert request_body["embeds"][0]["description"] == "aws.amazon.com"
