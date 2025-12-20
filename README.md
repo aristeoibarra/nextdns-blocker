@@ -1,3 +1,4 @@
+[English](README.md) | [Español](README.es.md)
 # NextDNS Blocker
 
 [![PyPI version](https://img.shields.io/pypi/v/nextdns-blocker)](https://pypi.org/project/nextdns-blocker/)
