@@ -282,6 +282,28 @@ nextdns-blocker watchdog install
 nextdns-blocker watchdog uninstall
 ```
 
+### Panic Mode Commands
+
+Emergency lockdown mode that temporarily blocks all domains and hides dangerous commands.
+
+```bash
+# Activate panic mode for 1 hour
+nextdns-blocker panic 60
+
+# Check panic mode status
+nextdns-blocker panic status
+
+# Extend panic mode by 30 minutes
+nextdns-blocker panic extend 30
+```
+
+During panic mode:
+- All domains are immediately blocked
+- Commands like `unblock`, `pause`, `resume`, `allow`, `disallow` are hidden
+- Sync skips unblocks and allowlist operations
+- Pending actions are paused
+- Minimum duration is 15 minutes
+
 ### Logs
 
 ```bash
@@ -554,7 +576,7 @@ Result in NextDNS:
 
 #### Panic Mode and Allowlist
 
-During [panic mode](#panic-mode), **all allowlist operations are blocked**:
+During [panic mode](#panic-mode-commands), **all allowlist operations are blocked**:
 - The `allow` command is hidden
 - The `disallow` command is hidden
 - Scheduled allowlist sync is completely skipped

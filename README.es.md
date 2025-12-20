@@ -248,6 +248,29 @@ nextdns-blocker watchdog install
 
 # Eliminar los trabajos de cron
 nextdns-blocker watchdog uninstall
+
+### Comandos del Modo Panico
+
+Modo de bloqueo de emergencia que bloquea temporalmente todos los dominios y oculta comandos peligrosos.
+
+```bash
+# Activar modo panico por 1 hora
+nextdns-blocker panic 60
+
+# Verificar estado del modo panico
+nextdns-blocker panic status
+
+# Extender modo panico por 30 minutos
+nextdns-blocker panic extend 30
+```
+
+Durante el modo panico:
+- Todos los dominios se bloquean inmediatamente
+- Comandos como `unblock`, `pause`, `resume`, `allow`, `disallow` estan ocultos
+- La sincronizacion omite desbloqueos y operaciones de lista blanca
+- Las acciones pendientes se pausan
+- La duracion minima es de 15 minutos
+
 Logs
 bash
 Copy code
