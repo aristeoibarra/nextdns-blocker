@@ -167,7 +167,7 @@ def save_config_file(config_path: Path, config: dict[str, Any]) -> None:
 
         # Atomic rename (on POSIX; on Windows this may not be atomic)
         Path(temp_path).replace(config_path)
-    except (OSError, json.JSONEncodeError, TypeError, ValueError) as e:
+    except (OSError, TypeError, ValueError) as e:
         # Clean up temp file on error
         # Log the error for debugging purposes
         import logging

@@ -415,9 +415,6 @@ def _sync_denylist(
     Returns:
         Tuple of (blocked_count, unblocked_count)
     """
-    from .config import get_unblock_delay, parse_unblock_delay_seconds
-    from .pending import create_pending_action, get_pending_for_domain
-
     blocked_count = 0
     unblocked_count = 0
 
