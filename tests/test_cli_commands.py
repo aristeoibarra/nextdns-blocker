@@ -338,7 +338,8 @@ class TestStatusCommand:
 
         result = runner.invoke(main, ["status", "--config-dir", str(tmp_path)])
         assert result.exit_code == 0
-        assert "example.com" in result.output
+        # New UX shows summary counts, not individual domains
+        assert "blocked" in result.output.lower()
 
     def test_status_shows_pause_state(self, runner, mock_pause_file, tmp_path):
         """Test status command shows pause state."""
@@ -387,9 +388,9 @@ class TestStatusCommand:
                             result = runner.invoke(main, ["status"])
 
         assert result.exit_code == 0
-        assert "Scheduler:" in result.output
-        assert "sync:" in result.output
-        assert "watchdog:" in result.output
+        # New UX shows compact scheduler status
+        assert "Scheduler" in result.output
+        assert "running" in result.output.lower()
 
     def test_status_shows_scheduler_not_running(self, runner, mock_pause_file, tmp_path):
         """Test status command shows scheduler not running."""
