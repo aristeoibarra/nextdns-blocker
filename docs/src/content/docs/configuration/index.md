@@ -39,6 +39,7 @@ DISCORD_NOTIFICATIONS_ENABLED=true
     "timezone": "America/New_York",
     "editor": null
   },
+  "categories": [...],
   "blocklist": [...],
   "allowlist": [...]
 }
@@ -51,6 +52,7 @@ DISCORD_NOTIFICATIONS_ENABLED=true
 | Environment | [Environment Variables](/configuration/env-variables/) | API keys, timeouts, notifications |
 | Structure | [config.json](/configuration/config-json/) | File structure and fields |
 | Schedules | [Schedules](/configuration/schedules/) | Time-based access rules |
+| Categories | [Categories](/configuration/categories/) | Group domains with shared settings |
 | Blocklist | [Blocklist](/configuration/blocklist/) | Domains to manage |
 | Allowlist | [Allowlist](/configuration/allowlist/) | Domain exceptions |
 | Delays | [Unblock Delay](/configuration/unblock-delay/) | Friction-based protection |

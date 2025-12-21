@@ -58,6 +58,7 @@ export default defineConfig({
                         { label: "watchdog", slug: "commands/watchdog" },
                         { label: "panic", slug: "commands/panic" },
                         { label: "pending", slug: "commands/pending" },
+                        { label: "category", slug: "commands/category" },
                         {
                             label: "allow / disallow",
                             slug: "commands/allowlist",
@@ -78,6 +79,10 @@ export default defineConfig({
                             slug: "configuration/config-json",
                         },
                         { label: "Schedules", slug: "configuration/schedules" },
+                        {
+                            label: "Categories",
+                            slug: "configuration/categories",
+                        },
                         { label: "Blocklist", slug: "configuration/blocklist" },
                         { label: "Allowlist", slug: "configuration/allowlist" },
                         {
