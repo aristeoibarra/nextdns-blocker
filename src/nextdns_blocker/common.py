@@ -227,6 +227,8 @@ NEXTDNS_CATEGORIES = frozenset(
         "dating",
         "piracy",
         "social-networks",
+        "gaming",
+        "video-streaming",
     }
 )
 

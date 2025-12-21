@@ -28,13 +28,21 @@ class TestNextDNSConstants:
         assert isinstance(NEXTDNS_CATEGORIES, frozenset)
 
     def test_categories_contains_expected_values(self):
-        """Verify all 5 expected categories are present."""
-        expected = {"porn", "gambling", "dating", "piracy", "social-networks"}
+        """Verify all 7 expected categories are present."""
+        expected = {
+            "porn",
+            "gambling",
+            "dating",
+            "piracy",
+            "social-networks",
+            "gaming",
+            "video-streaming",
+        }
         assert expected == NEXTDNS_CATEGORIES
 
     def test_categories_count(self):
-        """Verify exactly 5 categories."""
-        assert len(NEXTDNS_CATEGORIES) == 5
+        """Verify exactly 7 categories."""
+        assert len(NEXTDNS_CATEGORIES) == 7
 
     def test_services_is_frozenset(self):
         """Verify NEXTDNS_SERVICES is an immutable frozenset."""
