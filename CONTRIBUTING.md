@@ -49,6 +49,41 @@ This project uses a two-tier branching model:
 
 #### Setup Development Environment
 
+##### Option 1: Docker (Recommended)
+
+Docker provides a consistent development environment across all platforms:
+
+```bash
+# Clone your fork
+git clone https://github.com/YOUR_USERNAME/nextdns-blocker.git
+cd nextdns-blocker
+
+# Run tests
+make test
+
+# Open interactive dev shell
+make shell
+
+# Run linter
+make lint
+
+# Run type checker
+make typecheck
+```
+
+Available Makefile commands:
+| Command | Description |
+|---------|-------------|
+| `make dev` / `make shell` | Open interactive dev shell in container |
+| `make test` | Run full test suite with coverage |
+| `make test-fast` | Run tests without coverage (faster) |
+| `make lint` | Run ruff linter |
+| `make typecheck` | Run mypy type checker |
+| `make build` | Build production Docker image |
+| `make clean` | Remove Docker dev artifacts |
+
+##### Option 2: Local Python
+
 ```bash
 # Clone your fork
 git clone https://github.com/YOUR_USERNAME/nextdns-blocker.git
@@ -143,8 +178,11 @@ nextdns-blocker/
 ├── pyproject.toml            # Package configuration
 ├── config.json.example       # Example domain configuration
 ├── .env.example              # Example environment configuration
-├── Dockerfile                # Container image
-└── docker-compose.yml        # Docker Compose configuration
+├── Dockerfile                # Production container image
+├── docker-compose.yml        # Production Docker Compose
+├── Dockerfile.dev            # Development container image
+├── docker-compose.dev.yml    # Development Docker Compose
+└── Makefile                  # Development commands
 ```
 
 ## Getting Help

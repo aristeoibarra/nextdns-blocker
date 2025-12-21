@@ -1,6 +1,13 @@
+# NextDNS Blocker - Docker Ignore
+#
+# This file applies to PRODUCTION builds (Dockerfile).
+# For DEVELOPMENT builds (Dockerfile.dev), src/ and tests/ are mounted
+# as volumes, so these exclusions don't affect the dev workflow.
+
 # Git
 .git
 .gitignore
+.github
 
 # Python
 __pycache__
@@ -17,6 +24,7 @@ htmlcov
 .tox
 .nox
 .mypy_cache
+.ruff_cache
 
 # Virtual environments
 venv
@@ -31,11 +39,11 @@ env
 *.swo
 *~
 
-# Tests
+# Tests (excluded from production, mounted as volume in dev)
 tests/
 pytest.ini
 
-# Documentation
+# Documentation (excluded from production)
 *.md
 !README.md
 docs/
@@ -45,8 +53,16 @@ dist/
 build/
 *.spec
 
-# Local configuration (will be mounted as volume)
+# Local configuration (mounted as volume)
 config.json
+.env
+
+# Development files (not needed in production image)
+Dockerfile.dev
+docker-compose.dev.yml
+Makefile
+CONTRIBUTING.md
+CHANGELOG.md
 
 # Misc
 .DS_Store
