@@ -14,6 +14,8 @@ from platformdirs import user_config_dir, user_data_dir
 
 from .common import (
     APP_NAME,
+    NEXTDNS_CATEGORIES,
+    NEXTDNS_SERVICES,
     VALID_DAYS,
     get_log_dir,
     parse_env_value,
@@ -707,6 +709,258 @@ def validate_unique_category_ids(categories: list[dict[str, Any]]) -> list[str]:
                 seen_ids[id_lower] = idx
 
     return errors
+
+
+# =============================================================================
+# NEXTDNS PARENTAL CONTROL VALIDATION
+# =============================================================================
+
+
+def validate_nextdns_category(config: dict[str, Any], index: int) -> list[str]:
+    """
+    Validate a single NextDNS native category configuration entry.
+
+    Args:
+        config: NextDNS category configuration dictionary
+        index: Index in the categories array (for error messages)
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    # Check id field exists
+    if "id" not in config:
+        return [f"nextdns.categories[{index}]: Missing 'id' field"]
+
+    category_id = config["id"]
+    if not category_id or not isinstance(category_id, str) or not category_id.strip():
+        return [f"nextdns.categories[{index}]: Empty or invalid id"]
+
+    category_id = category_id.strip().lower()
+
+    # Validate against known NextDNS categories
+    if category_id not in NEXTDNS_CATEGORIES:
+        valid_ids = ", ".join(sorted(NEXTDNS_CATEGORIES))
+        return [
+            f"nextdns.categories[{index}]: Invalid category id '{category_id}'. "
+            f"Valid IDs: {valid_ids}"
+        ]
+
+    prefix = f"nextdns.categories['{category_id}']"
+
+    # Validate description if present (optional)
+    description = config.get("description")
+    if description is not None and not isinstance(description, str):
+        errors.append(f"{prefix}: 'description' must be a string")
+
+    # Validate unblock_delay if present (optional)
+    unblock_delay = config.get("unblock_delay")
+    if unblock_delay is not None and not validate_unblock_delay(unblock_delay):
+        errors.append(
+            f"{prefix}: invalid unblock_delay '{unblock_delay}' "
+            f"(expected: 'never', '0', or duration like '30m', '2h', '1d')"
+        )
+
+    # Validate schedule if present (optional, can be null)
+    schedule = config.get("schedule")
+    if schedule is not None:
+        schedule_errors = validate_schedule(schedule, prefix)
+        errors.extend(schedule_errors)
+
+    return errors
+
+
+def validate_nextdns_service(config: dict[str, Any], index: int) -> list[str]:
+    """
+    Validate a single NextDNS native service configuration entry.
+
+    Args:
+        config: NextDNS service configuration dictionary
+        index: Index in the services array (for error messages)
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    # Check id field exists
+    if "id" not in config:
+        return [f"nextdns.services[{index}]: Missing 'id' field"]
+
+    service_id = config["id"]
+    if not service_id or not isinstance(service_id, str) or not service_id.strip():
+        return [f"nextdns.services[{index}]: Empty or invalid id"]
+
+    service_id = service_id.strip().lower()
+
+    # Validate against known NextDNS services
+    if service_id not in NEXTDNS_SERVICES:
+        # Group services by category for better error message
+        errors.append(
+            f"nextdns.services[{index}]: Invalid service id '{service_id}'. "
+            f"See documentation for valid service IDs (43 available)."
+        )
+        return errors
+
+    prefix = f"nextdns.services['{service_id}']"
+
+    # Validate description if present (optional)
+    description = config.get("description")
+    if description is not None and not isinstance(description, str):
+        errors.append(f"{prefix}: 'description' must be a string")
+
+    # Validate unblock_delay if present (optional)
+    unblock_delay = config.get("unblock_delay")
+    if unblock_delay is not None and not validate_unblock_delay(unblock_delay):
+        errors.append(
+            f"{prefix}: invalid unblock_delay '{unblock_delay}' "
+            f"(expected: 'never', '0', or duration like '30m', '2h', '1d')"
+        )
+
+    # Validate schedule if present (optional, can be null)
+    schedule = config.get("schedule")
+    if schedule is not None:
+        schedule_errors = validate_schedule(schedule, prefix)
+        errors.extend(schedule_errors)
+
+    return errors
+
+
+def validate_nextdns_parental_control(config: dict[str, Any]) -> list[str]:
+    """
+    Validate NextDNS parental_control global settings.
+
+    Args:
+        config: Parental control configuration dictionary
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    if not isinstance(config, dict):
+        return ["nextdns.parental_control: must be an object"]
+
+    valid_keys = {"safe_search", "youtube_restricted_mode", "block_bypass"}
+
+    for key, value in config.items():
+        if key not in valid_keys:
+            errors.append(
+                f"nextdns.parental_control: unknown key '{key}'. "
+                f"Valid keys: {', '.join(sorted(valid_keys))}"
+            )
+        elif not isinstance(value, bool):
+            errors.append(f"nextdns.parental_control.{key}: must be a boolean")
+
+    return errors
+
+
+def validate_nextdns_config(nextdns_config: dict[str, Any]) -> list[str]:
+    """
+    Validate the complete nextdns configuration section.
+
+    Args:
+        nextdns_config: The 'nextdns' section from config.json
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    if not isinstance(nextdns_config, dict):
+        return ["'nextdns' must be an object"]
+
+    # Validate parental_control if present
+    parental_control = nextdns_config.get("parental_control")
+    if parental_control is not None:
+        errors.extend(validate_nextdns_parental_control(parental_control))
+
+    # Validate categories if present
+    categories = nextdns_config.get("categories", [])
+    if not isinstance(categories, list):
+        errors.append("nextdns.categories: must be an array")
+    else:
+        seen_category_ids: set[str] = set()
+        for idx, category_config in enumerate(categories):
+            if not isinstance(category_config, dict):
+                errors.append(f"nextdns.categories[{idx}]: must be an object")
+                continue
+            errors.extend(validate_nextdns_category(category_config, idx))
+
+            # Check for duplicate category IDs
+            cat_id = category_config.get("id")
+            if isinstance(cat_id, str) and cat_id.strip():
+                cat_id_lower = cat_id.strip().lower()
+                if cat_id_lower in seen_category_ids:
+                    errors.append(f"nextdns.categories[{idx}]: duplicate category id '{cat_id}'")
+                else:
+                    seen_category_ids.add(cat_id_lower)
+
+    # Validate services if present
+    services = nextdns_config.get("services", [])
+    if not isinstance(services, list):
+        errors.append("nextdns.services: must be an array")
+    else:
+        seen_service_ids: set[str] = set()
+        for idx, service_config in enumerate(services):
+            if not isinstance(service_config, dict):
+                errors.append(f"nextdns.services[{idx}]: must be an object")
+                continue
+            errors.extend(validate_nextdns_service(service_config, idx))
+
+            # Check for duplicate service IDs
+            svc_id = service_config.get("id")
+            if isinstance(svc_id, str) and svc_id.strip():
+                svc_id_lower = svc_id.strip().lower()
+                if svc_id_lower in seen_service_ids:
+                    errors.append(f"nextdns.services[{idx}]: duplicate service id '{svc_id}'")
+                else:
+                    seen_service_ids.add(svc_id_lower)
+
+    return errors
+
+
+def load_nextdns_config(script_dir: str) -> Optional[dict[str, Any]]:
+    """
+    Load and validate NextDNS Parental Control configuration from config.json.
+
+    Args:
+        script_dir: Directory containing config.json
+
+    Returns:
+        NextDNS config dict if present and valid, None if not present
+
+    Raises:
+        ConfigurationError: If nextdns section exists but is invalid
+    """
+    script_path = Path(script_dir)
+    config_file = script_path / "config.json"
+
+    if not config_file.exists():
+        return None
+
+    try:
+        with open(config_file, encoding="utf-8") as f:
+            config = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    if not isinstance(config, dict):
+        return None
+
+    nextdns_config: Optional[dict[str, Any]] = config.get("nextdns")
+    if nextdns_config is None:
+        return None
+
+    # Validate the nextdns configuration
+    errors = validate_nextdns_config(nextdns_config)
+    if errors:
+        for error in errors:
+            logger.error(error)
+        raise ConfigurationError(f"NextDNS configuration validation failed: {len(errors)} error(s)")
+
+    return nextdns_config
 
 
 # =============================================================================

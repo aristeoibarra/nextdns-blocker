@@ -33,6 +33,8 @@ Set in `config.json` for each domain:
 
 ## Valid Values
 
+### Common Presets
+
 | Value | Delay | Use Case |
 |-------|-------|----------|
 | `"0"` | Instant | Low-risk sites |
@@ -40,6 +42,45 @@ Set in `config.json` for each domain:
 | `"4h"` | 4 hours | High friction |
 | `"24h"` | 24 hours | Maximum friction |
 | `"never"` | Cannot unblock | Harmful content |
+
+### Flexible Duration Format
+
+You can use any duration with these formats:
+
+| Format | Examples | Description |
+|--------|----------|-------------|
+| `{n}m` | `"15m"`, `"45m"`, `"90m"` | Minutes |
+| `{n}h` | `"1h"`, `"2h"`, `"8h"`, `"12h"` | Hours |
+| `{n}d` | `"1d"`, `"2d"`, `"7d"` | Days |
+
+Examples of valid custom delays:
+
+```json
+{
+  "blocklist": [
+    {
+      "domain": "quick-check.com",
+      "unblock_delay": "15m"
+    },
+    {
+      "domain": "gaming-site.com",
+      "unblock_delay": "90m"
+    },
+    {
+      "domain": "streaming.com",
+      "unblock_delay": "2h"
+    },
+    {
+      "domain": "dating-app.com",
+      "unblock_delay": "2d"
+    },
+    {
+      "domain": "weekly-reset.com",
+      "unblock_delay": "7d"
+    }
+  ]
+}
+```
 
 ## Behavior by Value
 
