@@ -5,6 +5,10 @@ description: Enable tab completion for commands and domain names
 
 Shell completion provides tab-completion for commands, subcommands, options, and even domain names from your configuration.
 
+:::tip
+See the [`completion` command reference](/commands/completion/) for quick setup instructions.
+:::
+
 ## Supported Shells
 
 - **Bash** - Most common on Linux
