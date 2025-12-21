@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.0] - 2025-12-21
+
+### Added
+- **Gaming and video-streaming NextDNS categories**: Expanded parental control support
+  - `gaming`: Blocks online gaming sites and networks (Steam, Epic Games, etc.)
+  - `video-streaming`: Blocks video on demand services (Netflix, Hulu, etc.)
+  - Total supported NextDNS categories now: 7 (was 5)
+  - Use with `nextdns-blocker nextdns enable gaming` or `nextdns-blocker nextdns enable video-streaming`
+
 ## [6.3.0] - 2025-12-21
 
 ### Added
@@ -579,6 +588,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[6.4.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.3.0...v6.4.0
 [6.3.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.2.0...v6.3.0
 [6.2.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.1.1...v6.2.0
 [6.1.1]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.1.0...v6.1.1
