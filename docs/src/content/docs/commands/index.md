@@ -30,6 +30,16 @@ nextdns-blocker [OPTIONS] COMMAND [ARGS]
 | [`unblock`](/commands/unblock/) | Request manual domain unblock |
 | [`update`](/commands/update/) | Check for and install updates |
 
+## Diagnostic & Maintenance Commands
+
+| Command | Description |
+|---------|-------------|
+| [`health`](/commands/health/) | Run system health checks |
+| [`fix`](/commands/fix/) | Auto-repair common issues |
+| [`stats`](/commands/stats/) | Show usage statistics |
+| [`test-notifications`](/commands/test-notifications/) | Test Discord integration |
+| [`uninstall`](/commands/uninstall/) | Completely remove NextDNS Blocker |
+
 ## Command Groups
 
 ### config
@@ -125,6 +135,18 @@ nextdns-blocker sync -v
 
 # Validate config
 nextdns-blocker config validate
+
+# Run health checks
+nextdns-blocker health
+
+# Auto-fix common issues
+nextdns-blocker fix
+
+# View usage statistics
+nextdns-blocker stats
+
+# Test Discord notifications
+nextdns-blocker test-notifications
 ```
 
 ## Exit Codes
