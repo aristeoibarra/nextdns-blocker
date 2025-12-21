@@ -210,6 +210,10 @@ DAYS_MAP = {
 # This provides O(1) lookup by weekday index without relying on dict key order
 WEEKDAY_TO_DAY = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 
+# Category ID pattern: lowercase letters, numbers, and hyphens
+# Must start with a letter, max 50 characters total
+CATEGORY_ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,49}$")
+
 
 # =============================================================================
 # DIRECTORY MANAGEMENT
@@ -351,6 +355,26 @@ def validate_url(url: str) -> bool:
             return False
 
     return True
+
+
+def validate_category_id(category_id: str) -> bool:
+    """
+    Validate a category ID format.
+
+    Category IDs must:
+    - Start with a lowercase letter
+    - Contain only lowercase letters, numbers, and hyphens
+    - Be 1-50 characters long
+
+    Args:
+        category_id: Category ID to validate
+
+    Returns:
+        True if valid, False otherwise
+    """
+    if not category_id or not isinstance(category_id, str):
+        return False
+    return CATEGORY_ID_PATTERN.match(category_id) is not None
 
 
 # =============================================================================
