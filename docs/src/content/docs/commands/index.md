@@ -19,6 +19,14 @@ nextdns-blocker [OPTIONS] COMMAND [ARGS]
 | `--no-color` | Disable colored output |
 | `--help` | Show help message |
 
+## Setup Commands
+
+| Command | Description |
+|---------|-------------|
+| [`init`](/commands/init/) | Initialize configuration with interactive wizard |
+| [`validate`](/commands/validate/) | Validate configuration files before deployment |
+| [`completion`](/commands/completion/) | Generate shell completion script |
+
 ## Main Commands
 
 | Command | Description |
@@ -29,6 +37,16 @@ nextdns-blocker [OPTIONS] COMMAND [ARGS]
 | [`resume`](/commands/pause-resume/) | Resume blocking after pause |
 | [`unblock`](/commands/unblock/) | Request manual domain unblock |
 | [`update`](/commands/update/) | Check for and install updates |
+
+## Diagnostic & Maintenance Commands
+
+| Command | Description |
+|---------|-------------|
+| [`health`](/commands/health/) | Run system health checks |
+| [`fix`](/commands/fix/) | Auto-repair common issues |
+| [`stats`](/commands/stats/) | Show usage statistics |
+| [`test-notifications`](/commands/test-notifications/) | Test Discord integration |
+| [`uninstall`](/commands/uninstall/) | Completely remove NextDNS Blocker |
 
 ## Command Groups
 
@@ -76,6 +94,34 @@ Manage pending unblock actions.
 | [`pending show`](/commands/pending/) | Show action details |
 | [`pending cancel`](/commands/pending/) | Cancel pending action |
 
+### category
+
+Manage domain categories.
+
+| Subcommand | Description |
+|------------|-------------|
+| [`category list`](/commands/category/) | List all categories |
+| [`category show`](/commands/category/) | Show category details |
+| [`category create`](/commands/category/) | Create new category |
+| [`category add`](/commands/category/) | Add domain to category |
+| [`category remove`](/commands/category/) | Remove domain from category |
+| [`category delete`](/commands/category/) | Delete category |
+
+### nextdns
+
+Manage NextDNS Parental Control.
+
+| Subcommand | Description |
+|------------|-------------|
+| [`nextdns list`](/commands/nextdns/) | List configured items |
+| [`nextdns status`](/commands/nextdns/) | Show Parental Control status |
+| [`nextdns add-category`](/commands/nextdns/) | Activate category |
+| [`nextdns remove-category`](/commands/nextdns/) | Deactivate category |
+| [`nextdns add-service`](/commands/nextdns/) | Activate service |
+| [`nextdns remove-service`](/commands/nextdns/) | Deactivate service |
+| [`nextdns categories`](/commands/nextdns/) | Show valid category IDs |
+| [`nextdns services`](/commands/nextdns/) | Show valid service IDs |
+
 ### Allowlist Commands
 
 | Command | Description |
@@ -84,6 +130,19 @@ Manage pending unblock actions.
 | [`disallow`](/commands/allowlist/) | Remove domain from allowlist |
 
 ## Quick Reference
+
+### First Time Setup
+
+```bash
+# Initialize configuration
+nextdns-blocker init
+
+# Install scheduler
+nextdns-blocker watchdog install
+
+# Verify setup
+nextdns-blocker status
+```
 
 ### Daily Usage
 
@@ -117,14 +176,42 @@ nextdns-blocker watchdog status
 ### Troubleshooting
 
 ```bash
+# Validate config
+nextdns-blocker validate
+
+# Or use the config group
+nextdns-blocker config validate
+
 # Preview changes
 nextdns-blocker sync --dry-run
 
 # Verbose output
 nextdns-blocker sync -v
 
-# Validate config
-nextdns-blocker config validate
+# Run health checks
+nextdns-blocker health
+
+# Auto-fix common issues
+nextdns-blocker fix
+
+# View usage statistics
+nextdns-blocker stats
+
+# Test Discord notifications
+nextdns-blocker test-notifications
+```
+
+### Shell Completion
+
+```bash
+# Bash
+eval "$(nextdns-blocker completion bash)"
+
+# Zsh
+eval "$(nextdns-blocker completion zsh)"
+
+# Fish
+nextdns-blocker completion fish > ~/.config/fish/completions/nextdns-blocker.fish
 ```
 
 ## Exit Codes

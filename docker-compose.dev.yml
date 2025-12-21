@@ -1,0 +1,59 @@
+# NextDNS Blocker - Development Docker Compose
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml run --rm dev     # Open dev shell
+#   docker compose -f docker-compose.dev.yml run --rm test    # Run tests
+#   docker compose -f docker-compose.dev.yml run --rm lint    # Run linter
+#
+# Or use the Makefile shortcuts:
+#   make shell   # Open dev shell
+#   make test    # Run tests
+#   make lint    # Run linter
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+      - ./.env.example:/app/.env:ro
+      - ./config.json.example:/app/config.json:ro
+    stdin_open: true
+    tty: true
+    environment:
+      - PYTHONPATH=/app/src
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+    environment:
+      - PYTHONPATH=/app/src
+    command: ["pytest", "tests/", "-v", "--cov=nextdns_blocker", "--cov-report=term-missing"]
+
+  lint:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+    environment:
+      - PYTHONPATH=/app/src
+    command: ["ruff", "check", "src/", "tests/"]
+
+  typecheck:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+    environment:
+      - PYTHONPATH=/app/src
+    command: ["mypy", "src/nextdns_blocker"]

@@ -754,3 +754,285 @@ class NextDNSClient:
         """
         self._allowlist_cache.invalidate()
         return self.get_allowlist(use_cache=False) is not None
+
+    # -------------------------------------------------------------------------
+    # PARENTAL CONTROL METHODS
+    # -------------------------------------------------------------------------
+
+    def get_parental_control(self) -> Optional[dict[str, Any]]:
+        """
+        Fetch the current Parental Control configuration from NextDNS.
+
+        Returns:
+            Parental Control config dict, or None if request failed.
+            The dict contains:
+            - safeSearch: bool
+            - youtubeRestrictedMode: bool
+            - blockBypass: bool
+            - categories: list of active category objects
+            - services: list of active service objects
+        """
+        result = self.request("GET", f"/profiles/{self.profile_id}/parentalControl")
+        if result is None:
+            logger.warning("Failed to fetch parental control config from API")
+            return None
+        return result
+
+    def update_parental_control(
+        self,
+        safe_search: Optional[bool] = None,
+        youtube_restricted_mode: Optional[bool] = None,
+        block_bypass: Optional[bool] = None,
+    ) -> bool:
+        """
+        Update Parental Control global settings.
+
+        Only provided parameters will be updated. Pass None to leave unchanged.
+
+        Args:
+            safe_search: Enable SafeSearch on search engines
+            youtube_restricted_mode: Enable YouTube restricted mode
+            block_bypass: Block VPNs, proxies, and alternative DNS
+
+        Returns:
+            True if successful, False otherwise
+        """
+        data: dict[str, Any] = {}
+
+        if safe_search is not None:
+            data["safeSearch"] = safe_search
+        if youtube_restricted_mode is not None:
+            data["youtubeRestrictedMode"] = youtube_restricted_mode
+        if block_bypass is not None:
+            data["blockBypass"] = block_bypass
+
+        if not data:
+            logger.debug("No parental control settings to update")
+            return True
+
+        result = self.request("PATCH", f"/profiles/{self.profile_id}/parentalControl", data)
+
+        if result is not None:
+            logger.info(f"Updated parental control settings: {list(data.keys())}")
+            return True
+
+        logger.error("Failed to update parental control settings")
+        return False
+
+    def get_parental_control_categories(self) -> Optional[list[dict[str, Any]]]:
+        """
+        Get list of active Parental Control categories.
+
+        Returns:
+            List of category objects with 'id' and 'active' fields,
+            or None if request failed
+        """
+        config = self.get_parental_control()
+        if config is None:
+            return None
+        categories: list[dict[str, Any]] = config.get("categories", [])
+        return categories
+
+    def get_parental_control_services(self) -> Optional[list[dict[str, Any]]]:
+        """
+        Get list of active Parental Control services.
+
+        Returns:
+            List of service objects with 'id' and 'active' fields,
+            or None if request failed
+        """
+        config = self.get_parental_control()
+        if config is None:
+            return None
+        services: list[dict[str, Any]] = config.get("services", [])
+        return services
+
+    def is_category_active(self, category_id: str) -> Optional[bool]:
+        """
+        Check if a Parental Control category is currently active.
+
+        Args:
+            category_id: The category ID (e.g., 'gambling', 'porn')
+
+        Returns:
+            True if active, False if not active, None if request failed
+        """
+        categories = self.get_parental_control_categories()
+        if categories is None:
+            return None
+
+        for cat in categories:
+            if cat.get("id") == category_id:
+                is_active: bool = cat.get("active", False)
+                return is_active
+        return False
+
+    def is_service_active(self, service_id: str) -> Optional[bool]:
+        """
+        Check if a Parental Control service is currently active.
+
+        Args:
+            service_id: The service ID (e.g., 'tiktok', 'netflix')
+
+        Returns:
+            True if active, False if not active, None if request failed
+        """
+        services = self.get_parental_control_services()
+        if services is None:
+            return None
+
+        for svc in services:
+            if svc.get("id") == service_id:
+                is_active: bool = svc.get("active", False)
+                return is_active
+        return False
+
+    def add_category(self, category_id: str, active: bool = True) -> bool:
+        """
+        Add a category to Parental Control.
+
+        Args:
+            category_id: The category ID (e.g., 'gambling', 'porn')
+            active: Whether the category should be active (blocking)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        result = self.request(
+            "POST",
+            f"/profiles/{self.profile_id}/parentalControl/categories",
+            {"id": category_id, "active": active},
+        )
+
+        if result is not None:
+            status = "activated" if active else "deactivated"
+            logger.info(f"Parental control category {status}: {category_id}")
+            return True
+
+        logger.error(f"Failed to add parental control category: {category_id}")
+        return False
+
+    def remove_category(self, category_id: str) -> bool:
+        """
+        Remove a category from Parental Control.
+
+        Args:
+            category_id: The category ID to remove
+
+        Returns:
+            True if successful, False otherwise
+        """
+        result = self.request(
+            "DELETE",
+            f"/profiles/{self.profile_id}/parentalControl/categories/{category_id}",
+        )
+
+        if result is not None:
+            logger.info(f"Removed parental control category: {category_id}")
+            return True
+
+        logger.error(f"Failed to remove parental control category: {category_id}")
+        return False
+
+    def add_service(self, service_id: str, active: bool = True) -> bool:
+        """
+        Add a service to Parental Control.
+
+        Args:
+            service_id: The service ID (e.g., 'tiktok', 'netflix')
+            active: Whether the service should be active (blocking)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        result = self.request(
+            "POST",
+            f"/profiles/{self.profile_id}/parentalControl/services",
+            {"id": service_id, "active": active},
+        )
+
+        if result is not None:
+            status = "activated" if active else "deactivated"
+            logger.info(f"Parental control service {status}: {service_id}")
+            return True
+
+        logger.error(f"Failed to add parental control service: {service_id}")
+        return False
+
+    def remove_service(self, service_id: str) -> bool:
+        """
+        Remove a service from Parental Control.
+
+        Args:
+            service_id: The service ID to remove
+
+        Returns:
+            True if successful, False otherwise
+        """
+        result = self.request(
+            "DELETE",
+            f"/profiles/{self.profile_id}/parentalControl/services/{service_id}",
+        )
+
+        if result is not None:
+            logger.info(f"Removed parental control service: {service_id}")
+            return True
+
+        logger.error(f"Failed to remove parental control service: {service_id}")
+        return False
+
+    def activate_category(self, category_id: str) -> bool:
+        """
+        Activate a Parental Control category (start blocking).
+
+        This is a convenience method that adds the category with active=True.
+
+        Args:
+            category_id: The category ID to activate
+
+        Returns:
+            True if successful, False otherwise
+        """
+        return self.add_category(category_id, active=True)
+
+    def deactivate_category(self, category_id: str) -> bool:
+        """
+        Deactivate a Parental Control category (stop blocking).
+
+        This removes the category from Parental Control.
+
+        Args:
+            category_id: The category ID to deactivate
+
+        Returns:
+            True if successful, False otherwise
+        """
+        return self.remove_category(category_id)
+
+    def activate_service(self, service_id: str) -> bool:
+        """
+        Activate a Parental Control service (start blocking).
+
+        This is a convenience method that adds the service with active=True.
+
+        Args:
+            service_id: The service ID to activate
+
+        Returns:
+            True if successful, False otherwise
+        """
+        return self.add_service(service_id, active=True)
+
+    def deactivate_service(self, service_id: str) -> bool:
+        """
+        Deactivate a Parental Control service (stop blocking).
+
+        This removes the service from Parental Control.
+
+        Args:
+            service_id: The service ID to deactivate
+
+        Returns:
+            True if successful, False otherwise
+        """
+        return self.remove_service(service_id)

@@ -27,6 +27,10 @@ Before running the wizard, you'll need:
 nextdns-blocker init
 ```
 
+:::tip
+See the [`init` command reference](/commands/init/) for all options including non-interactive mode for CI/CD.
+:::
+
 The wizard will prompt for:
 
 ```

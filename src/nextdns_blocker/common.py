@@ -214,6 +214,77 @@ WEEKDAY_TO_DAY = ("monday", "tuesday", "wednesday", "thursday", "friday", "satur
 # Must start with a letter, max 50 characters total
 CATEGORY_ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,49}$")
 
+# =============================================================================
+# NEXTDNS PARENTAL CONTROL CONSTANTS
+# =============================================================================
+
+# NextDNS native category IDs (from Parental Control API)
+# These are the only valid category IDs that can be used with NextDNS
+NEXTDNS_CATEGORIES = frozenset(
+    {
+        "porn",
+        "gambling",
+        "dating",
+        "piracy",
+        "social-networks",
+    }
+)
+
+# NextDNS native service IDs (from Parental Control API)
+# These are the only valid service IDs that can be used with NextDNS
+NEXTDNS_SERVICES = frozenset(
+    {
+        # Social & Messaging
+        "facebook",
+        "instagram",
+        "twitter",
+        "tiktok",
+        "snapchat",
+        "whatsapp",
+        "telegram",
+        "messenger",
+        "discord",
+        "signal",
+        "skype",
+        "mastodon",
+        "bereal",
+        "vk",
+        "tumblr",
+        "pinterest",
+        "reddit",
+        "9gag",
+        "imgur",
+        "google-chat",
+        # Streaming
+        "youtube",
+        "netflix",
+        "disneyplus",
+        "hbomax",
+        "primevideo",
+        "hulu",
+        "twitch",
+        "vimeo",
+        "dailymotion",
+        # Gaming
+        "fortnite",
+        "minecraft",
+        "roblox",
+        "leagueoflegends",
+        "steam",
+        "blizzard",
+        "xboxlive",
+        "playstation-network",
+        # Dating
+        "tinder",
+        # Other
+        "spotify",
+        "amazon",
+        "ebay",
+        "zoom",
+        "chatgpt",
+    }
+)
+
 
 # =============================================================================
 # DIRECTORY MANAGEMENT

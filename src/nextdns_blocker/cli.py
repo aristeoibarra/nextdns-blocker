@@ -36,6 +36,7 @@ from .config import (
     get_config_dir,
     load_config,
     load_domains,
+    load_nextdns_config,
     validate_allowlist_config,
     validate_domain_config,
     validate_no_overlap,
@@ -43,6 +44,7 @@ from .config import (
 from .config_cli import register_config
 from .exceptions import ConfigurationError, DomainValidationError
 from .init import run_interactive_wizard, run_non_interactive
+from .nextdns_cli import register_nextdns
 from .notifications import send_discord_notification
 from .platform_utils import get_executable_path, is_macos, is_windows
 from .scheduler import ScheduleEvaluator
@@ -595,15 +597,233 @@ def _sync_allowlist(
     return allowed_count, disallowed_count
 
 
+def _sync_nextdns_categories(
+    categories: list[dict[str, Any]],
+    client: "NextDNSClient",
+    evaluator: "ScheduleEvaluator",
+    config: dict[str, Any],
+    dry_run: bool,
+    verbose: bool,
+    panic_active: bool,
+) -> tuple[int, int]:
+    """
+    Synchronize NextDNS Parental Control categories based on schedules.
+
+    When schedule says "available" (should_block=False) → deactivate category
+    When schedule says "blocked" (should_block=True) → activate category
+
+    Args:
+        categories: List of NextDNS category configurations
+        client: NextDNS API client
+        evaluator: Schedule evaluator
+        config: Application configuration
+        dry_run: If True, only show what would be done
+        verbose: If True, show detailed output
+        panic_active: If True, skip deactivations (maintain blocks)
+
+    Returns:
+        Tuple of (activated_count, deactivated_count)
+    """
+    activated_count = 0
+    deactivated_count = 0
+
+    for category_config in categories:
+        category_id = category_config["id"]
+        should_block = evaluator.should_block(category_config.get("schedule"))
+        is_active = client.is_category_active(category_id)
+
+        # Handle API errors
+        if is_active is None:
+            if verbose:
+                console.print(f"  [red]Failed to check category status: {category_id}[/red]")
+            continue
+
+        if should_block and not is_active:
+            # Should be blocking but isn't - activate
+            if dry_run:
+                console.print(f"  [red]Would ACTIVATE category: {category_id}[/red]")
+            else:
+                if client.activate_category(category_id):
+                    audit_log("PC_ACTIVATE", f"category:{category_id}")
+                    send_discord_notification(
+                        f"category:{category_id}",
+                        "block",
+                        webhook_url=config.get("discord_webhook_url"),
+                    )
+                    activated_count += 1
+
+        elif not should_block and is_active:
+            # Should be available but is blocking - deactivate
+            if panic_active:
+                if verbose:
+                    console.print(f"  [red]Skipping deactivation (panic mode): {category_id}[/red]")
+                continue
+
+            if dry_run:
+                console.print(f"  [green]Would DEACTIVATE category: {category_id}[/green]")
+            else:
+                if client.deactivate_category(category_id):
+                    audit_log("PC_DEACTIVATE", f"category:{category_id}")
+                    send_discord_notification(
+                        f"category:{category_id}",
+                        "unblock",
+                        webhook_url=config.get("discord_webhook_url"),
+                    )
+                    deactivated_count += 1
+
+    return activated_count, deactivated_count
+
+
+def _sync_nextdns_services(
+    services: list[dict[str, Any]],
+    client: "NextDNSClient",
+    evaluator: "ScheduleEvaluator",
+    config: dict[str, Any],
+    dry_run: bool,
+    verbose: bool,
+    panic_active: bool,
+) -> tuple[int, int]:
+    """
+    Synchronize NextDNS Parental Control services based on schedules.
+
+    When schedule says "available" (should_block=False) → deactivate service
+    When schedule says "blocked" (should_block=True) → activate service
+
+    Args:
+        services: List of NextDNS service configurations
+        client: NextDNS API client
+        evaluator: Schedule evaluator
+        config: Application configuration
+        dry_run: If True, only show what would be done
+        verbose: If True, show detailed output
+        panic_active: If True, skip deactivations (maintain blocks)
+
+    Returns:
+        Tuple of (activated_count, deactivated_count)
+    """
+    activated_count = 0
+    deactivated_count = 0
+
+    for service_config in services:
+        service_id = service_config["id"]
+        should_block = evaluator.should_block(service_config.get("schedule"))
+        is_active = client.is_service_active(service_id)
+
+        # Handle API errors
+        if is_active is None:
+            if verbose:
+                console.print(f"  [red]Failed to check service status: {service_id}[/red]")
+            continue
+
+        if should_block and not is_active:
+            # Should be blocking but isn't - activate
+            if dry_run:
+                console.print(f"  [red]Would ACTIVATE service: {service_id}[/red]")
+            else:
+                if client.activate_service(service_id):
+                    audit_log("PC_ACTIVATE", f"service:{service_id}")
+                    send_discord_notification(
+                        f"service:{service_id}",
+                        "block",
+                        webhook_url=config.get("discord_webhook_url"),
+                    )
+                    activated_count += 1
+
+        elif not should_block and is_active:
+            # Should be available but is blocking - deactivate
+            if panic_active:
+                if verbose:
+                    console.print(f"  [red]Skipping deactivation (panic mode): {service_id}[/red]")
+                continue
+
+            if dry_run:
+                console.print(f"  [green]Would DEACTIVATE service: {service_id}[/green]")
+            else:
+                if client.deactivate_service(service_id):
+                    audit_log("PC_DEACTIVATE", f"service:{service_id}")
+                    send_discord_notification(
+                        f"service:{service_id}",
+                        "unblock",
+                        webhook_url=config.get("discord_webhook_url"),
+                    )
+                    deactivated_count += 1
+
+    return activated_count, deactivated_count
+
+
+def _sync_nextdns_parental_control(
+    nextdns_config: dict[str, Any],
+    client: "NextDNSClient",
+    config: dict[str, Any],
+    dry_run: bool,
+    verbose: bool,
+) -> bool:
+    """
+    Sync NextDNS Parental Control global settings.
+
+    Args:
+        nextdns_config: The 'nextdns' section from config.json
+        client: NextDNS API client
+        config: Application configuration
+        dry_run: If True, only show what would be done
+        verbose: If True, show detailed output
+
+    Returns:
+        True if sync was successful
+    """
+    parental_control = nextdns_config.get("parental_control")
+    if not parental_control:
+        return True
+
+    safe_search = parental_control.get("safe_search")
+    youtube_restricted = parental_control.get("youtube_restricted_mode")
+    block_bypass = parental_control.get("block_bypass")
+
+    if dry_run:
+        settings = []
+        if safe_search is not None:
+            settings.append(f"safe_search={safe_search}")
+        if youtube_restricted is not None:
+            settings.append(f"youtube_restricted_mode={youtube_restricted}")
+        if block_bypass is not None:
+            settings.append(f"block_bypass={block_bypass}")
+        if settings:
+            console.print(
+                f"  [yellow]Would UPDATE parental control: {', '.join(settings)}[/yellow]"
+            )
+        return True
+
+    if client.update_parental_control(
+        safe_search=safe_search,
+        youtube_restricted_mode=youtube_restricted,
+        block_bypass=block_bypass,
+    ):
+        if verbose:
+            console.print("  [green]Updated parental control settings[/green]")
+        return True
+
+    console.print("  [red]Failed to update parental control settings[/red]")
+    return False
+
+
 def _print_sync_summary(
     blocked_count: int,
     unblocked_count: int,
     allowed_count: int,
     disallowed_count: int,
     verbose: bool,
+    pc_activated: int = 0,
+    pc_deactivated: int = 0,
 ) -> None:
     """Print sync operation summary."""
-    has_changes = blocked_count or unblocked_count or allowed_count or disallowed_count
+    has_changes = (
+        blocked_count
+        or unblocked_count
+        or allowed_count
+        or disallowed_count
+        or pc_activated
+        or pc_deactivated
+    )
     if has_changes:
         parts = []
         if blocked_count or unblocked_count:
@@ -613,6 +833,10 @@ def _print_sync_summary(
         if allowed_count or disallowed_count:
             parts.append(
                 f"[green]{allowed_count} allowed[/green], [yellow]{disallowed_count} disallowed[/yellow]"
+            )
+        if pc_activated or pc_deactivated:
+            parts.append(
+                f"[magenta]{pc_activated} PC activated[/magenta], [cyan]{pc_deactivated} PC deactivated[/cyan]"
             )
         console.print(f"  Sync: {', '.join(parts)}")
     elif verbose:
@@ -659,6 +883,9 @@ def sync(
         config = load_config(config_dir)
         domains, allowlist = load_domains(config["script_dir"])
 
+        # Load NextDNS Parental Control config (optional)
+        nextdns_config = load_nextdns_config(config["script_dir"])
+
         client = NextDNSClient(
             config["api_key"], config["profile_id"], config["timeout"], config["retries"]
         )
@@ -668,7 +895,7 @@ def sync(
             console.print("\n  [yellow]DRY RUN MODE - No changes will be made[/yellow]\n")
 
         # =========================================================================
-        # SYNC ORDER: Denylist first, then Allowlist
+        # SYNC ORDER: Denylist first, then Allowlist, then Parental Control
         #
         # This order matters because NextDNS processes allowlist with higher
         # priority. By syncing denylist first, we ensure blocks are applied
@@ -679,10 +906,12 @@ def sync(
         # 2. Denylist (your custom blocks)
         # 3. Third-party blocklists (OISD, HaGeZi, etc.)
         # 4. Security features (Threat Intelligence, NRDs, etc.)
+        # 5. Parental Control (categories and services)
         #
         # During panic mode:
         # - Denylist: blocks continue, unblocks skipped
         # - Allowlist: completely skipped (prevents security holes)
+        # - Parental Control: activations continue, deactivations skipped
         # =========================================================================
 
         # Sync denylist domains
@@ -695,10 +924,41 @@ def sync(
             allowlist, client, evaluator, config, dry_run, verbose, panic_active
         )
 
+        # Sync NextDNS Parental Control (if configured)
+        pc_activated = 0
+        pc_deactivated = 0
+        if nextdns_config:
+            # Sync global parental control settings
+            _sync_nextdns_parental_control(nextdns_config, client, config, dry_run, verbose)
+
+            # Sync categories
+            nextdns_categories = nextdns_config.get("categories", [])
+            if nextdns_categories:
+                cat_activated, cat_deactivated = _sync_nextdns_categories(
+                    nextdns_categories, client, evaluator, config, dry_run, verbose, panic_active
+                )
+                pc_activated += cat_activated
+                pc_deactivated += cat_deactivated
+
+            # Sync services
+            nextdns_services = nextdns_config.get("services", [])
+            if nextdns_services:
+                svc_activated, svc_deactivated = _sync_nextdns_services(
+                    nextdns_services, client, evaluator, config, dry_run, verbose, panic_active
+                )
+                pc_activated += svc_activated
+                pc_deactivated += svc_deactivated
+
         # Print summary
         if not dry_run:
             _print_sync_summary(
-                blocked_count, unblocked_count, allowed_count, disallowed_count, verbose
+                blocked_count,
+                unblocked_count,
+                allowed_count,
+                disallowed_count,
+                verbose,
+                pc_activated,
+                pc_deactivated,
             )
 
     except ConfigurationError as e:
@@ -717,7 +977,13 @@ def sync(
     is_flag=True,
     help="Skip checking for updates",
 )
-def status(config_dir: Optional[Path], no_update_check: bool) -> None:
+@click.option(
+    "--list",
+    "show_list",
+    is_flag=True,
+    help="Show detailed list of all domains",
+)
+def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -> None:
     """Show current blocking status."""
     from .update_check import check_for_update
 
@@ -730,30 +996,11 @@ def status(config_dir: Optional[Path], no_update_check: bool) -> None:
         )
         evaluator = ScheduleEvaluator(config["timezone"])
 
-        console.print("\n  [bold]NextDNS Blocker Status[/bold]")
-        console.print("  [bold]----------------------[/bold]")
-        console.print(f"  Profile: {config['profile_id']}")
-        console.print(f"  Timezone: {config['timezone']}")
-
-        # Pause state
-        if is_paused():
-            remaining = get_pause_remaining()
-            console.print(f"  Pause: [yellow]ACTIVE ({remaining})[/yellow]")
-        else:
-            console.print("  Pause: [green]inactive[/green]")
-
-        # Check for updates (unless disabled)
-        if not no_update_check:
-            update_info = check_for_update(__version__)
-            if update_info:
-                console.print()
-                console.print(
-                    f"  [yellow]⚠️  Update available: "
-                    f"{update_info.current_version} → {update_info.latest_version}[/yellow]"
-                )
-                console.print("      Run: [cyan]nextdns-blocker update[/cyan]")
-
-        console.print(f"\n  [bold]Domains ({len(domains)}):[/bold]")
+        # Collect domain statistics
+        blocked_count = 0
+        allowed_count = 0
+        mismatches: list[dict[str, Any]] = []
+        protected_domains: list[str] = []
 
         for domain_config in domains:
             domain = domain_config["domain"]
@@ -761,89 +1008,174 @@ def status(config_dir: Optional[Path], no_update_check: bool) -> None:
             is_blocked = client.is_blocked(domain)
 
             if is_blocked:
-                status_icon = "🔴"
-                status_text = "[red]blocked[/red]"
+                blocked_count += 1
             else:
-                status_icon = "🟢"
-                status_text = "[green]active[/green]"
+                allowed_count += 1
 
-            expected = "block" if should_block else "allow"
-            match = "[green]✓[/green]" if (should_block == is_blocked) else "[red]✗ MISMATCH[/red]"
-
-            # Show unblock_delay setting
+            # Check for protected domains
             domain_delay = domain_config.get("unblock_delay")
-            # Backward compatibility: protected=true -> never
             if domain_config.get("protected", False):
                 domain_delay = "never"
             if domain_delay == "never":
-                delay_flag = " [blue]\\[never][/blue]"
-            elif domain_delay and domain_delay != "0":
-                delay_flag = f" [cyan]\\[{domain_delay}][/cyan]"
+                protected_domains.append(domain)
+
+            # Check for mismatches
+            if should_block != is_blocked:
+                expected = "blocked" if should_block else "allowed"
+                current = "blocked" if is_blocked else "allowed"
+                mismatches.append(
+                    {
+                        "domain": domain,
+                        "expected": expected,
+                        "current": current,
+                        "type": "denylist",
+                    }
+                )
+
+        # Collect allowlist statistics
+        allowlist_active = 0
+        allowlist_inactive = 0
+        for item in allowlist:
+            domain = item["domain"]
+            is_allowed = client.is_allowed(domain)
+            has_schedule = item.get("schedule") is not None
+            should_allow = evaluator.should_allow_domain(item)
+
+            if is_allowed:
+                allowlist_active += 1
             else:
-                delay_flag = ""
+                allowlist_inactive += 1
 
-            # Pad domain for alignment
-            console.print(
-                f"    {status_icon} {domain:<20} {status_text} (should: {expected}) {match}{delay_flag}"
-            )
+            # Check for mismatches in scheduled allowlist
+            if has_schedule and should_allow != is_allowed:
+                expected = "allowed" if should_allow else "not allowed"
+                current = "allowed" if is_allowed else "not allowed"
+                mismatches.append(
+                    {
+                        "domain": domain,
+                        "expected": expected,
+                        "current": current,
+                        "type": "allowlist",
+                    }
+                )
 
-        if allowlist:
-            console.print(f"\n  [bold]Allowlist ({len(allowlist)}):[/bold]")
-            for item in allowlist:
-                domain = item["domain"]
-                is_allowed = client.is_allowed(domain)
-                has_schedule = item.get("schedule") is not None
-                should_allow = evaluator.should_allow_domain(item)
-
-                if has_schedule:
-                    # Scheduled allowlist entry
-                    expected = "allow" if should_allow else "disallow"
-                    match = (
-                        "[green]✓[/green]"
-                        if (should_allow == is_allowed)
-                        else "[red]✗ MISMATCH[/red]"
-                    )
-                    status_text = (
-                        "[green]allowed[/green]" if is_allowed else "[yellow]not allowed[/yellow]"
-                    )
-                    console.print(
-                        f"    {domain:<20} {status_text} (should: {expected}) {match} [cyan]\\[scheduled][/cyan]"
-                    )
-                else:
-                    # Always-allowed entry (no schedule)
-                    status_icon = "[green]✓[/green]" if is_allowed else "[red]✗[/red]"
-                    console.print(f"    {status_icon} {domain}")
-
-        # Scheduler status
-        console.print("\n  [bold]Scheduler:[/bold]")
+        # Check scheduler status
+        scheduler_ok = False
         if is_macos():
             sync_ok = is_launchd_job_loaded(LAUNCHD_SYNC_LABEL)
             wd_ok = is_launchd_job_loaded(LAUNCHD_WATCHDOG_LABEL)
-            sync_status = "[green]ok[/green]" if sync_ok else "[red]NOT RUNNING[/red]"
-            wd_status = "[green]ok[/green]" if wd_ok else "[red]NOT RUNNING[/red]"
-            console.print(f"    sync:     {sync_status}")
-            console.print(f"    watchdog: {wd_status}")
-            if not sync_ok or not wd_ok:
-                console.print("    Run: [yellow]nextdns-blocker watchdog install[/yellow]")
+            scheduler_ok = sync_ok and wd_ok
         elif is_windows():
             sync_ok = has_windows_task(WINDOWS_TASK_SYNC_NAME)
             wd_ok = has_windows_task(WINDOWS_TASK_WATCHDOG_NAME)
-            sync_status = "[green]ok[/green]" if sync_ok else "[red]NOT RUNNING[/red]"
-            wd_status = "[green]ok[/green]" if wd_ok else "[red]NOT RUNNING[/red]"
-            console.print(f"    sync:     {sync_status}")
-            console.print(f"    watchdog: {wd_status}")
-            if not sync_ok or not wd_ok:
-                console.print("    Run: [yellow]nextdns-blocker watchdog install[/yellow]")
+            scheduler_ok = sync_ok and wd_ok
         else:
             crontab = get_crontab()
             has_sync = "nextdns-blocker" in crontab and "sync" in crontab
             has_wd = "nextdns-blocker" in crontab and "watchdog" in crontab
-            sync_status = "[green]ok[/green]" if has_sync else "[red]NOT FOUND[/red]"
-            wd_status = "[green]ok[/green]" if has_wd else "[red]NOT FOUND[/red]"
-            console.print(f"    sync:     {sync_status}")
-            console.print(f"    watchdog: {wd_status}")
-            if not has_sync or not has_wd:
-                console.print("    Run: [yellow]nextdns-blocker watchdog install[/yellow]")
+            scheduler_ok = has_sync and has_wd
+
+        # === RENDER OUTPUT ===
+        console.print()
+        console.print("  [bold]NextDNS Blocker Status[/bold]")
+        console.print("  [dim]━━━━━━━━━━━━━━━━━━━━━━[/dim]")
+        console.print()
+
+        # Key info row
+        console.print(f"  Profile    [cyan]{config['profile_id']}[/cyan]")
+        console.print(f"  Timezone   [cyan]{config['timezone']}[/cyan]")
+
+        # Scheduler status (compact)
+        if scheduler_ok:
+            console.print("  Scheduler  [green]running[/green]")
+        else:
+            console.print("  Scheduler  [red]NOT RUNNING[/red]")
+
+        # Pause state (only show if active)
+        if is_paused():
+            remaining = get_pause_remaining()
+            console.print(f"  Pause      [yellow]ACTIVE ({remaining})[/yellow]")
+
+        # Check for updates (unless disabled)
+        if not no_update_check:
+            update_info = check_for_update(__version__)
+            if update_info:
+                console.print()
+                console.print(
+                    f"  [yellow]Update available: "
+                    f"{update_info.current_version} → {update_info.latest_version}[/yellow]"
+                )
+                console.print("  Run: [cyan]nextdns-blocker update[/cyan]")
+
+        console.print()
+
+        # Summary line
+        mismatch_count = len(mismatches)
+        summary = f"{blocked_count} blocked  ·  {allowed_count} allowed"
+        if mismatch_count == 0:
+            summary += "  ·  ✓"
+        else:
+            summary += f"  ·  ⚠ {mismatch_count}"
+
+        console.print(f"  [bold]{summary}[/bold]")
+
+        # Show mismatches (always - this is the important stuff)
+        if mismatches:
+            console.print()
+            console.print("  [bold red]Mismatches:[/bold red]")
+            for m in mismatches:
+                console.print(
+                    f"    [red]✗[/red] {m['domain']:<25} "
+                    f"should be {m['expected']} (currently: {m['current']})"
+                )
+
+        # Protected domains (compact)
+        if protected_domains:
+            console.print()
+            protected_str = ", ".join(protected_domains)
+            console.print(f"  [blue]Protected:[/blue] {protected_str}")
+
+        # Allowlist summary
+        if allowlist:
+            console.print(f"  [dim]Allowlist:[/dim] {allowlist_active} active")
+
+        # Scheduler not running warning
+        if not scheduler_ok:
+            console.print()
+            console.print("  [yellow]Run: nextdns-blocker watchdog install[/yellow]")
+
+        # Detailed list (only with --list flag)
+        if show_list:
+            console.print()
+            console.print("  [bold]Domains:[/bold]")
+            for domain_config in domains:
+                domain = domain_config["domain"]
+                is_blocked = client.is_blocked(domain)
+                status_icon = "🔴" if is_blocked else "🟢"
+
+                domain_delay = domain_config.get("unblock_delay")
+                if domain_config.get("protected", False):
+                    domain_delay = "never"
+
+                if domain_delay == "never":
+                    delay_flag = " [blue]\\[never][/blue]"
+                elif domain_delay and domain_delay != "0":
+                    delay_flag = f" [cyan]\\[{domain_delay}][/cyan]"
+                else:
+                    delay_flag = ""
+
+                console.print(f"    {status_icon} {domain}{delay_flag}")
+
+            if allowlist:
+                console.print()
+                console.print("  [bold]Allowlist:[/bold]")
+                for item in allowlist:
+                    domain = item["domain"]
+                    is_allowed = client.is_allowed(domain)
+                    has_schedule = item.get("schedule") is not None
+                    status_icon = "[green]✓[/green]" if is_allowed else "[dim]○[/dim]"
+                    schedule_flag = " [cyan]\\[scheduled][/cyan]" if has_schedule else ""
+                    console.print(f"    {status_icon} {domain}{schedule_flag}")
 
         console.print()
 
@@ -1663,6 +1995,9 @@ def completion(shell: str) -> None:
 
 # Register config command group
 register_config(main)
+
+# Register nextdns command group
+register_nextdns(main)
 
 
 if __name__ == "__main__":
