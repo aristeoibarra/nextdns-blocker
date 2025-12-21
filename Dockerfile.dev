@@ -1,0 +1,30 @@
+# NextDNS Blocker - Development Dockerfile
+# Optimized for local development with hot-reload support
+
+FROM python:3.12-alpine
+
+# Labels
+LABEL maintainer="aristeoibarra"
+LABEL description="NextDNS Blocker - Development Environment"
+
+WORKDIR /app
+
+# Install build dependencies (needed for some dev packages)
+RUN apk add --no-cache gcc musl-dev
+
+# Copy only pyproject.toml for dependency installation
+COPY pyproject.toml ./
+
+# Install package with dev dependencies in editable mode
+# Create src directory structure for editable install
+RUN mkdir -p src/nextdns_blocker && \
+    touch src/nextdns_blocker/__init__.py && \
+    pip install --no-cache-dir -e ".[dev]"
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app/src
+
+# Source and tests will be mounted as volumes
+CMD ["sh"]

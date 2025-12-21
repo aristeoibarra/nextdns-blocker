@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] - 2025-12-21
+
+### Added
+- **Categories support for domain grouping** (#143): Organize domains into reusable groups
+  - New `category` command group: `nextdns-blocker category <subcommand>`
+  - `category list` - Show all configured categories with their domains
+  - `category show <id>` - Display details of a specific category
+  - `category add <id>` - Create a new category
+  - `category remove <id>` - Remove an existing category
+  - `category add-domain <id> <domain>` - Add domain to a category
+  - `category remove-domain <id> <domain>` - Remove domain from a category
+  - Categories can have schedules applied to all member domains
+  - Validation for category IDs and domain formats
+- **NextDNS native categories and services support** (#144): Direct control of NextDNS Parental Control
+  - New `nextdns` command group: `nextdns-blocker nextdns <subcommand>`
+  - `nextdns list [--remote]` - List configured or API-active categories/services
+  - `nextdns enable <id>` - Enable a NextDNS category or service
+  - `nextdns disable <id>` - Disable a NextDNS category or service
+  - `nextdns status` - Show current Parental Control settings from API
+  - Supports 11 NextDNS categories (porn, gambling, dating, piracy, social-networks, etc.)
+  - Supports 140+ NextDNS services (tiktok, instagram, facebook, youtube, etc.)
+  - Audit logging for all enable/disable actions
+- **Docker development experience improvements** (#122): Streamlined local development
+  - New `Dockerfile.dev` optimized for hot-reload development
+  - New `docker-compose.dev.yml` with dev, test, lint, and typecheck services
+  - New `Makefile` with convenient commands (`make dev`, `make test`, `make lint`)
+  - New `config.json.example` file for easy configuration setup
+  - Volume mounts for live source code changes without rebuilding
+- **Comprehensive documentation site**: Complete docs at nextdns-blocker.pages.dev
+  - Full command reference for all CLI commands
+  - Configuration guides for blocklist, allowlist, categories, and schedules
+  - Platform-specific setup guides for macOS, Linux, Windows, and Docker
+  - Feature documentation for panic mode, shell completion, notifications
+  - Use case guides for parental control, productivity, study mode, gaming
+
+### Changed
+- **Status command UX**: Simplified output to reduce visual noise
+  - Cleaner formatting with less verbose information
+  - More focused display of essential status information
+- **Documentation domain**: Links updated to new domain (nextdns-blocker.pages.dev)
+- **README simplified**: Streamlined with focus on quick start, detailed docs moved to website
+
+### Fixed
+- **Test patch path**: Corrected `is_panic_mode` patch path in CLI tests
+
+### Tests
+- Added 367 tests for category CLI functionality
+- Added 518 tests for category validation
+- Added 1,429 tests for NextDNS parental control features
+- Improved CLI test coverage for `nextdns_cli.py`
+
 ## [6.2.0] - 2025-12-20
 
 ### Added
@@ -528,6 +579,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[6.3.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.2.0...v6.3.0
 [6.2.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.1.1...v6.2.0
 [6.1.1]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.1.0...v6.1.1
 [6.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.0.0...v6.1.0

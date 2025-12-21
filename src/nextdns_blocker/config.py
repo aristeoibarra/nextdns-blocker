@@ -14,10 +14,13 @@ from platformdirs import user_config_dir, user_data_dir
 
 from .common import (
     APP_NAME,
+    NEXTDNS_CATEGORIES,
+    NEXTDNS_SERVICES,
     VALID_DAYS,
     get_log_dir,
     parse_env_value,
     safe_int,
+    validate_category_id,
     validate_domain,
     validate_time_format,
 )
@@ -49,10 +52,11 @@ DISCORD_WEBHOOK_PATTERN = re.compile(
 # UNBLOCK DELAY SETTINGS
 # =============================================================================
 
-# Valid unblock_delay values
+# Legacy valid unblock_delay values (kept for backward compatibility messages)
 VALID_UNBLOCK_DELAYS = frozenset({"never", "24h", "4h", "30m", "0"})
 
-# Mapping of unblock_delay strings to seconds (None for 'never' = cannot unblock)
+# Legacy mapping of unblock_delay strings to seconds (None for 'never' = cannot unblock)
+# Kept for backward compatibility - new code should use parse_duration()
 UNBLOCK_DELAY_SECONDS: dict[str, Optional[int]] = {
     "never": None,
     "24h": 24 * 60 * 60,
@@ -60,6 +64,58 @@ UNBLOCK_DELAY_SECONDS: dict[str, Optional[int]] = {
     "30m": 30 * 60,
     "0": 0,
 }
+
+# Flexible duration pattern: number followed by unit (m=minutes, h=hours, d=days)
+DURATION_PATTERN = re.compile(r"^(\d+)([mhd])$")
+
+# Duration unit multipliers (to seconds)
+DURATION_MULTIPLIERS = {"m": 60, "h": 3600, "d": 86400}
+
+
+def parse_duration(value: str) -> Optional[int]:
+    """
+    Parse flexible duration string to seconds.
+
+    Supports:
+    - "never": Cannot unblock (returns None)
+    - "0": Immediate unblock (returns 0)
+    - "{n}m": n minutes (e.g., "30m", "45m", "90m")
+    - "{n}h": n hours (e.g., "1h", "2h", "24h")
+    - "{n}d": n days (e.g., "1d", "7d")
+
+    Args:
+        value: Duration string like "30m", "2h", "1d", or "never"/"0"
+
+    Returns:
+        Seconds as int, or None for "never"
+
+    Raises:
+        ValueError: If duration format is invalid
+    """
+    if not value or not isinstance(value, str):
+        raise ValueError("Duration must be a non-empty string")
+
+    value = value.strip().lower()
+
+    if value == "never":
+        return None
+    if value == "0":
+        return 0
+
+    match = DURATION_PATTERN.match(value)
+    if not match:
+        raise ValueError(
+            f"Invalid duration format: '{value}'. "
+            f"Expected: 'never', '0', or number with unit (e.g., '30m', '2h', '1d')"
+        )
+
+    amount = int(match.group(1))
+    unit = match.group(2)
+
+    if amount == 0:
+        return 0
+
+    return amount * DURATION_MULTIPLIERS[unit]
 
 
 def validate_api_key(api_key: str) -> bool:
@@ -109,30 +165,41 @@ def validate_discord_webhook(url: str) -> bool:
 
 def validate_unblock_delay(delay: str) -> bool:
     """
-    Validate unblock_delay value.
+    Validate unblock_delay value using flexible duration parser.
+
+    Supports flexible durations like "30m", "2h", "1d", "never", "0".
 
     Args:
-        delay: Delay string to validate ('never', '24h', '4h', '30m', '0')
+        delay: Delay string to validate
 
     Returns:
         True if valid, False otherwise
     """
     if not delay or not isinstance(delay, str):
         return False
-    return delay in VALID_UNBLOCK_DELAYS
+    try:
+        parse_duration(delay)
+        return True
+    except ValueError:
+        return False
 
 
 def parse_unblock_delay_seconds(delay: str) -> Optional[int]:
     """
-    Convert unblock_delay string to seconds.
+    Convert unblock_delay string to seconds using flexible duration parser.
+
+    Supports flexible durations like "30m", "2h", "1d", "never", "0".
 
     Args:
-        delay: Delay string ('never', '24h', '4h', '30m', '0')
+        delay: Delay string (e.g., "30m", "2h", "1d", "never", "0")
 
     Returns:
         Number of seconds, or None for 'never' (cannot unblock)
+
+    Raises:
+        ValueError: If duration format is invalid
     """
-    return UNBLOCK_DELAY_SECONDS.get(delay)
+    return parse_duration(delay)
 
 
 # =============================================================================
@@ -342,7 +409,7 @@ def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
     if unblock_delay is not None and not validate_unblock_delay(unblock_delay):
         errors.append(
             f"'{domain}': invalid unblock_delay '{unblock_delay}' "
-            f"(valid: {', '.join(sorted(VALID_UNBLOCK_DELAYS))})"
+            f"(expected: 'never', '0', or duration like '30m', '2h', '1d')"
         )
 
     # Check schedule if present
@@ -383,6 +450,77 @@ def validate_allowlist_config(config: dict[str, Any], index: int) -> list[str]:
     schedule = config.get("schedule")
     if schedule is not None:
         schedule_errors = validate_schedule(schedule, f"allowlist '{domain}'")
+        errors.extend(schedule_errors)
+
+    return errors
+
+
+def validate_category_config(config: dict[str, Any], index: int) -> list[str]:
+    """
+    Validate a single category configuration entry.
+
+    Args:
+        config: Category configuration dictionary
+        index: Index in the categories array (for error messages)
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    # Check id field exists and is valid
+    if "id" not in config:
+        return [f"category #{index}: Missing 'id' field"]
+
+    category_id = config["id"]
+    if not category_id or not isinstance(category_id, str) or not category_id.strip():
+        return [f"category #{index}: Empty or invalid id"]
+
+    category_id = category_id.strip()
+    if not validate_category_id(category_id):
+        return [
+            f"category #{index}: Invalid id format '{category_id}' "
+            f"(must start with lowercase letter, contain only lowercase letters, numbers, hyphens)"
+        ]
+
+    prefix = f"category '{category_id}'"
+
+    # Check domains field exists and is a non-empty list
+    if "domains" not in config:
+        errors.append(f"{prefix}: Missing 'domains' field")
+    else:
+        domains = config["domains"]
+        if not isinstance(domains, list):
+            errors.append(f"{prefix}: 'domains' must be an array")
+        elif not domains:
+            errors.append(f"{prefix}: 'domains' array cannot be empty")
+        else:
+            # Validate each domain in the category (simple strings only)
+            for dom_idx, domain in enumerate(domains):
+                if not isinstance(domain, str):
+                    errors.append(f"{prefix}: domain #{dom_idx} must be a string")
+                elif not domain or not domain.strip():
+                    errors.append(f"{prefix}: domain #{dom_idx} is empty")
+                elif not validate_domain(domain.strip()):
+                    errors.append(f"{prefix}: invalid domain format '{domain}'")
+
+    # Validate description if present (optional)
+    description = config.get("description")
+    if description is not None and not isinstance(description, str):
+        errors.append(f"{prefix}: 'description' must be a string")
+
+    # Validate unblock_delay if present (optional)
+    unblock_delay = config.get("unblock_delay")
+    if unblock_delay is not None and not validate_unblock_delay(unblock_delay):
+        errors.append(
+            f"{prefix}: invalid unblock_delay '{unblock_delay}' "
+            f"(expected: 'never', '0', or duration like '30m', '2h', '1d')"
+        )
+
+    # Validate schedule if present (optional, can be null)
+    schedule = config.get("schedule")
+    if schedule is not None:
+        schedule_errors = validate_schedule(schedule, prefix)
         errors.extend(schedule_errors)
 
     return errors
@@ -458,14 +596,426 @@ def check_subdomain_relationships(
                 )
 
 
+def check_category_subdomain_relationships(
+    categories: list[dict[str, Any]], allowlist: list[dict[str, Any]]
+) -> None:
+    """
+    Log warnings when allowlist domains are subdomains of category domains.
+
+    This is informational only - the configuration is valid (see issue #143),
+    but the user should understand that the allowlist entry will override
+    the block for that specific subdomain in NextDNS.
+
+    Args:
+        categories: List of category configurations
+        allowlist: List of allowlist domain configurations
+    """
+    from .common import is_subdomain
+
+    for allow_entry in allowlist:
+        allow_domain = allow_entry.get("domain", "")
+        if not allow_domain or not isinstance(allow_domain, str):
+            continue
+
+        for category in categories:
+            category_id = category.get("id", "unknown")
+            category_domains = category.get("domains", [])
+
+            for block_domain in category_domains:
+                if not block_domain or not isinstance(block_domain, str):
+                    continue
+
+                if is_subdomain(allow_domain, block_domain):
+                    logger.warning(
+                        f"Subdomain relationship: '{allow_domain}' (allowlist) is subdomain of "
+                        f"'{block_domain}' (category: {category_id})"
+                    )
+
+
+def validate_no_duplicate_domains(
+    categories: list[dict[str, Any]], blocklist: list[dict[str, Any]]
+) -> list[str]:
+    """
+    Validate that no domain appears in multiple categories or both category and blocklist.
+
+    Args:
+        categories: List of category configurations
+        blocklist: List of blocklist domain configurations
+
+    Returns:
+        List of error messages (empty if no duplicates)
+    """
+    errors: list[str] = []
+
+    # Track all domains and their sources
+    domain_sources: dict[str, list[str]] = {}  # domain -> list of sources
+
+    # Collect domains from categories
+    for category in categories:
+        category_id = category.get("id", "unknown")
+        category_domains = category.get("domains", [])
+
+        for domain in category_domains:
+            if isinstance(domain, str) and domain.strip():
+                domain_lower = domain.strip().lower()
+                if domain_lower not in domain_sources:
+                    domain_sources[domain_lower] = []
+                domain_sources[domain_lower].append(f"category '{category_id}'")
+
+    # Collect domains from blocklist
+    for block_entry in blocklist:
+        domain = block_entry.get("domain", "")
+        if isinstance(domain, str) and domain.strip():
+            domain_lower = domain.strip().lower()
+            if domain_lower not in domain_sources:
+                domain_sources[domain_lower] = []
+            domain_sources[domain_lower].append("blocklist")
+
+    # Find duplicates
+    for domain, sources in sorted(domain_sources.items()):
+        if len(sources) > 1:
+            sources_str = " and ".join(sources)
+            errors.append(
+                f"Domain '{domain}' appears in multiple locations: {sources_str}. "
+                f"A domain can only exist in one category or blocklist."
+            )
+
+    return errors
+
+
+def validate_unique_category_ids(categories: list[dict[str, Any]]) -> list[str]:
+    """
+    Validate that all category IDs are unique.
+
+    Args:
+        categories: List of category configurations
+
+    Returns:
+        List of error messages (empty if all IDs are unique)
+    """
+    errors: list[str] = []
+    seen_ids: dict[str, int] = {}  # id -> first occurrence index
+
+    for idx, category in enumerate(categories):
+        category_id = category.get("id")
+        if isinstance(category_id, str) and category_id.strip():
+            id_lower = category_id.strip().lower()
+            if id_lower in seen_ids:
+                errors.append(
+                    f"category #{idx}: Duplicate id '{category_id}' "
+                    f"(first defined at category #{seen_ids[id_lower]})"
+                )
+            else:
+                seen_ids[id_lower] = idx
+
+    return errors
+
+
+# =============================================================================
+# NEXTDNS PARENTAL CONTROL VALIDATION
+# =============================================================================
+
+
+def validate_nextdns_category(config: dict[str, Any], index: int) -> list[str]:
+    """
+    Validate a single NextDNS native category configuration entry.
+
+    Args:
+        config: NextDNS category configuration dictionary
+        index: Index in the categories array (for error messages)
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    # Check id field exists
+    if "id" not in config:
+        return [f"nextdns.categories[{index}]: Missing 'id' field"]
+
+    category_id = config["id"]
+    if not category_id or not isinstance(category_id, str) or not category_id.strip():
+        return [f"nextdns.categories[{index}]: Empty or invalid id"]
+
+    category_id = category_id.strip().lower()
+
+    # Validate against known NextDNS categories
+    if category_id not in NEXTDNS_CATEGORIES:
+        valid_ids = ", ".join(sorted(NEXTDNS_CATEGORIES))
+        return [
+            f"nextdns.categories[{index}]: Invalid category id '{category_id}'. "
+            f"Valid IDs: {valid_ids}"
+        ]
+
+    prefix = f"nextdns.categories['{category_id}']"
+
+    # Validate description if present (optional)
+    description = config.get("description")
+    if description is not None and not isinstance(description, str):
+        errors.append(f"{prefix}: 'description' must be a string")
+
+    # Validate unblock_delay if present (optional)
+    unblock_delay = config.get("unblock_delay")
+    if unblock_delay is not None and not validate_unblock_delay(unblock_delay):
+        errors.append(
+            f"{prefix}: invalid unblock_delay '{unblock_delay}' "
+            f"(expected: 'never', '0', or duration like '30m', '2h', '1d')"
+        )
+
+    # Validate schedule if present (optional, can be null)
+    schedule = config.get("schedule")
+    if schedule is not None:
+        schedule_errors = validate_schedule(schedule, prefix)
+        errors.extend(schedule_errors)
+
+    return errors
+
+
+def validate_nextdns_service(config: dict[str, Any], index: int) -> list[str]:
+    """
+    Validate a single NextDNS native service configuration entry.
+
+    Args:
+        config: NextDNS service configuration dictionary
+        index: Index in the services array (for error messages)
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    # Check id field exists
+    if "id" not in config:
+        return [f"nextdns.services[{index}]: Missing 'id' field"]
+
+    service_id = config["id"]
+    if not service_id or not isinstance(service_id, str) or not service_id.strip():
+        return [f"nextdns.services[{index}]: Empty or invalid id"]
+
+    service_id = service_id.strip().lower()
+
+    # Validate against known NextDNS services
+    if service_id not in NEXTDNS_SERVICES:
+        # Group services by category for better error message
+        errors.append(
+            f"nextdns.services[{index}]: Invalid service id '{service_id}'. "
+            f"See documentation for valid service IDs (43 available)."
+        )
+        return errors
+
+    prefix = f"nextdns.services['{service_id}']"
+
+    # Validate description if present (optional)
+    description = config.get("description")
+    if description is not None and not isinstance(description, str):
+        errors.append(f"{prefix}: 'description' must be a string")
+
+    # Validate unblock_delay if present (optional)
+    unblock_delay = config.get("unblock_delay")
+    if unblock_delay is not None and not validate_unblock_delay(unblock_delay):
+        errors.append(
+            f"{prefix}: invalid unblock_delay '{unblock_delay}' "
+            f"(expected: 'never', '0', or duration like '30m', '2h', '1d')"
+        )
+
+    # Validate schedule if present (optional, can be null)
+    schedule = config.get("schedule")
+    if schedule is not None:
+        schedule_errors = validate_schedule(schedule, prefix)
+        errors.extend(schedule_errors)
+
+    return errors
+
+
+def validate_nextdns_parental_control(config: dict[str, Any]) -> list[str]:
+    """
+    Validate NextDNS parental_control global settings.
+
+    Args:
+        config: Parental control configuration dictionary
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    if not isinstance(config, dict):
+        return ["nextdns.parental_control: must be an object"]
+
+    valid_keys = {"safe_search", "youtube_restricted_mode", "block_bypass"}
+
+    for key, value in config.items():
+        if key not in valid_keys:
+            errors.append(
+                f"nextdns.parental_control: unknown key '{key}'. "
+                f"Valid keys: {', '.join(sorted(valid_keys))}"
+            )
+        elif not isinstance(value, bool):
+            errors.append(f"nextdns.parental_control.{key}: must be a boolean")
+
+    return errors
+
+
+def validate_nextdns_config(nextdns_config: dict[str, Any]) -> list[str]:
+    """
+    Validate the complete nextdns configuration section.
+
+    Args:
+        nextdns_config: The 'nextdns' section from config.json
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    if not isinstance(nextdns_config, dict):
+        return ["'nextdns' must be an object"]
+
+    # Validate parental_control if present
+    parental_control = nextdns_config.get("parental_control")
+    if parental_control is not None:
+        errors.extend(validate_nextdns_parental_control(parental_control))
+
+    # Validate categories if present
+    categories = nextdns_config.get("categories", [])
+    if not isinstance(categories, list):
+        errors.append("nextdns.categories: must be an array")
+    else:
+        seen_category_ids: set[str] = set()
+        for idx, category_config in enumerate(categories):
+            if not isinstance(category_config, dict):
+                errors.append(f"nextdns.categories[{idx}]: must be an object")
+                continue
+            errors.extend(validate_nextdns_category(category_config, idx))
+
+            # Check for duplicate category IDs
+            cat_id = category_config.get("id")
+            if isinstance(cat_id, str) and cat_id.strip():
+                cat_id_lower = cat_id.strip().lower()
+                if cat_id_lower in seen_category_ids:
+                    errors.append(f"nextdns.categories[{idx}]: duplicate category id '{cat_id}'")
+                else:
+                    seen_category_ids.add(cat_id_lower)
+
+    # Validate services if present
+    services = nextdns_config.get("services", [])
+    if not isinstance(services, list):
+        errors.append("nextdns.services: must be an array")
+    else:
+        seen_service_ids: set[str] = set()
+        for idx, service_config in enumerate(services):
+            if not isinstance(service_config, dict):
+                errors.append(f"nextdns.services[{idx}]: must be an object")
+                continue
+            errors.extend(validate_nextdns_service(service_config, idx))
+
+            # Check for duplicate service IDs
+            svc_id = service_config.get("id")
+            if isinstance(svc_id, str) and svc_id.strip():
+                svc_id_lower = svc_id.strip().lower()
+                if svc_id_lower in seen_service_ids:
+                    errors.append(f"nextdns.services[{idx}]: duplicate service id '{svc_id}'")
+                else:
+                    seen_service_ids.add(svc_id_lower)
+
+    return errors
+
+
+def load_nextdns_config(script_dir: str) -> Optional[dict[str, Any]]:
+    """
+    Load and validate NextDNS Parental Control configuration from config.json.
+
+    Args:
+        script_dir: Directory containing config.json
+
+    Returns:
+        NextDNS config dict if present and valid, None if not present
+
+    Raises:
+        ConfigurationError: If nextdns section exists but is invalid
+    """
+    script_path = Path(script_dir)
+    config_file = script_path / "config.json"
+
+    if not config_file.exists():
+        return None
+
+    try:
+        with open(config_file, encoding="utf-8") as f:
+            config = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    if not isinstance(config, dict):
+        return None
+
+    nextdns_config: Optional[dict[str, Any]] = config.get("nextdns")
+    if nextdns_config is None:
+        return None
+
+    # Validate the nextdns configuration
+    errors = validate_nextdns_config(nextdns_config)
+    if errors:
+        for error in errors:
+            logger.error(error)
+        raise ConfigurationError(f"NextDNS configuration validation failed: {len(errors)} error(s)")
+
+    return nextdns_config
+
+
 # =============================================================================
 # CONFIGURATION LOADING
 # =============================================================================
 
 
+def _expand_categories(categories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Expand categories into individual domain entries for sync.
+
+    Each domain in a category inherits the category's schedule and unblock_delay.
+    The category metadata is preserved for reference.
+
+    Args:
+        categories: List of category configurations
+
+    Returns:
+        List of expanded domain configurations
+    """
+    expanded: list[dict[str, Any]] = []
+
+    for category in categories:
+        category_id = category.get("id", "unknown")
+        category_schedule = category.get("schedule")
+        category_unblock_delay = category.get("unblock_delay")
+        category_description = category.get("description")
+        category_domains = category.get("domains", [])
+
+        for domain in category_domains:
+            if isinstance(domain, str) and domain.strip():
+                domain_entry: dict[str, Any] = {
+                    "domain": domain.strip(),
+                    "_category": category_id,  # Internal metadata
+                }
+
+                # Inherit category settings
+                if category_schedule is not None:
+                    domain_entry["schedule"] = category_schedule
+                if category_unblock_delay is not None:
+                    domain_entry["unblock_delay"] = category_unblock_delay
+                if category_description is not None:
+                    domain_entry["_category_description"] = category_description
+
+                expanded.append(domain_entry)
+
+    return expanded
+
+
 def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     Load domain configurations from config.json.
+
+    Supports both blocklist and categories. Categories are expanded into
+    individual domain entries that inherit the category's settings.
 
     Args:
         script_dir: Directory containing config.json
@@ -495,30 +1045,55 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
 
     # Validate structure
     if not isinstance(config, dict):
-        raise ConfigurationError("Config must be a JSON object with 'blocklist' array")
+        raise ConfigurationError("Config must be a JSON object")
 
-    domains = config.get("blocklist", [])
-    if not isinstance(domains, list):
+    # Load blocklist (can be empty if categories exist)
+    blocklist = config.get("blocklist", [])
+    if not isinstance(blocklist, list):
         raise ConfigurationError("'blocklist' must be an array")
-    if not domains:
-        raise ConfigurationError("No domains configured (missing 'blocklist' array)")
+
+    # Load categories (optional, defaults to empty)
+    categories = config.get("categories", [])
+    if not isinstance(categories, list):
+        raise ConfigurationError("'categories' must be an array")
 
     # Load allowlist (optional, defaults to empty)
     allowlist = config.get("allowlist", [])
     if not isinstance(allowlist, list):
         raise ConfigurationError("'allowlist' must be an array")
 
-    # Validate each domain in denylist
+    # Must have at least blocklist or categories
+    if not blocklist and not categories:
+        raise ConfigurationError(
+            "No domains configured. Add domains to 'blocklist' or 'categories'."
+        )
+
+    # Collect all validation errors
     all_errors: list[str] = []
-    for idx, domain_config in enumerate(domains):
+
+    # Validate each category
+    for idx, category_config in enumerate(categories):
+        all_errors.extend(validate_category_config(category_config, idx))
+
+    # Validate unique category IDs
+    all_errors.extend(validate_unique_category_ids(categories))
+
+    # Validate each domain in blocklist
+    for idx, domain_config in enumerate(blocklist):
         all_errors.extend(validate_domain_config(domain_config, idx))
 
     # Validate each domain in allowlist
     for idx, allowlist_config in enumerate(allowlist):
         all_errors.extend(validate_allowlist_config(allowlist_config, idx))
 
+    # Validate no duplicate domains across categories and blocklist
+    all_errors.extend(validate_no_duplicate_domains(categories, blocklist))
+
     # Validate no overlap between denylist and allowlist
-    all_errors.extend(validate_no_overlap(domains, allowlist))
+    # (includes both blocklist domains and category domains)
+    category_domains_as_blocklist = _expand_categories(categories)
+    combined_blocklist = blocklist + category_domains_as_blocklist
+    all_errors.extend(validate_no_overlap(combined_blocklist, allowlist))
 
     if all_errors:
         for error in all_errors:
@@ -527,9 +1102,16 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
 
     # Check for subdomain relationships (warnings only, not errors)
     # This helps users understand that allowlist entries will override blocks
-    check_subdomain_relationships(domains, allowlist)
+    check_subdomain_relationships(blocklist, allowlist)
+    check_category_subdomain_relationships(categories, allowlist)
 
-    return domains, allowlist
+    # Expand categories into individual domain entries
+    expanded_domains = _expand_categories(categories)
+
+    # Combine blocklist with expanded category domains
+    final_domains = blocklist + expanded_domains
+
+    return final_domains, allowlist
 
 
 def _load_timezone_setting(config_dir: Path) -> str:
