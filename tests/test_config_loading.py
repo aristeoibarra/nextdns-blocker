@@ -3,6 +3,9 @@
 import json
 import os
 from unittest.mock import MagicMock, patch
+from pathlib import Path
+from nextdns_blocker.config import load_domains
+from nextdns_blocker.exceptions import ConfigurationError
 
 import pytest
 
@@ -64,6 +67,40 @@ class TestValidateDomain:
     def test_domain_with_special_chars(self):
         assert validate_domain("example!.com") is False
         assert validate_domain("example@.com") is False
+
+    def test_duplicate_domains_in_denylist(self, tmp_path):
+        config = {
+            "denylist": [
+                {"domain": "facebook.com"},
+                {"domain": "facebook.com"},
+            ]
+        }
+
+        # tmp_path is provided by pytest automatically
+        config_file = tmp_path / "config.json"
+
+        # Write config to a temporary file
+        config_file.write_text(json.dumps(config))
+
+        # load_domains expects a file path, not a dict
+        with pytest.raises(ConfigurationError):
+            load_domains(config_file)
+
+    def test_duplicate_domains_in_allowlist(self, tmp_path):
+        config = {
+            "allowlist": [
+                {"domain": "example.com"},
+                {"domain": "example.com"},
+            ]
+        }
+
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config))
+
+        with pytest.raises(ConfigurationError):
+            load_domains(config_file)
+
+
 
 
 class TestLoadConfig:
