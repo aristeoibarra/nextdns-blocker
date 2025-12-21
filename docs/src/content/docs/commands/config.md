@@ -97,6 +97,10 @@ nextdns-blocker sync
 
 Validate the configuration file syntax and structure.
 
+:::tip
+This is also available as a standalone command: [`nextdns-blocker validate`](/commands/validate/)
+:::
+
 ### Usage
 
 ```bash
