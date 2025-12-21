@@ -977,7 +977,13 @@ def sync(
     is_flag=True,
     help="Skip checking for updates",
 )
-def status(config_dir: Optional[Path], no_update_check: bool) -> None:
+@click.option(
+    "--list",
+    "show_list",
+    is_flag=True,
+    help="Show detailed list of all domains",
+)
+def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -> None:
     """Show current blocking status."""
     from .update_check import check_for_update
 
@@ -990,30 +996,11 @@ def status(config_dir: Optional[Path], no_update_check: bool) -> None:
         )
         evaluator = ScheduleEvaluator(config["timezone"])
 
-        console.print("\n  [bold]NextDNS Blocker Status[/bold]")
-        console.print("  [bold]----------------------[/bold]")
-        console.print(f"  Profile: {config['profile_id']}")
-        console.print(f"  Timezone: {config['timezone']}")
-
-        # Pause state
-        if is_paused():
-            remaining = get_pause_remaining()
-            console.print(f"  Pause: [yellow]ACTIVE ({remaining})[/yellow]")
-        else:
-            console.print("  Pause: [green]inactive[/green]")
-
-        # Check for updates (unless disabled)
-        if not no_update_check:
-            update_info = check_for_update(__version__)
-            if update_info:
-                console.print()
-                console.print(
-                    f"  [yellow]⚠️  Update available: "
-                    f"{update_info.current_version} → {update_info.latest_version}[/yellow]"
-                )
-                console.print("      Run: [cyan]nextdns-blocker update[/cyan]")
-
-        console.print(f"\n  [bold]Domains ({len(domains)}):[/bold]")
+        # Collect domain statistics
+        blocked_count = 0
+        allowed_count = 0
+        mismatches: list[dict[str, Any]] = []
+        protected_domains: list[str] = []
 
         for domain_config in domains:
             domain = domain_config["domain"]
@@ -1021,89 +1008,174 @@ def status(config_dir: Optional[Path], no_update_check: bool) -> None:
             is_blocked = client.is_blocked(domain)
 
             if is_blocked:
-                status_icon = "🔴"
-                status_text = "[red]blocked[/red]"
+                blocked_count += 1
             else:
-                status_icon = "🟢"
-                status_text = "[green]active[/green]"
+                allowed_count += 1
 
-            expected = "block" if should_block else "allow"
-            match = "[green]✓[/green]" if (should_block == is_blocked) else "[red]✗ MISMATCH[/red]"
-
-            # Show unblock_delay setting
+            # Check for protected domains
             domain_delay = domain_config.get("unblock_delay")
-            # Backward compatibility: protected=true -> never
             if domain_config.get("protected", False):
                 domain_delay = "never"
             if domain_delay == "never":
-                delay_flag = " [blue]\\[never][/blue]"
-            elif domain_delay and domain_delay != "0":
-                delay_flag = f" [cyan]\\[{domain_delay}][/cyan]"
+                protected_domains.append(domain)
+
+            # Check for mismatches
+            if should_block != is_blocked:
+                expected = "blocked" if should_block else "allowed"
+                current = "blocked" if is_blocked else "allowed"
+                mismatches.append(
+                    {
+                        "domain": domain,
+                        "expected": expected,
+                        "current": current,
+                        "type": "denylist",
+                    }
+                )
+
+        # Collect allowlist statistics
+        allowlist_active = 0
+        allowlist_inactive = 0
+        for item in allowlist:
+            domain = item["domain"]
+            is_allowed = client.is_allowed(domain)
+            has_schedule = item.get("schedule") is not None
+            should_allow = evaluator.should_allow_domain(item)
+
+            if is_allowed:
+                allowlist_active += 1
             else:
-                delay_flag = ""
+                allowlist_inactive += 1
 
-            # Pad domain for alignment
-            console.print(
-                f"    {status_icon} {domain:<20} {status_text} (should: {expected}) {match}{delay_flag}"
-            )
+            # Check for mismatches in scheduled allowlist
+            if has_schedule and should_allow != is_allowed:
+                expected = "allowed" if should_allow else "not allowed"
+                current = "allowed" if is_allowed else "not allowed"
+                mismatches.append(
+                    {
+                        "domain": domain,
+                        "expected": expected,
+                        "current": current,
+                        "type": "allowlist",
+                    }
+                )
 
-        if allowlist:
-            console.print(f"\n  [bold]Allowlist ({len(allowlist)}):[/bold]")
-            for item in allowlist:
-                domain = item["domain"]
-                is_allowed = client.is_allowed(domain)
-                has_schedule = item.get("schedule") is not None
-                should_allow = evaluator.should_allow_domain(item)
-
-                if has_schedule:
-                    # Scheduled allowlist entry
-                    expected = "allow" if should_allow else "disallow"
-                    match = (
-                        "[green]✓[/green]"
-                        if (should_allow == is_allowed)
-                        else "[red]✗ MISMATCH[/red]"
-                    )
-                    status_text = (
-                        "[green]allowed[/green]" if is_allowed else "[yellow]not allowed[/yellow]"
-                    )
-                    console.print(
-                        f"    {domain:<20} {status_text} (should: {expected}) {match} [cyan]\\[scheduled][/cyan]"
-                    )
-                else:
-                    # Always-allowed entry (no schedule)
-                    status_icon = "[green]✓[/green]" if is_allowed else "[red]✗[/red]"
-                    console.print(f"    {status_icon} {domain}")
-
-        # Scheduler status
-        console.print("\n  [bold]Scheduler:[/bold]")
+        # Check scheduler status
+        scheduler_ok = False
         if is_macos():
             sync_ok = is_launchd_job_loaded(LAUNCHD_SYNC_LABEL)
             wd_ok = is_launchd_job_loaded(LAUNCHD_WATCHDOG_LABEL)
-            sync_status = "[green]ok[/green]" if sync_ok else "[red]NOT RUNNING[/red]"
-            wd_status = "[green]ok[/green]" if wd_ok else "[red]NOT RUNNING[/red]"
-            console.print(f"    sync:     {sync_status}")
-            console.print(f"    watchdog: {wd_status}")
-            if not sync_ok or not wd_ok:
-                console.print("    Run: [yellow]nextdns-blocker watchdog install[/yellow]")
+            scheduler_ok = sync_ok and wd_ok
         elif is_windows():
             sync_ok = has_windows_task(WINDOWS_TASK_SYNC_NAME)
             wd_ok = has_windows_task(WINDOWS_TASK_WATCHDOG_NAME)
-            sync_status = "[green]ok[/green]" if sync_ok else "[red]NOT RUNNING[/red]"
-            wd_status = "[green]ok[/green]" if wd_ok else "[red]NOT RUNNING[/red]"
-            console.print(f"    sync:     {sync_status}")
-            console.print(f"    watchdog: {wd_status}")
-            if not sync_ok or not wd_ok:
-                console.print("    Run: [yellow]nextdns-blocker watchdog install[/yellow]")
+            scheduler_ok = sync_ok and wd_ok
         else:
             crontab = get_crontab()
             has_sync = "nextdns-blocker" in crontab and "sync" in crontab
             has_wd = "nextdns-blocker" in crontab and "watchdog" in crontab
-            sync_status = "[green]ok[/green]" if has_sync else "[red]NOT FOUND[/red]"
-            wd_status = "[green]ok[/green]" if has_wd else "[red]NOT FOUND[/red]"
-            console.print(f"    sync:     {sync_status}")
-            console.print(f"    watchdog: {wd_status}")
-            if not has_sync or not has_wd:
-                console.print("    Run: [yellow]nextdns-blocker watchdog install[/yellow]")
+            scheduler_ok = has_sync and has_wd
+
+        # === RENDER OUTPUT ===
+        console.print()
+        console.print("  [bold]NextDNS Blocker Status[/bold]")
+        console.print("  [dim]━━━━━━━━━━━━━━━━━━━━━━[/dim]")
+        console.print()
+
+        # Key info row
+        console.print(f"  Profile    [cyan]{config['profile_id']}[/cyan]")
+        console.print(f"  Timezone   [cyan]{config['timezone']}[/cyan]")
+
+        # Scheduler status (compact)
+        if scheduler_ok:
+            console.print("  Scheduler  [green]running[/green]")
+        else:
+            console.print("  Scheduler  [red]NOT RUNNING[/red]")
+
+        # Pause state (only show if active)
+        if is_paused():
+            remaining = get_pause_remaining()
+            console.print(f"  Pause      [yellow]ACTIVE ({remaining})[/yellow]")
+
+        # Check for updates (unless disabled)
+        if not no_update_check:
+            update_info = check_for_update(__version__)
+            if update_info:
+                console.print()
+                console.print(
+                    f"  [yellow]Update available: "
+                    f"{update_info.current_version} → {update_info.latest_version}[/yellow]"
+                )
+                console.print("  Run: [cyan]nextdns-blocker update[/cyan]")
+
+        console.print()
+
+        # Summary line
+        mismatch_count = len(mismatches)
+        summary = f"{blocked_count} blocked  ·  {allowed_count} allowed"
+        if mismatch_count == 0:
+            summary += "  ·  ✓"
+        else:
+            summary += f"  ·  ⚠ {mismatch_count}"
+
+        console.print(f"  [bold]{summary}[/bold]")
+
+        # Show mismatches (always - this is the important stuff)
+        if mismatches:
+            console.print()
+            console.print("  [bold red]Mismatches:[/bold red]")
+            for m in mismatches:
+                console.print(
+                    f"    [red]✗[/red] {m['domain']:<25} "
+                    f"should be {m['expected']} (currently: {m['current']})"
+                )
+
+        # Protected domains (compact)
+        if protected_domains:
+            console.print()
+            protected_str = ", ".join(protected_domains)
+            console.print(f"  [blue]Protected:[/blue] {protected_str}")
+
+        # Allowlist summary
+        if allowlist:
+            console.print(f"  [dim]Allowlist:[/dim] {allowlist_active} active")
+
+        # Scheduler not running warning
+        if not scheduler_ok:
+            console.print()
+            console.print("  [yellow]Run: nextdns-blocker watchdog install[/yellow]")
+
+        # Detailed list (only with --list flag)
+        if show_list:
+            console.print()
+            console.print("  [bold]Domains:[/bold]")
+            for domain_config in domains:
+                domain = domain_config["domain"]
+                is_blocked = client.is_blocked(domain)
+                status_icon = "🔴" if is_blocked else "🟢"
+
+                domain_delay = domain_config.get("unblock_delay")
+                if domain_config.get("protected", False):
+                    domain_delay = "never"
+
+                if domain_delay == "never":
+                    delay_flag = " [blue]\\[never][/blue]"
+                elif domain_delay and domain_delay != "0":
+                    delay_flag = f" [cyan]\\[{domain_delay}][/cyan]"
+                else:
+                    delay_flag = ""
+
+                console.print(f"    {status_icon} {domain}{delay_flag}")
+
+            if allowlist:
+                console.print()
+                console.print("  [bold]Allowlist:[/bold]")
+                for item in allowlist:
+                    domain = item["domain"]
+                    is_allowed = client.is_allowed(domain)
+                    has_schedule = item.get("schedule") is not None
+                    status_icon = "[green]✓[/green]" if is_allowed else "[dim]○[/dim]"
+                    schedule_flag = " [cyan]\\[scheduled][/cyan]" if has_schedule else ""
+                    console.print(f"    {status_icon} {domain}{schedule_flag}")
 
         console.print()
 

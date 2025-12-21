@@ -656,5 +656,6 @@ class TestStatusWithAllowlist:
             result = runner.invoke(main, ["status", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
+        # New UX shows allowlist summary, not individual domains
         assert "Allowlist" in result.output
-        assert "aws.amazon.com" in result.output
+        assert "active" in result.output.lower()
