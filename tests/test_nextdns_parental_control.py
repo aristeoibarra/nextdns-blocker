@@ -937,7 +937,7 @@ class TestNextDNSCLIAddCategorySuccess:
         config_file = tmp_path / "config.json"
         config_file.write_text('{"blocklist": []}')
 
-        with patch("nextdns_blocker.nextdns_cli.is_panic_mode", return_value=True):
+        with patch("nextdns_blocker.panic.is_panic_mode", return_value=True):
             result = cli_runner.invoke(
                 nextdns_cli, ["add-category", "gambling", "--config-dir", str(tmp_path)]
             )
@@ -984,7 +984,7 @@ class TestNextDNSCLIRemoveCategorySuccess:
         config_file = tmp_path / "config.json"
         config_file.write_text('{"blocklist": []}')
 
-        with patch("nextdns_blocker.nextdns_cli.is_panic_mode", return_value=True):
+        with patch("nextdns_blocker.panic.is_panic_mode", return_value=True):
             result = cli_runner.invoke(
                 nextdns_cli, ["remove-category", "gambling", "--config-dir", str(tmp_path)]
             )
@@ -1031,7 +1031,7 @@ class TestNextDNSCLIAddServiceSuccess:
         config_file = tmp_path / "config.json"
         config_file.write_text('{"blocklist": []}')
 
-        with patch("nextdns_blocker.nextdns_cli.is_panic_mode", return_value=True):
+        with patch("nextdns_blocker.panic.is_panic_mode", return_value=True):
             result = cli_runner.invoke(
                 nextdns_cli, ["add-service", "tiktok", "--config-dir", str(tmp_path)]
             )
@@ -1078,7 +1078,7 @@ class TestNextDNSCLIRemoveServiceSuccess:
         config_file = tmp_path / "config.json"
         config_file.write_text('{"blocklist": []}')
 
-        with patch("nextdns_blocker.nextdns_cli.is_panic_mode", return_value=True):
+        with patch("nextdns_blocker.panic.is_panic_mode", return_value=True):
             result = cli_runner.invoke(
                 nextdns_cli, ["remove-service", "tiktok", "--config-dir", str(tmp_path)]
             )
