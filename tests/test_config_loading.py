@@ -3,9 +3,6 @@
 import json
 import os
 from unittest.mock import MagicMock, patch
-from pathlib import Path
-from nextdns_blocker.config import load_domains
-from nextdns_blocker.exceptions import ConfigurationError
 
 import pytest
 
@@ -99,8 +96,6 @@ class TestValidateDomain:
 
         with pytest.raises(ConfigurationError):
             load_domains(config_file)
-
-
 
 
 class TestLoadConfig:
