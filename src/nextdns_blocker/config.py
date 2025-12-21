@@ -1,6 +1,5 @@
 """Configuration loading and validation for NextDNS Blocker."""
 
-from email import errors
 import json
 import logging
 import os
@@ -458,7 +457,11 @@ def check_subdomain_relationships(
                     f"The allowlist entry will override the block for this subdomain in NextDNS."
                 )
 
-def validate_no_duplicates(entries, list_name):
+
+def validate_no_duplicates(
+    entries: list[dict[str, Any]],
+    list_name: str,
+) -> list[str]:
     """
     Check that the same domain does NOT appear more than once
     in the same list (blocklist or allowlist).
@@ -472,11 +475,11 @@ def validate_no_duplicates(entries, list_name):
     """
 
     # This will store all error messages
-    errors = []
+    errors: list[str] = []
 
     # This dictionary keeps track of domains we have already seen
     # Format: { "domain_name": first_index }
-    seen = {}
+    seen: dict[str, int] = {}
 
     # Loop through each domain entry with its position (index)
     for index, entry in enumerate(entries):
@@ -495,10 +498,8 @@ def validate_no_duplicates(entries, list_name):
         # If domain was already seen before, it's a duplicate
         if domain in seen:
             errors.append(
-                
-                    f"Duplicate domain '{domain}' in {list_name} at index {index}. "
-                    f"First occurrence at index {seen[domain]}."
-                
+                f"Duplicate domain '{domain}' in {list_name} at index {index}. "
+                f"First occurrence at index {seen[domain]}."
             )
         else:
             # First time seeing this domain, store its index
@@ -566,7 +567,7 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
     # Validate each domain in allowlist
     for idx, allowlist_config in enumerate(allowlist):
         all_errors.extend(validate_allowlist_config(allowlist_config, idx))
-    
+
     # Validate that no domain appears more than once in the blocklist.
     # This prevents undefined behavior when the same domain has multiple rules.
     all_errors.extend(validate_no_duplicates(domains, "denylist"))
@@ -574,7 +575,6 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
     # Validate that no domain appears more than once in the allowlist.
     # Duplicate domains in the allowlist can also cause conflicting behavior.
     all_errors.extend(validate_no_duplicates(allowlist, "allowlist"))
-
 
     # Validate no overlap between denylist and allowlist
     all_errors.extend(validate_no_overlap(domains, allowlist))
