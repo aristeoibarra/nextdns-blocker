@@ -1,0 +1,50 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'NextDNS Blocker',
+    description: 'Automated, schedule-based domain blocking built on top of NextDNS.',
+    template: 'splash'
+  }}
+  hasSidebar={false}
+>
+  <!-- Hero -->
+  <section style="max-width: 900px; margin: 6rem auto 4rem;">
+    <h1 style="font-size: 3rem; line-height: 1.2;">
+      Take Control of Your Internet Access
+    </h1>
+    <p style="font-size: 1.25rem; margin-top: 1.5rem; color: var(--sl-color-gray-2);">
+      NextDNS Blocker is a CLI tool that adds scheduling, unblock delays, and
+      emergency controls on top of NextDNS — designed for focus, safety,
+      and reliability.
+    </p>
+
+    <div style="margin-top: 2.5rem; display: flex; gap: 1rem;">
+      <a
+        href="/getting-started/"
+        style="padding: 0.75rem 1.25rem; background: var(--sl-color-accent); color: white; border-radius: 6px; text-decoration: none;"
+      >
+        Get Started
+      </a>
+      <a
+        href="/features/"
+        style="padding: 0.75rem 1.25rem; border: 1px solid var(--sl-color-gray-4); border-radius: 6px; text-decoration: none;"
+      >
+        Explore Features
+      </a>
+    </div>
+  </section>
+
+  <!-- Highlights -->
+  <section style="max-width: 900px; margin: 0 auto 5rem;">
+    <h2>Why NextDNS Blocker?</h2>
+    <ul style="margin-top: 1.5rem; line-height: 1.8;">
+      <li>Per-domain schedules for fine-grained access control</li>
+      <li>Automatic enforcement via a watchdog process</li>
+      <li>Unblock delays and emergency lockdown modes</li>
+      <li>Designed for reliability, safety, and auditability</li>
+    </ul>
+  </section>
+</StarlightPage>
