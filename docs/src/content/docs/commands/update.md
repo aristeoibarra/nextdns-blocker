@@ -31,18 +31,18 @@ nextdns-blocker update
 ```
 Checking for updates...
 
-Current version: 6.1.0
-Latest version: 6.2.0
+Current version: 6.2.0
+Latest version: 6.3.0
 
 Release notes:
-  - Added panic mode extend command
-  - Fixed timezone detection on Windows
-  - Improved error messages
+  - Added categories support for domain grouping
+  - Added NextDNS native categories and services support
+  - Docker development experience improvements
 
-Update to 6.2.0? [y/N]: y
+Update to 6.3.0? [y/N]: y
 
 Updating...
-✓ Updated to version 6.2.0
+✓ Updated to version 6.3.0
 
 Restart your terminal to use the new version.
 ```
@@ -52,8 +52,8 @@ Restart your terminal to use the new version.
 ```
 Checking for updates...
 
-Current version: 6.2.0
-Latest version: 6.2.0
+Current version: 6.3.0
+Latest version: 6.3.0
 
 ✓ You're running the latest version
 ```
@@ -104,7 +104,7 @@ nextdns-blocker --version
 
 Output:
 ```
-nextdns-blocker, version 6.2.0
+nextdns-blocker, version 6.3.0
 ```
 
 ### Version in Status
@@ -137,7 +137,7 @@ Syncing domains...
   reddit.com: BLOCKED
 Sync complete
 
-💡 Update available: 6.2.0 (current: 6.1.0)
+💡 Update available: 6.3.0 (current: 6.2.0)
    Run 'nextdns-blocker update' to upgrade
 ```
 

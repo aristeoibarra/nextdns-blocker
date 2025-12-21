@@ -12,6 +12,8 @@ Automated domain blocking with per-domain scheduling via the NextDNS API. Build 
 ## Features
 
 - **Per-domain scheduling** - Configure unique availability hours for each domain
+- **Domain categories** - Group domains together with shared schedules
+- **NextDNS Parental Control** - Enable/disable native NextDNS categories and services
 - **Unblock delays** - Add friction against impulsive unblocking (30m, 4h, 24h, or never)
 - **Panic mode** - Emergency lockdown that blocks all domains
 - **Cross-platform** - Native support for macOS, Linux, and Windows
