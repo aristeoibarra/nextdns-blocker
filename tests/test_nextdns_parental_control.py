@@ -683,6 +683,432 @@ class TestNextDNSCLIRemoveService:
         assert "Invalid service ID" in result.output
 
 
+class TestNextDNSCLIStatus:
+    """Tests for nextdns status command."""
+
+    @responses.activate
+    def test_status_shows_parental_control_info(self, cli_runner, tmp_path):
+        """status command shows parental control settings from API."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        # Mock API response
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={
+                "safeSearch": True,
+                "youtubeRestrictedMode": False,
+                "blockBypass": True,
+                "categories": [{"id": "gambling", "active": True}],
+                "services": [{"id": "tiktok", "active": True}],
+            },
+            status=200,
+        )
+
+        result = cli_runner.invoke(nextdns_cli, ["status", "--config-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "Parental Control Status" in result.output
+        assert "gambling" in result.output
+        assert "tiktok" in result.output
+
+    @responses.activate
+    def test_status_handles_api_failure(self, cli_runner, tmp_path):
+        """status command handles API failure gracefully."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        # Mock API failure
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={"error": "Unauthorized"},
+            status=401,
+        )
+
+        result = cli_runner.invoke(nextdns_cli, ["status", "--config-dir", str(tmp_path)])
+        assert result.exit_code == 1
+        assert "Error" in result.output or "Failed" in result.output
+
+    @responses.activate
+    def test_status_shows_empty_state(self, cli_runner, tmp_path):
+        """status command shows empty state correctly."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        # Mock API response with no active items
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={
+                "safeSearch": False,
+                "youtubeRestrictedMode": False,
+                "blockBypass": False,
+                "categories": [],
+                "services": [],
+            },
+            status=200,
+        )
+
+        result = cli_runner.invoke(nextdns_cli, ["status", "--config-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "None" in result.output
+
+
+class TestNextDNSCLIList:
+    """Tests for nextdns list command."""
+
+    def test_list_shows_no_config_message(self, cli_runner, tmp_path):
+        """list command shows message when no nextdns config."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config without nextdns section
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        result = cli_runner.invoke(nextdns_cli, ["list", "--config-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "No NextDNS section" in result.output
+
+    def test_list_shows_configured_items(self, cli_runner, tmp_path):
+        """list command shows configured categories and services."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create config with nextdns section
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text(
+            """{
+            "blocklist": [],
+            "nextdns": {
+                "parental_control": {"safe_search": true},
+                "categories": [{"id": "gambling", "description": "Betting sites"}],
+                "services": [{"id": "tiktok", "description": "Short videos"}]
+            }
+        }"""
+        )
+
+        result = cli_runner.invoke(nextdns_cli, ["list", "--config-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "gambling" in result.output
+        assert "tiktok" in result.output
+
+    @responses.activate
+    def test_list_remote_shows_api_data(self, cli_runner, tmp_path):
+        """list --remote shows data from API."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        # Mock API response
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={
+                "safeSearch": True,
+                "youtubeRestrictedMode": False,
+                "blockBypass": False,
+                "categories": [{"id": "porn", "active": True}],
+                "services": [{"id": "netflix", "active": True}],
+            },
+            status=200,
+        )
+
+        result = cli_runner.invoke(nextdns_cli, ["list", "--remote", "--config-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "from API" in result.output
+        assert "porn" in result.output
+        assert "netflix" in result.output
+
+    @responses.activate
+    def test_list_remote_no_active_items(self, cli_runner, tmp_path):
+        """list --remote shows message when no active items."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        # Mock API response with no active items
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={
+                "safeSearch": False,
+                "youtubeRestrictedMode": False,
+                "blockBypass": False,
+                "categories": [],
+                "services": [],
+            },
+            status=200,
+        )
+
+        result = cli_runner.invoke(nextdns_cli, ["list", "--remote", "--config-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "No categories active" in result.output
+        assert "No services active" in result.output
+
+
+class TestNextDNSCLIAddCategorySuccess:
+    """Tests for nextdns add-category command success paths."""
+
+    @responses.activate
+    def test_add_category_succeeds(self, cli_runner, tmp_path):
+        """add-category succeeds with valid category."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        # Mock API response
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/testprofile/parentalControl/categories",
+            json={"success": True},
+            status=200,
+        )
+
+        result = cli_runner.invoke(
+            nextdns_cli, ["add-category", "gambling", "--config-dir", str(tmp_path)]
+        )
+        assert result.exit_code == 0
+        assert "Activated" in result.output
+        assert "gambling" in result.output
+
+    @responses.activate
+    def test_add_category_api_failure(self, cli_runner, tmp_path):
+        """add-category handles API failure."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        # Mock API failure
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/testprofile/parentalControl/categories",
+            json={"error": "Failed"},
+            status=500,
+        )
+
+        result = cli_runner.invoke(
+            nextdns_cli, ["add-category", "gambling", "--config-dir", str(tmp_path)]
+        )
+        assert result.exit_code == 1
+        assert "Failed" in result.output or "Error" in result.output
+
+    def test_add_category_blocked_during_panic(self, cli_runner, tmp_path):
+        """add-category is blocked during panic mode."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        with patch("nextdns_blocker.nextdns_cli.is_panic_mode", return_value=True):
+            result = cli_runner.invoke(
+                nextdns_cli, ["add-category", "gambling", "--config-dir", str(tmp_path)]
+            )
+            assert result.exit_code == 1
+            assert "panic mode" in result.output
+
+
+class TestNextDNSCLIRemoveCategorySuccess:
+    """Tests for nextdns remove-category command success paths."""
+
+    @responses.activate
+    def test_remove_category_succeeds(self, cli_runner, tmp_path):
+        """remove-category succeeds with valid category."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        # Mock API response
+        responses.add(
+            responses.DELETE,
+            f"{API_URL}/profiles/testprofile/parentalControl/categories/gambling",
+            json={"success": True},
+            status=200,
+        )
+
+        result = cli_runner.invoke(
+            nextdns_cli, ["remove-category", "gambling", "--config-dir", str(tmp_path)]
+        )
+        assert result.exit_code == 0
+        assert "Deactivated" in result.output
+        assert "gambling" in result.output
+
+    def test_remove_category_blocked_during_panic(self, cli_runner, tmp_path):
+        """remove-category is blocked during panic mode."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        with patch("nextdns_blocker.nextdns_cli.is_panic_mode", return_value=True):
+            result = cli_runner.invoke(
+                nextdns_cli, ["remove-category", "gambling", "--config-dir", str(tmp_path)]
+            )
+            assert result.exit_code == 1
+            assert "panic mode" in result.output
+
+
+class TestNextDNSCLIAddServiceSuccess:
+    """Tests for nextdns add-service command success paths."""
+
+    @responses.activate
+    def test_add_service_succeeds(self, cli_runner, tmp_path):
+        """add-service succeeds with valid service."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        # Mock API response
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/testprofile/parentalControl/services",
+            json={"success": True},
+            status=200,
+        )
+
+        result = cli_runner.invoke(
+            nextdns_cli, ["add-service", "tiktok", "--config-dir", str(tmp_path)]
+        )
+        assert result.exit_code == 0
+        assert "Activated" in result.output
+        assert "tiktok" in result.output
+
+    def test_add_service_blocked_during_panic(self, cli_runner, tmp_path):
+        """add-service is blocked during panic mode."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        with patch("nextdns_blocker.nextdns_cli.is_panic_mode", return_value=True):
+            result = cli_runner.invoke(
+                nextdns_cli, ["add-service", "tiktok", "--config-dir", str(tmp_path)]
+            )
+            assert result.exit_code == 1
+            assert "panic mode" in result.output
+
+
+class TestNextDNSCLIRemoveServiceSuccess:
+    """Tests for nextdns remove-service command success paths."""
+
+    @responses.activate
+    def test_remove_service_succeeds(self, cli_runner, tmp_path):
+        """remove-service succeeds with valid service."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        # Mock API response
+        responses.add(
+            responses.DELETE,
+            f"{API_URL}/profiles/testprofile/parentalControl/services/tiktok",
+            json={"success": True},
+            status=200,
+        )
+
+        result = cli_runner.invoke(
+            nextdns_cli, ["remove-service", "tiktok", "--config-dir", str(tmp_path)]
+        )
+        assert result.exit_code == 0
+        assert "Deactivated" in result.output
+        assert "tiktok" in result.output
+
+    def test_remove_service_blocked_during_panic(self, cli_runner, tmp_path):
+        """remove-service is blocked during panic mode."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Create minimal config
+        env_file = tmp_path / ".env"
+        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": []}')
+
+        with patch("nextdns_blocker.nextdns_cli.is_panic_mode", return_value=True):
+            result = cli_runner.invoke(
+                nextdns_cli, ["remove-service", "tiktok", "--config-dir", str(tmp_path)]
+            )
+            assert result.exit_code == 1
+            assert "panic mode" in result.output
+
+
+class TestNextDNSCLIConfigurationErrors:
+    """Tests for configuration error handling in nextdns commands."""
+
+    def test_status_handles_config_error(self, cli_runner, tmp_path):
+        """status command handles missing config gracefully."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Don't create any config files
+        result = cli_runner.invoke(nextdns_cli, ["status", "--config-dir", str(tmp_path)])
+        assert result.exit_code == 1
+        assert "Error" in result.output
+
+    def test_list_handles_config_error(self, cli_runner, tmp_path):
+        """list command handles missing config gracefully."""
+        from nextdns_blocker.nextdns_cli import nextdns_cli
+
+        # Don't create any config files
+        result = cli_runner.invoke(nextdns_cli, ["list", "--config-dir", str(tmp_path)])
+        # Should not crash, may show error or empty state
+        # With no config file, load_nextdns_config returns None
+        assert result.exit_code == 0 or "Error" in result.output
+
+
 # =============================================================================
 # SYNC FUNCTION TESTS
 # =============================================================================
