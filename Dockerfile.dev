@@ -1,7 +1,7 @@
 # NextDNS Blocker - Development Dockerfile
 # Optimized for local development with hot-reload support
 
-FROM python:3.12-alpine
+FROM python:3.14-alpine
 
 # Labels
 LABEL maintainer="aristeoibarra"
