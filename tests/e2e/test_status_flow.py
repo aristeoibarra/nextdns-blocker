@@ -114,9 +114,10 @@ class TestStatusBasic:
                     )
 
         assert result.exit_code == 0
-        assert "youtube.com" in result.output
-        assert "twitter.com" in result.output
+        # New UX shows summary counts, not individual domains
         assert "blocked" in result.output.lower()
+        # Mismatch is shown for twitter.com (should be blocked but isn't)
+        assert "mismatch" in result.output.lower()
 
     @responses.activate
     def test_status_shows_allowlist(
@@ -158,8 +159,9 @@ class TestStatusBasic:
                     )
 
         assert result.exit_code == 0
+        # New UX shows allowlist summary, not individual domains
         assert "Allowlist" in result.output
-        assert "trusted-site.com" in result.output
+        assert "active" in result.output.lower()
 
 
 class TestStatusPauseState:
@@ -241,7 +243,9 @@ class TestStatusPauseState:
                             )
 
         assert result.exit_code == 0
-        assert "inactive" in result.output.lower()
+        # New UX: "silence is golden" - pause not shown when inactive
+        # Just verify pause ACTIVE is not shown
+        assert "pause" not in result.output.lower() or "active" not in result.output.lower()
 
 
 class TestStatusScheduler:
@@ -319,7 +323,8 @@ class TestStatusScheduler:
 
         assert result.exit_code == 0
         assert "Scheduler" in result.output
-        assert "ok" in result.output.lower()
+        # New UX shows "running" instead of "ok"
+        assert "running" in result.output.lower()
 
     @responses.activate
     def test_status_shows_scheduler_macos(
@@ -401,9 +406,9 @@ class TestStatusProtectedDomains:
                     )
 
         assert result.exit_code == 0
+        # New UX shows protected domains in a separate line
+        assert "protected" in result.output.lower()
         assert "gambling.com" in result.output
-        # Now shows [never] instead of [protected] for backward compatibility
-        assert "[never]" in result.output.lower()
 
 
 class TestStatusErrors:

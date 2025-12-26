@@ -4,6 +4,147 @@
     "editor": null,
     "timezone": null
   },
+  "nextdns": {
+    "parental_control": {
+      "safe_search": true,
+      "youtube_restricted_mode": false,
+      "block_bypass": true
+    },
+    "categories": [
+      {
+        "id": "gambling",
+        "description": "Betting and gambling sites - always blocked",
+        "unblock_delay": "never",
+        "schedule": null
+      },
+      {
+        "id": "porn",
+        "description": "Adult content - always blocked",
+        "unblock_delay": "never",
+        "schedule": null
+      }
+    ],
+    "services": [
+      {
+        "id": "tiktok",
+        "description": "TikTok - evenings and weekends only",
+        "unblock_delay": "4h",
+        "schedule": {
+          "available_hours": [
+            {
+              "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+              "time_ranges": [
+                {"start": "18:00", "end": "22:00"}
+              ]
+            },
+            {
+              "days": ["saturday", "sunday"],
+              "time_ranges": [
+                {"start": "10:00", "end": "23:00"}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "netflix",
+        "description": "Netflix - evenings only",
+        "unblock_delay": "2h",
+        "schedule": {
+          "available_hours": [
+            {
+              "days": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+              "time_ranges": [
+                {"start": "19:00", "end": "23:00"}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "fortnite",
+        "description": "Fortnite - weekends only",
+        "unblock_delay": "1h",
+        "schedule": {
+          "available_hours": [
+            {
+              "days": ["saturday", "sunday"],
+              "time_ranges": [
+                {"start": "10:00", "end": "22:00"}
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "categories": [
+    {
+      "id": "social-media",
+      "description": "Social networks and messaging",
+      "unblock_delay": "4h",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              {"start": "12:00", "end": "13:00"},
+              {"start": "18:00", "end": "22:00"}
+            ]
+          },
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              {"start": "10:00", "end": "23:00"}
+            ]
+          }
+        ]
+      },
+      "domains": [
+        "instagram.com",
+        "tiktok.com",
+        "snapchat.com"
+      ]
+    },
+    {
+      "id": "gambling",
+      "description": "Gambling and betting sites - never unblockable",
+      "unblock_delay": "never",
+      "schedule": null,
+      "domains": [
+        "caliente.mx",
+        "codere.mx",
+        "stake.com"
+      ]
+    },
+    {
+      "id": "streaming",
+      "description": "Video streaming - evenings and weekends only",
+      "unblock_delay": "2h",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            "time_ranges": [
+              {"start": "19:00", "end": "23:00"}
+            ]
+          },
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              {"start": "10:00", "end": "23:00"}
+            ]
+          }
+        ]
+      },
+      "domains": [
+        "netflix.com",
+        "hbomax.com",
+        "disneyplus.com",
+        "primevideo.com"
+      ]
+    }
+  ],
   "blocklist": [
     {
       "domain": "example.com",

@@ -65,37 +65,37 @@ class TestValidateDomain:
         assert validate_domain("example!.com") is False
         assert validate_domain("example@.com") is False
 
-    def test_duplicate_domains_in_denylist(self, tmp_path):
+    def test_duplicate_domains_in_blocklist(self, tmp_path):
+        """Test that duplicate domains in blocklist raise ConfigurationError."""
         config = {
-            "denylist": [
+            "blocklist": [
                 {"domain": "facebook.com"},
                 {"domain": "facebook.com"},
             ]
         }
 
-        # tmp_path is provided by pytest automatically
         config_file = tmp_path / "config.json"
-
-        # Write config to a temporary file
         config_file.write_text(json.dumps(config))
 
-        # load_domains expects a file path, not a dict
+        # load_domains expects a directory path, not a file path
         with pytest.raises(ConfigurationError):
-            load_domains(config_file)
+            load_domains(str(tmp_path))
 
     def test_duplicate_domains_in_allowlist(self, tmp_path):
+        """Test that duplicate domains in allowlist raise ConfigurationError."""
         config = {
+            "blocklist": [{"domain": "other.com"}],  # Required to pass initial validation
             "allowlist": [
                 {"domain": "example.com"},
                 {"domain": "example.com"},
-            ]
+            ],
         }
 
         config_file = tmp_path / "config.json"
         config_file.write_text(json.dumps(config))
 
         with pytest.raises(ConfigurationError):
-            load_domains(config_file)
+            load_domains(str(tmp_path))
 
 
 class TestLoadConfig:
