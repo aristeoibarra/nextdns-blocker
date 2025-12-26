@@ -683,6 +683,37 @@ def validate_no_duplicate_domains(
     return errors
 
 
+def validate_no_duplicates(entries: list[dict[str, Any]], list_name: str) -> list[str]:
+    """
+    Validate that no domain appears more than once in the same list.
+
+    Args:
+        entries: List of domain configurations
+        list_name: Name of the list for error messages (e.g., "blocklist", "allowlist")
+
+    Returns:
+        List of error messages (empty if no duplicates)
+    """
+    errors: list[str] = []
+    seen: dict[str, int] = {}
+
+    for index, entry in enumerate(entries):
+        domain = entry.get("domain", "")
+        if not domain or not isinstance(domain, str):
+            continue
+
+        domain_lower = domain.strip().lower()
+        if domain_lower in seen:
+            errors.append(
+                f"Duplicate domain '{domain}' in {list_name} at index {index}. "
+                f"First occurrence at index {seen[domain_lower]}."
+            )
+        else:
+            seen[domain_lower] = index
+
+    return errors
+
+
 def validate_unique_category_ids(categories: list[dict[str, Any]]) -> list[str]:
     """
     Validate that all category IDs are unique.
@@ -1085,6 +1116,12 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
     # Validate each domain in allowlist
     for idx, allowlist_config in enumerate(allowlist):
         all_errors.extend(validate_allowlist_config(allowlist_config, idx))
+
+    # Validate no duplicate domains within blocklist (issue #140)
+    all_errors.extend(validate_no_duplicates(blocklist, "blocklist"))
+
+    # Validate no duplicate domains within allowlist (issue #140)
+    all_errors.extend(validate_no_duplicates(allowlist, "allowlist"))
 
     # Validate no duplicate domains across categories and blocklist
     all_errors.extend(validate_no_duplicate_domains(categories, blocklist))
