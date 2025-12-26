@@ -1,0 +1,144 @@
+---
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+---
+
+<StarlightPage
+  frontmatter={{ title: "NextDNS Blocker" }}
+  hasSidebar={false}
+  headings={[]}
+>
+
+  <!-- Hero -->
+  <section style="max-width: 960px; margin: 5rem auto 4rem;">
+    <h1 style="font-size: 3rem; line-height: 1.2;">
+      Deterministic Internet Access Control
+    </h1>
+
+    <p style="font-size: 1.15rem; max-width: 720px; margin-top: 1.5rem;">
+      NextDNS Blocker is a CLI tool that adds schedule-based enforcement,
+      unblock delays, and emergency controls on top of NextDNS.
+      It is designed for predictable behavior, operational safety,
+      and long-running reliability.
+    </p>
+
+    <div style="margin-top: 2.5rem; display: flex; gap: 1rem;">
+      <a
+        href="/getting-started/"
+        style="
+          padding: 0.75rem 1.25rem;
+          background: var(--sl-color-accent);
+          color: white;
+          border-radius: 6px;
+          text-decoration: none;
+          font-weight: 500;
+        "
+      >
+        Get Started
+      </a>
+
+      <a
+        href="/features/"
+        style="
+          padding: 0.75rem 1.25rem;
+          border: 1px solid var(--sl-color-gray-5);
+          border-radius: 6px;
+          text-decoration: none;
+          font-weight: 500;
+        "
+      >
+        View Features
+      </a>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section style="max-width: 1100px; margin: 4rem auto;">
+    <h2 style="margin-bottom: 2rem;">Core Capabilities</h2>
+
+    <div
+      style="
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1.5rem;
+      "
+    >
+      <div style="padding: 1.5rem; border: 1px solid var(--sl-color-gray-5); border-radius: 8px;">
+        <h3>Fine-Grained Scheduling</h3>
+        <p>
+          Control exactly when individual domains are accessible using
+          explicit schedules, avoiding broad categories or permanent rules.
+        </p>
+      </div>
+
+      <div style="padding: 1.5rem; border: 1px solid var(--sl-color-gray-5); border-radius: 8px;">
+        <h3>Continuous Enforcement</h3>
+        <p>
+          A watchdog process continuously reconciles configuration state
+          with NextDNS, correcting drift and reapplying rules automatically.
+        </p>
+      </div>
+
+      <div style="padding: 1.5rem; border: 1px solid var(--sl-color-gray-5); border-radius: 8px;">
+        <h3>Intentional Friction</h3>
+        <p>
+          Configurable unblock delays introduce a deliberate pause before
+          overrides are applied, discouraging impulsive access.
+        </p>
+      </div>
+
+      <div style="padding: 1.5rem; border: 1px solid var(--sl-color-gray-5); border-radius: 8px;">
+        <h3>Fail-Safe Controls</h3>
+        <p>
+          Panic mode enables immediate lockdown of configured domains,
+          providing a safety mechanism during critical situations.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Philosophy -->
+  <section style="max-width: 900px; margin: 4rem auto;">
+    <h2>Design Philosophy</h2>
+
+    <p style="margin-top: 1rem;">
+      NextDNS Blocker treats configuration as the source of truth.
+      All actions are explicit, auditable, and repeatable,
+      making the system suitable for shared machines,
+      long-running setups, and structured access control.
+    </p>
+  </section>
+
+  <!-- CTA -->
+  <section
+    style="
+      max-width: 900px;
+      margin: 5rem auto 3rem;
+      padding: 2rem;
+      border: 1px solid var(--sl-color-gray-5);
+      border-radius: 8px;
+    "
+  >
+    <h2>Get Started</h2>
+
+    <p style="margin-top: 1rem;">
+      Follow the setup guide to install the CLI and define your first schedules.
+    </p>
+
+    <a
+      href="/getting-started/"
+      style="
+        display: inline-block;
+        margin-top: 1.25rem;
+        padding: 0.75rem 1.25rem;
+        background: var(--sl-color-accent);
+        color: white;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 500;
+      "
+    >
+      Go to Getting Started
+    </a>
+  </section>
+
+</StarlightPage>
