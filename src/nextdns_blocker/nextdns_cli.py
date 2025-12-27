@@ -217,6 +217,12 @@ def cmd_add_category(category_id: str, config_dir: Optional[Path]) -> None:
     try:
         client, config = _get_client(config_dir)
 
+        # Check if category is already active
+        is_active = client.is_category_active(category_id)
+        if is_active is True:
+            console.print(f"\n  [yellow]Category already active: {category_id}[/yellow]\n")
+            return
+
         if client.activate_category(category_id):
             audit_log("PC_ADD_CATEGORY", category_id)
             console.print(f"\n  [green]Activated category: {category_id}[/green]\n")
@@ -300,6 +306,12 @@ def cmd_add_service(service_id: str, config_dir: Optional[Path]) -> None:
 
     try:
         client, config = _get_client(config_dir)
+
+        # Check if service is already active
+        is_active = client.is_service_active(service_id)
+        if is_active is True:
+            console.print(f"\n  [yellow]Service already active: {service_id}[/yellow]\n")
+            return
 
         if client.activate_service(service_id):
             audit_log("PC_ADD_SERVICE", service_id)
