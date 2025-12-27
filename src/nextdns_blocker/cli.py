@@ -33,6 +33,7 @@ from .completion import (
 )
 from .config import (
     DEFAULT_PAUSE_MINUTES,
+    _expand_categories,
     get_config_dir,
     load_config,
     load_domains,
@@ -1871,17 +1872,31 @@ def validate(
 
     domains_list: list[dict[str, Any]] = []
     allowlist_list: list[dict[str, Any]] = []
+    categories_list: list[dict[str, Any]] = []
     if isinstance(domains_data, dict):
         domains_list = domains_data.get("blocklist", [])
         allowlist_list = domains_data.get("allowlist", [])
+        categories_list = domains_data.get("categories", [])
+
+    # Expand categories to get individual domain entries
+    expanded_category_domains = _expand_categories(categories_list)
+    total_domains = len(domains_list) + len(expanded_category_domains)
+    categories_count = len(categories_list)
 
     # Update summary
-    results["summary"]["domains_count"] = len(domains_list)
+    results["summary"]["domains_count"] = total_domains
     results["summary"]["allowlist_count"] = len(allowlist_list)
 
     # Check 3: Count and validate domains
-    if domains_list:
-        add_check("domains configured", True, f"{len(domains_list)} domains")
+    if total_domains > 0:
+        if categories_count > 0:
+            add_check(
+                "domains configured",
+                True,
+                f"{total_domains} domains ({len(domains_list)} blocklist + {len(expanded_category_domains)} from {categories_count} categories)",
+            )
+        else:
+            add_check("domains configured", True, f"{total_domains} domains")
     else:
         add_check("domains configured", False, "no domains found")
 
@@ -1889,8 +1904,11 @@ def validate(
     if allowlist_list:
         add_check("allowlist entries", True, f"{len(allowlist_list)} entries")
 
+    # Combine blocklist and expanded category domains for validation
+    all_blocked_domains = domains_list + expanded_category_domains
+
     # Check 5: Count protected domains
-    protected_domains = [d for d in domains_list if d.get("protected", False)]
+    protected_domains = [d for d in all_blocked_domains if d.get("protected", False)]
     results["summary"]["protected_count"] = len(protected_domains)
     if protected_domains:
         add_check("protected domains", True, f"{len(protected_domains)} protected")
@@ -1899,7 +1917,7 @@ def validate(
     domain_errors: list[str] = []
     schedule_count = 0
 
-    for idx, domain_config in enumerate(domains_list):
+    for idx, domain_config in enumerate(all_blocked_domains):
         errors = validate_domain_config(domain_config, idx)
         domain_errors.extend(errors)
         if domain_config.get("schedule"):
