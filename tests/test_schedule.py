@@ -326,7 +326,8 @@ class TestGetBlockingStatus:
         evaluator = ScheduleEvaluator()
         status = evaluator.get_blocking_status(sample_domain_config)
         assert isinstance(status, dict)
-        assert len(status) == 3  # domain, currently_blocked, has_schedule
+        assert len(status) == 4  # domain, currently_blocked, has_schedule, schedule_type
+        assert "schedule_type" in status
 
 
 class TestShouldAllow:

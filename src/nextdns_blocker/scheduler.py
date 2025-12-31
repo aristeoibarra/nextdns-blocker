@@ -102,7 +102,9 @@ class ScheduleEvaluator:
             # Current is in range if it's after start OR before/at end
             return current >= start or current <= end
 
-    def _check_overnight_yesterday(self, now: datetime, schedule: dict[str, Any]) -> bool:
+    def _check_overnight_yesterday(
+        self, now: datetime, schedule: dict[str, Any], hours_key: str = "available_hours"
+    ) -> bool:
         """
         Check if current time falls within an overnight schedule that started yesterday.
 
@@ -131,7 +133,8 @@ class ScheduleEvaluator:
 
         Args:
             now: Current datetime with timezone
-            schedule: Schedule configuration containing 'available_hours'
+            schedule: Schedule configuration containing hours blocks
+            hours_key: Key to use ('available_hours' or 'blocked_hours')
 
         Returns:
             True if current time is within yesterday's overnight window
@@ -140,7 +143,7 @@ class ScheduleEvaluator:
         yesterday_day = WEEKDAY_TO_DAY[yesterday.weekday()]
         current_time = now.time()
 
-        for block in schedule.get("available_hours", []):
+        for block in schedule.get(hours_key, []):
             days = [d.lower() for d in block.get("days", [])]
             if yesterday_day not in days:
                 continue
@@ -161,6 +164,10 @@ class ScheduleEvaluator:
         """
         Determine if a domain should be blocked based on its schedule.
 
+        Supports two types of schedules:
+        - available_hours: Domain accessible ONLY during specified times (blocked otherwise)
+        - blocked_hours: Domain blocked ONLY during specified times (accessible otherwise)
+
         Args:
             schedule: Schedule configuration (the 'schedule' field from domain config)
 
@@ -168,31 +175,61 @@ class ScheduleEvaluator:
             True if domain should be blocked, False if available
         """
         # No schedule = always blocked
-        if not schedule or "available_hours" not in schedule:
+        if not schedule:
+            return True
+
+        has_available = "available_hours" in schedule
+        has_blocked = "blocked_hours" in schedule
+
+        # No hours defined = always blocked
+        if not has_available and not has_blocked:
             return True
 
         now = self._get_current_time()
         current_day = WEEKDAY_TO_DAY[now.weekday()]
         current_time = now.time()
 
-        # Check today's schedule
-        for block in schedule.get("available_hours", []):
-            days = [d.lower() for d in block.get("days", [])]
-            if current_day not in days:
-                continue
+        if has_available:
+            # available_hours: Block UNLESS we're in an available window
+            # Check today's schedule
+            for block in schedule.get("available_hours", []):
+                days = [d.lower() for d in block.get("days", [])]
+                if current_day not in days:
+                    continue
 
-            for time_range in block.get("time_ranges", []):
-                start = self.parse_time(time_range["start"])
-                end = self.parse_time(time_range["end"])
+                for time_range in block.get("time_ranges", []):
+                    start = self.parse_time(time_range["start"])
+                    end = self.parse_time(time_range["end"])
 
-                if self.is_time_in_range(current_time, start, end):
-                    return False  # Available, don't block
+                    if self.is_time_in_range(current_time, start, end):
+                        return False  # Available, don't block
 
-        # Check if we're in yesterday's overnight window
-        if self._check_overnight_yesterday(now, schedule):
-            return False  # Still in yesterday's window, don't block
+            # Check if we're in yesterday's overnight window
+            if self._check_overnight_yesterday(now, schedule, "available_hours"):
+                return False  # Still in yesterday's window, don't block
 
-        return True  # Outside all available windows, block
+            return True  # Outside all available windows, block
+
+        else:
+            # blocked_hours: Allow UNLESS we're in a blocked window
+            # Check today's schedule
+            for block in schedule.get("blocked_hours", []):
+                days = [d.lower() for d in block.get("days", [])]
+                if current_day not in days:
+                    continue
+
+                for time_range in block.get("time_ranges", []):
+                    start = self.parse_time(time_range["start"])
+                    end = self.parse_time(time_range["end"])
+
+                    if self.is_time_in_range(current_time, start, end):
+                        return True  # In blocked window, block
+
+            # Check if we're in yesterday's overnight blocked window
+            if self._check_overnight_yesterday(now, schedule, "blocked_hours"):
+                return True  # Still in yesterday's blocked window, block
+
+            return False  # Outside all blocked windows, allow
 
     def should_block_domain(self, domain_config: dict[str, Any]) -> bool:
         """
@@ -214,7 +251,8 @@ class ScheduleEvaluator:
 
         This is the inverse logic of should_block, used for allowlist entries.
         - No schedule = always in allowlist (return True)
-        - Has schedule = only in allowlist during available_hours
+        - Has available_hours = only in allowlist during those times
+        - Has blocked_hours = in allowlist EXCEPT during those times
 
         Args:
             schedule: Schedule configuration (the 'schedule' field from allowlist config)
@@ -223,12 +261,19 @@ class ScheduleEvaluator:
             True if domain should be in allowlist, False if not
         """
         # No schedule = always in allowlist
-        if not schedule or "available_hours" not in schedule:
+        if not schedule:
+            return True
+
+        has_available = "available_hours" in schedule
+        has_blocked = "blocked_hours" in schedule
+
+        # No hours defined = always in allowlist
+        if not has_available and not has_blocked:
             return True
 
         # Has schedule = only allow during available hours (inverse of should_block)
-        # should_block returns True when OUTSIDE available hours
-        # so we return the opposite: True when INSIDE available hours
+        # should_block returns True when blocked, False when available
+        # so we return the opposite: True when available, False when blocked
         return not self.should_block(schedule)
 
     def should_allow_domain(self, domain_config: dict[str, Any]) -> bool:
@@ -257,12 +302,22 @@ class ScheduleEvaluator:
                 - 'domain': Domain name
                 - 'currently_blocked': Whether the domain is currently blocked
                 - 'has_schedule': Whether the domain has a schedule defined
+                - 'schedule_type': 'available_hours', 'blocked_hours', or None
         """
         schedule = domain_config.get("schedule")
-        has_schedule = schedule is not None and "available_hours" in schedule
+        has_available = schedule is not None and "available_hours" in schedule
+        has_blocked = schedule is not None and "blocked_hours" in schedule
+        has_schedule = has_available or has_blocked
+
+        schedule_type = None
+        if has_available:
+            schedule_type = "available_hours"
+        elif has_blocked:
+            schedule_type = "blocked_hours"
 
         return {
             "domain": domain_config.get("domain", "unknown"),
             "currently_blocked": self.should_block(schedule),
             "has_schedule": has_schedule,
+            "schedule_type": schedule_type,
         }

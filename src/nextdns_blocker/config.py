@@ -266,38 +266,26 @@ def get_data_dir() -> Path:
 # =============================================================================
 
 
-def validate_schedule(schedule: dict[str, Any], prefix: str) -> list[str]:
+def _validate_hours_blocks(
+    hours: list[Any], hours_type: str, prefix: str
+) -> tuple[list[str], dict[str, list[tuple[int, int, int]]]]:
     """
-    Validate a schedule configuration.
+    Validate hours blocks (shared logic for available_hours and blocked_hours).
 
     Args:
-        schedule: Schedule configuration dictionary with available_hours
-        prefix: Prefix for error messages (e.g., "'example.com'" or "allowlist 'example.com'")
+        hours: List of hour blocks to validate
+        hours_type: Either 'available_hours' or 'blocked_hours' for error messages
+        prefix: Prefix for error messages
 
     Returns:
-        List of error messages (empty if valid)
+        Tuple of (errors list, day_time_ranges dict for overlap detection)
     """
     errors: list[str] = []
+    day_time_ranges: dict[str, list[tuple[int, int, int]]] = {}
 
-    if not isinstance(schedule, dict):
-        return [f"{prefix}: schedule must be a dictionary"]
-
-    if "available_hours" not in schedule:
-        return errors
-
-    hours = schedule["available_hours"]
-    if not isinstance(hours, list):
-        return [f"{prefix}: available_hours must be a list"]
-
-    # Collect all time ranges per day for overlap detection
-    day_time_ranges: dict[str, list[tuple[int, int, int]]] = (
-        {}
-    )  # day -> [(start_mins, end_mins, block_idx)]
-
-    # Validate each schedule block
     for block_idx, block in enumerate(hours):
         if not isinstance(block, dict):
-            errors.append(f"{prefix}: schedule block #{block_idx} must be a dictionary")
+            errors.append(f"{prefix}: {hours_type} block #{block_idx} must be a dictionary")
             continue
 
         # Validate days
@@ -335,7 +323,7 @@ def validate_schedule(schedule: dict[str, Any], prefix: str) -> list[str]:
                     else:
                         end_valid = False
 
-            # Collect time ranges for overlap detection (only if both start and end are valid)
+            # Collect time ranges for overlap detection
             if start_valid and end_valid:
                 start_h, start_m = map(int, time_range["start"].split(":"))
                 end_h, end_m = map(int, time_range["end"].split(":"))
@@ -346,6 +334,50 @@ def validate_schedule(schedule: dict[str, Any], prefix: str) -> list[str]:
                     if day not in day_time_ranges:
                         day_time_ranges[day] = []
                     day_time_ranges[day].append((start_mins, end_mins, block_idx))
+
+    return errors, day_time_ranges
+
+
+def validate_schedule(schedule: dict[str, Any], prefix: str) -> list[str]:
+    """
+    Validate a schedule configuration.
+
+    Supports both available_hours and blocked_hours:
+    - available_hours: Domain accessible ONLY during specified times
+    - blocked_hours: Domain blocked ONLY during specified times
+
+    Args:
+        schedule: Schedule configuration dictionary with available_hours or blocked_hours
+        prefix: Prefix for error messages (e.g., "'example.com'" or "allowlist 'example.com'")
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    if not isinstance(schedule, dict):
+        return [f"{prefix}: schedule must be a dictionary"]
+
+    has_available = "available_hours" in schedule
+    has_blocked = "blocked_hours" in schedule
+
+    # Must have exactly one of available_hours or blocked_hours
+    if has_available and has_blocked:
+        return [f"{prefix}: schedule cannot have both 'available_hours' and 'blocked_hours'"]
+
+    if not has_available and not has_blocked:
+        return errors  # Empty schedule is valid (means always blocked for denylist)
+
+    # Determine which hours type we're validating
+    hours_type = "available_hours" if has_available else "blocked_hours"
+    hours = schedule[hours_type]
+
+    if not isinstance(hours, list):
+        return [f"{prefix}: {hours_type} must be a list"]
+
+    # Validate hour blocks using shared logic
+    block_errors, day_time_ranges = _validate_hours_blocks(hours, hours_type, prefix)
+    errors.extend(block_errors)
 
     # Check for overlapping time ranges on the same day
     for day, ranges in day_time_ranges.items():
@@ -374,18 +406,140 @@ def validate_schedule(schedule: dict[str, Any], prefix: str) -> list[str]:
     return errors
 
 
+def validate_schedule_name(name: str) -> bool:
+    """
+    Validate a schedule template name.
+
+    Schedule names must:
+    - Start with a lowercase letter
+    - Contain only lowercase letters, numbers, and hyphens
+    - Be between 1 and 50 characters
+
+    Args:
+        name: Schedule name to validate
+
+    Returns:
+        True if valid, False otherwise
+    """
+    if not name or not isinstance(name, str):
+        return False
+    if len(name) > 50:
+        return False
+    # Must start with lowercase letter, contain only lowercase, numbers, hyphens
+    import re
+
+    return bool(re.match(r"^[a-z][a-z0-9-]*$", name))
+
+
+def validate_schedules_section(schedules: dict[str, Any]) -> list[str]:
+    """
+    Validate the schedules section containing reusable schedule templates.
+
+    Args:
+        schedules: Dictionary of schedule name -> schedule definition
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    if not isinstance(schedules, dict):
+        return ["'schedules' must be an object"]
+
+    for name, schedule_def in schedules.items():
+        if not validate_schedule_name(name):
+            errors.append(
+                f"schedules: invalid name '{name}' "
+                f"(must start with lowercase letter, contain only lowercase letters, numbers, hyphens)"
+            )
+            continue
+
+        prefix = f"schedules['{name}']"
+        schedule_errors = validate_schedule(schedule_def, prefix)
+        errors.extend(schedule_errors)
+
+    return errors
+
+
+def validate_schedule_or_reference(
+    schedule: Any, prefix: str, valid_schedule_names: set[str]
+) -> list[str]:
+    """
+    Validate a schedule that can be either inline or a reference to a template.
+
+    Args:
+        schedule: Schedule config (dict for inline, str for reference)
+        prefix: Prefix for error messages
+        valid_schedule_names: Set of valid schedule template names
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    if schedule is None:
+        return []
+
+    if isinstance(schedule, str):
+        # It's a reference to a schedule template
+        if schedule not in valid_schedule_names:
+            available = (
+                ", ".join(sorted(valid_schedule_names)) if valid_schedule_names else "(none)"
+            )
+            return [
+                f"{prefix}: unknown schedule '{schedule}'. " f"Available schedules: {available}"
+            ]
+        return []
+
+    if isinstance(schedule, dict):
+        # It's an inline schedule
+        return validate_schedule(schedule, prefix)
+
+    return [f"{prefix}: schedule must be a string (reference) or object (inline)"]
+
+
+def resolve_schedule_reference(
+    schedule: Any, schedules: dict[str, dict[str, Any]]
+) -> Optional[dict[str, Any]]:
+    """
+    Resolve a schedule reference to its definition.
+
+    Args:
+        schedule: Schedule config (dict for inline, str for reference, None for no schedule)
+        schedules: Dictionary of schedule templates
+
+    Returns:
+        Resolved schedule dict, or None if no schedule
+    """
+    if schedule is None:
+        return None
+
+    if isinstance(schedule, str):
+        # Return a copy to avoid modifying the template
+        template = schedules.get(schedule)
+        if template:
+            return dict(template)
+        return None
+
+    if isinstance(schedule, dict):
+        return schedule
+
+    return None
+
+
 # =============================================================================
 # DOMAIN CONFIG VALIDATION
 # =============================================================================
 
 
-def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
+def validate_domain_config(
+    config: dict[str, Any], index: int, valid_schedule_names: Optional[set[str]] = None
+) -> list[str]:
     """
     Validate a single domain configuration entry.
 
     Args:
         config: Domain configuration dictionary
         index: Index in the domains array (for error messages)
+        valid_schedule_names: Set of valid schedule template names (if None, only inline validated)
 
     Returns:
         List of error messages (empty if valid)
@@ -415,19 +569,27 @@ def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
     # Check schedule if present
     schedule = config.get("schedule")
     if schedule is not None:
-        schedule_errors = validate_schedule(schedule, f"'{domain}'")
+        if valid_schedule_names is not None:
+            schedule_errors = validate_schedule_or_reference(
+                schedule, f"'{domain}'", valid_schedule_names
+            )
+        else:
+            schedule_errors = validate_schedule(schedule, f"'{domain}'")
         errors.extend(schedule_errors)
 
     return errors
 
 
-def validate_allowlist_config(config: dict[str, Any], index: int) -> list[str]:
+def validate_allowlist_config(
+    config: dict[str, Any], index: int, valid_schedule_names: Optional[set[str]] = None
+) -> list[str]:
     """
     Validate a single allowlist configuration entry.
 
     Args:
         config: Allowlist configuration dictionary
         index: Index in the allowlist array (for error messages)
+        valid_schedule_names: Set of valid schedule template names (if None, only inline validated)
 
     Returns:
         List of error messages (empty if valid)
@@ -449,19 +611,27 @@ def validate_allowlist_config(config: dict[str, Any], index: int) -> list[str]:
     # Validate schedule if present (allowlist now supports scheduled entries)
     schedule = config.get("schedule")
     if schedule is not None:
-        schedule_errors = validate_schedule(schedule, f"allowlist '{domain}'")
+        if valid_schedule_names is not None:
+            schedule_errors = validate_schedule_or_reference(
+                schedule, f"allowlist '{domain}'", valid_schedule_names
+            )
+        else:
+            schedule_errors = validate_schedule(schedule, f"allowlist '{domain}'")
         errors.extend(schedule_errors)
 
     return errors
 
 
-def validate_category_config(config: dict[str, Any], index: int) -> list[str]:
+def validate_category_config(
+    config: dict[str, Any], index: int, valid_schedule_names: Optional[set[str]] = None
+) -> list[str]:
     """
     Validate a single category configuration entry.
 
     Args:
         config: Category configuration dictionary
         index: Index in the categories array (for error messages)
+        valid_schedule_names: Set of valid schedule template names (if None, only inline validated)
 
     Returns:
         List of error messages (empty if valid)
@@ -520,7 +690,10 @@ def validate_category_config(config: dict[str, Any], index: int) -> list[str]:
     # Validate schedule if present (optional, can be null)
     schedule = config.get("schedule")
     if schedule is not None:
-        schedule_errors = validate_schedule(schedule, prefix)
+        if valid_schedule_names is not None:
+            schedule_errors = validate_schedule_or_reference(schedule, prefix, valid_schedule_names)
+        else:
+            schedule_errors = validate_schedule(schedule, prefix)
         errors.extend(schedule_errors)
 
     return errors
@@ -815,13 +988,16 @@ def validate_unique_category_ids(categories: list[dict[str, Any]]) -> list[str]:
 # =============================================================================
 
 
-def validate_nextdns_category(config: dict[str, Any], index: int) -> list[str]:
+def validate_nextdns_category(
+    config: dict[str, Any], index: int, valid_schedule_names: Optional[set[str]] = None
+) -> list[str]:
     """
     Validate a single NextDNS native category configuration entry.
 
     Args:
         config: NextDNS category configuration dictionary
         index: Index in the categories array (for error messages)
+        valid_schedule_names: Set of valid schedule template names (if None, only inline validated)
 
     Returns:
         List of error messages (empty if valid)
@@ -864,19 +1040,25 @@ def validate_nextdns_category(config: dict[str, Any], index: int) -> list[str]:
     # Validate schedule if present (optional, can be null)
     schedule = config.get("schedule")
     if schedule is not None:
-        schedule_errors = validate_schedule(schedule, prefix)
+        if valid_schedule_names is not None:
+            schedule_errors = validate_schedule_or_reference(schedule, prefix, valid_schedule_names)
+        else:
+            schedule_errors = validate_schedule(schedule, prefix)
         errors.extend(schedule_errors)
 
     return errors
 
 
-def validate_nextdns_service(config: dict[str, Any], index: int) -> list[str]:
+def validate_nextdns_service(
+    config: dict[str, Any], index: int, valid_schedule_names: Optional[set[str]] = None
+) -> list[str]:
     """
     Validate a single NextDNS native service configuration entry.
 
     Args:
         config: NextDNS service configuration dictionary
         index: Index in the services array (for error messages)
+        valid_schedule_names: Set of valid schedule template names (if None, only inline validated)
 
     Returns:
         List of error messages (empty if valid)
@@ -920,7 +1102,10 @@ def validate_nextdns_service(config: dict[str, Any], index: int) -> list[str]:
     # Validate schedule if present (optional, can be null)
     schedule = config.get("schedule")
     if schedule is not None:
-        schedule_errors = validate_schedule(schedule, prefix)
+        if valid_schedule_names is not None:
+            schedule_errors = validate_schedule_or_reference(schedule, prefix, valid_schedule_names)
+        else:
+            schedule_errors = validate_schedule(schedule, prefix)
         errors.extend(schedule_errors)
 
     return errors
@@ -955,12 +1140,15 @@ def validate_nextdns_parental_control(config: dict[str, Any]) -> list[str]:
     return errors
 
 
-def validate_nextdns_config(nextdns_config: dict[str, Any]) -> list[str]:
+def validate_nextdns_config(
+    nextdns_config: dict[str, Any], valid_schedule_names: Optional[set[str]] = None
+) -> list[str]:
     """
     Validate the complete nextdns configuration section.
 
     Args:
         nextdns_config: The 'nextdns' section from config.json
+        valid_schedule_names: Set of valid schedule template names (if None, only inline validated)
 
     Returns:
         List of error messages (empty if valid)
@@ -985,7 +1173,7 @@ def validate_nextdns_config(nextdns_config: dict[str, Any]) -> list[str]:
             if not isinstance(category_config, dict):
                 errors.append(f"nextdns.categories[{idx}]: must be an object")
                 continue
-            errors.extend(validate_nextdns_category(category_config, idx))
+            errors.extend(validate_nextdns_category(category_config, idx, valid_schedule_names))
 
             # Check for duplicate category IDs
             cat_id = category_config.get("id")
@@ -1006,7 +1194,7 @@ def validate_nextdns_config(nextdns_config: dict[str, Any]) -> list[str]:
             if not isinstance(service_config, dict):
                 errors.append(f"nextdns.services[{idx}]: must be an object")
                 continue
-            errors.extend(validate_nextdns_service(service_config, idx))
+            errors.extend(validate_nextdns_service(service_config, idx, valid_schedule_names))
 
             # Check for duplicate service IDs
             svc_id = service_config.get("id")
@@ -1052,12 +1240,40 @@ def load_nextdns_config(script_dir: str) -> Optional[dict[str, Any]]:
     if nextdns_config is None:
         return None
 
+    # Load schedule templates for reference validation
+    schedules: dict[str, dict[str, Any]] = config.get("schedules", {})
+    valid_schedule_names: Optional[set[str]] = None
+    if isinstance(schedules, dict) and schedules:
+        # Validate schedules section first
+        schedule_errors = validate_schedules_section(schedules)
+        if schedule_errors:
+            for error in schedule_errors:
+                logger.error(error)
+            raise ConfigurationError(f"Schedule validation failed: {len(schedule_errors)} error(s)")
+        valid_schedule_names = set(schedules.keys())
+
     # Validate the nextdns configuration
-    errors = validate_nextdns_config(nextdns_config)
+    errors = validate_nextdns_config(nextdns_config, valid_schedule_names)
     if errors:
         for error in errors:
             logger.error(error)
         raise ConfigurationError(f"NextDNS configuration validation failed: {len(errors)} error(s)")
+
+    # Resolve schedule references in nextdns categories and services
+    if valid_schedule_names:
+        categories = nextdns_config.get("categories", [])
+        for category in categories:
+            schedule = category.get("schedule")
+            if schedule is not None:
+                resolved = resolve_schedule_reference(schedule, schedules)
+                category["schedule"] = resolved
+
+        services = nextdns_config.get("services", [])
+        for service in services:
+            schedule = service.get("schedule")
+            if schedule is not None:
+                resolved = resolve_schedule_reference(schedule, schedules)
+                service["schedule"] = resolved
 
     return nextdns_config
 
@@ -1146,6 +1362,20 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
     if not isinstance(config, dict):
         raise ConfigurationError("Config must be a JSON object")
 
+    # Load schedule templates (optional, defaults to empty)
+    schedules: dict[str, dict[str, Any]] = config.get("schedules", {})
+    if not isinstance(schedules, dict):
+        raise ConfigurationError("'schedules' must be an object")
+
+    # Validate schedule templates and get valid names
+    schedule_errors = validate_schedules_section(schedules)
+    if schedule_errors:
+        for error in schedule_errors:
+            logger.error(error)
+        raise ConfigurationError(f"Schedule validation failed: {len(schedule_errors)} error(s)")
+
+    valid_schedule_names: set[str] = set(schedules.keys())
+
     # Load blocklist (can be empty if categories exist)
     blocklist = config.get("blocklist", [])
     if not isinstance(blocklist, list):
@@ -1172,18 +1402,18 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
 
     # Validate each category
     for idx, category_config in enumerate(categories):
-        all_errors.extend(validate_category_config(category_config, idx))
+        all_errors.extend(validate_category_config(category_config, idx, valid_schedule_names))
 
     # Validate unique category IDs
     all_errors.extend(validate_unique_category_ids(categories))
 
     # Validate each domain in blocklist
     for idx, domain_config in enumerate(blocklist):
-        all_errors.extend(validate_domain_config(domain_config, idx))
+        all_errors.extend(validate_domain_config(domain_config, idx, valid_schedule_names))
 
     # Validate each domain in allowlist
     for idx, allowlist_config in enumerate(allowlist):
-        all_errors.extend(validate_allowlist_config(allowlist_config, idx))
+        all_errors.extend(validate_allowlist_config(allowlist_config, idx, valid_schedule_names))
 
     # Validate no duplicate domains within blocklist (issue #140)
     all_errors.extend(validate_no_duplicates(blocklist, "blocklist"))
@@ -1214,6 +1444,27 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
     # These blocks will be ignored by NextDNS because allowlist has higher priority
     check_ineffective_blocks(blocklist, allowlist)
     check_category_ineffective_blocks(categories, allowlist)
+
+    # Resolve schedule references in blocklist
+    for entry in blocklist:
+        schedule = entry.get("schedule")
+        if schedule is not None:
+            resolved = resolve_schedule_reference(schedule, schedules)
+            entry["schedule"] = resolved
+
+    # Resolve schedule references in categories
+    for category in categories:
+        schedule = category.get("schedule")
+        if schedule is not None:
+            resolved = resolve_schedule_reference(schedule, schedules)
+            category["schedule"] = resolved
+
+    # Resolve schedule references in allowlist
+    for entry in allowlist:
+        schedule = entry.get("schedule")
+        if schedule is not None:
+            resolved = resolve_schedule_reference(schedule, schedules)
+            entry["schedule"] = resolved
 
     # Expand categories into individual domain entries
     expanded_domains = _expand_categories(categories)

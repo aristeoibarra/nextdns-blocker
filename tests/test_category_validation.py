@@ -685,3 +685,313 @@ class TestCategoryIneffectiveBlocksWarnings:
         # Only valid ineffective block should be logged
         assert caplog.text.count("Ineffective block") == 1
         assert "sub.example.com" in caplog.text
+
+
+class TestScheduleTemplates:
+    """Tests for schedule templates (reusable schedules) - issue #161."""
+
+    def test_validate_schedules_section_valid(self):
+        """Test validation of valid schedules section."""
+        from nextdns_blocker.config import validate_schedules_section
+
+        schedules = {
+            "noches": {
+                "available_hours": [
+                    {
+                        "days": ["monday", "tuesday"],
+                        "time_ranges": [{"start": "20:00", "end": "22:00"}],
+                    }
+                ]
+            },
+            "fines-de-semana": {
+                "available_hours": [
+                    {
+                        "days": ["saturday", "sunday"],
+                        "time_ranges": [{"start": "10:00", "end": "22:00"}],
+                    }
+                ]
+            },
+        }
+
+        errors = validate_schedules_section(schedules)
+        assert errors == []
+
+    def test_validate_schedules_section_invalid_name(self):
+        """Test validation rejects invalid schedule names."""
+        from nextdns_blocker.config import validate_schedules_section
+
+        schedules = {
+            "Invalid-Name": {  # Starts with uppercase
+                "available_hours": [
+                    {"days": ["monday"], "time_ranges": [{"start": "09:00", "end": "17:00"}]}
+                ]
+            }
+        }
+
+        errors = validate_schedules_section(schedules)
+        assert len(errors) == 1
+        assert "invalid name" in errors[0].lower()
+
+    def test_validate_schedules_section_blocked_hours(self):
+        """Test validation of blocked_hours in schedules."""
+        from nextdns_blocker.config import validate_schedules_section
+
+        schedules = {
+            "dormir": {
+                "blocked_hours": [
+                    {
+                        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+                        "time_ranges": [{"start": "00:00", "end": "04:00"}],
+                    }
+                ]
+            }
+        }
+
+        errors = validate_schedules_section(schedules)
+        assert errors == []
+
+    def test_validate_schedules_section_both_hours_error(self):
+        """Test validation rejects schedule with both available_hours and blocked_hours."""
+        from nextdns_blocker.config import validate_schedules_section
+
+        schedules = {
+            "invalid": {
+                "available_hours": [
+                    {"days": ["monday"], "time_ranges": [{"start": "09:00", "end": "17:00"}]}
+                ],
+                "blocked_hours": [
+                    {"days": ["tuesday"], "time_ranges": [{"start": "00:00", "end": "04:00"}]}
+                ],
+            }
+        }
+
+        errors = validate_schedules_section(schedules)
+        assert len(errors) == 1
+        assert "cannot have both" in errors[0].lower()
+
+    def test_validate_schedule_name_valid(self):
+        """Test valid schedule names."""
+        from nextdns_blocker.config import validate_schedule_name
+
+        assert validate_schedule_name("noches") is True
+        assert validate_schedule_name("fines-de-semana") is True
+        assert validate_schedule_name("work-hours-2024") is True
+        assert validate_schedule_name("a") is True
+
+    def test_validate_schedule_name_invalid(self):
+        """Test invalid schedule names."""
+        from nextdns_blocker.config import validate_schedule_name
+
+        assert validate_schedule_name("") is False
+        assert validate_schedule_name("123abc") is False  # Starts with number
+        assert validate_schedule_name("Uppercase") is False  # Contains uppercase
+        assert validate_schedule_name("has spaces") is False  # Contains spaces
+        assert validate_schedule_name("has_underscore") is False  # Contains underscore
+        assert validate_schedule_name(None) is False  # type: ignore
+        assert validate_schedule_name("a" * 51) is False  # Too long
+
+    def test_validate_schedule_or_reference_with_string(self):
+        """Test validation of schedule reference (string)."""
+        from nextdns_blocker.config import validate_schedule_or_reference
+
+        valid_names = {"noches", "fines-de-semana"}
+
+        # Valid reference
+        errors = validate_schedule_or_reference("noches", "'domain.com'", valid_names)
+        assert errors == []
+
+        # Invalid reference
+        errors = validate_schedule_or_reference("unknown", "'domain.com'", valid_names)
+        assert len(errors) == 1
+        assert "unknown schedule" in errors[0].lower()
+
+    def test_validate_schedule_or_reference_with_dict(self):
+        """Test validation of inline schedule (dict)."""
+        from nextdns_blocker.config import validate_schedule_or_reference
+
+        valid_names = {"noches"}
+
+        # Valid inline schedule
+        inline_schedule = {
+            "available_hours": [
+                {"days": ["monday"], "time_ranges": [{"start": "09:00", "end": "17:00"}]}
+            ]
+        }
+        errors = validate_schedule_or_reference(inline_schedule, "'domain.com'", valid_names)
+        assert errors == []
+
+    def test_resolve_schedule_reference_string(self):
+        """Test resolving schedule reference from string."""
+        from nextdns_blocker.config import resolve_schedule_reference
+
+        schedules = {
+            "noches": {
+                "available_hours": [
+                    {"days": ["monday"], "time_ranges": [{"start": "20:00", "end": "22:00"}]}
+                ]
+            }
+        }
+
+        resolved = resolve_schedule_reference("noches", schedules)
+        assert resolved is not None
+        assert "available_hours" in resolved
+        assert resolved["available_hours"][0]["days"] == ["monday"]
+
+    def test_resolve_schedule_reference_dict(self):
+        """Test resolving inline schedule (dict passthrough)."""
+        from nextdns_blocker.config import resolve_schedule_reference
+
+        inline_schedule = {
+            "blocked_hours": [
+                {"days": ["tuesday"], "time_ranges": [{"start": "00:00", "end": "04:00"}]}
+            ]
+        }
+
+        resolved = resolve_schedule_reference(inline_schedule, {})
+        assert resolved == inline_schedule
+
+    def test_resolve_schedule_reference_none(self):
+        """Test resolving None schedule."""
+        from nextdns_blocker.config import resolve_schedule_reference
+
+        resolved = resolve_schedule_reference(None, {})
+        assert resolved is None
+
+    def test_resolve_schedule_reference_unknown(self):
+        """Test resolving unknown schedule reference."""
+        from nextdns_blocker.config import resolve_schedule_reference
+
+        resolved = resolve_schedule_reference("unknown", {})
+        assert resolved is None
+
+
+class TestBlockedHoursScheduler:
+    """Tests for blocked_hours support in scheduler - issue #161."""
+
+    def test_should_block_with_blocked_hours_during_block(self):
+        """Test should_block returns True during blocked_hours window."""
+        from datetime import datetime
+        from unittest.mock import patch
+        from zoneinfo import ZoneInfo
+
+        from nextdns_blocker.scheduler import ScheduleEvaluator
+
+        evaluator = ScheduleEvaluator("America/Mexico_City")
+        tz = ZoneInfo("America/Mexico_City")
+
+        # Mock time to be 02:00 on Monday (during blocked window)
+        mock_now = datetime(2024, 1, 1, 2, 0, tzinfo=tz)  # Monday 02:00
+
+        schedule = {
+            "blocked_hours": [
+                {
+                    "days": ["monday"],
+                    "time_ranges": [{"start": "00:00", "end": "04:00"}],
+                }
+            ]
+        }
+
+        with patch.object(evaluator, "_get_current_time", return_value=mock_now):
+            assert evaluator.should_block(schedule) is True
+
+    def test_should_block_with_blocked_hours_outside_block(self):
+        """Test should_block returns False outside blocked_hours window."""
+        from datetime import datetime
+        from unittest.mock import patch
+        from zoneinfo import ZoneInfo
+
+        from nextdns_blocker.scheduler import ScheduleEvaluator
+
+        evaluator = ScheduleEvaluator("America/Mexico_City")
+        tz = ZoneInfo("America/Mexico_City")
+
+        # Mock time to be 10:00 on Monday (outside blocked window)
+        mock_now = datetime(2024, 1, 1, 10, 0, tzinfo=tz)  # Monday 10:00
+
+        schedule = {
+            "blocked_hours": [
+                {
+                    "days": ["monday"],
+                    "time_ranges": [{"start": "00:00", "end": "04:00"}],
+                }
+            ]
+        }
+
+        with patch.object(evaluator, "_get_current_time", return_value=mock_now):
+            assert evaluator.should_block(schedule) is False
+
+    def test_should_block_with_blocked_hours_different_day(self):
+        """Test should_block returns False on different day."""
+        from datetime import datetime
+        from unittest.mock import patch
+        from zoneinfo import ZoneInfo
+
+        from nextdns_blocker.scheduler import ScheduleEvaluator
+
+        evaluator = ScheduleEvaluator("America/Mexico_City")
+        tz = ZoneInfo("America/Mexico_City")
+
+        # Mock time to be 02:00 on Tuesday (blocked_hours only on Monday)
+        mock_now = datetime(2024, 1, 2, 2, 0, tzinfo=tz)  # Tuesday 02:00
+
+        schedule = {
+            "blocked_hours": [
+                {
+                    "days": ["monday"],
+                    "time_ranges": [{"start": "00:00", "end": "04:00"}],
+                }
+            ]
+        }
+
+        with patch.object(evaluator, "_get_current_time", return_value=mock_now):
+            assert evaluator.should_block(schedule) is False
+
+    def test_get_blocking_status_with_blocked_hours(self):
+        """Test get_blocking_status returns correct schedule_type for blocked_hours."""
+        from nextdns_blocker.scheduler import ScheduleEvaluator
+
+        evaluator = ScheduleEvaluator()
+
+        config = {
+            "domain": "example.com",
+            "schedule": {
+                "blocked_hours": [
+                    {"days": ["monday"], "time_ranges": [{"start": "00:00", "end": "04:00"}]}
+                ]
+            },
+        }
+
+        status = evaluator.get_blocking_status(config)
+        assert status["schedule_type"] == "blocked_hours"
+        assert status["has_schedule"] is True
+
+    def test_get_blocking_status_with_available_hours(self):
+        """Test get_blocking_status returns correct schedule_type for available_hours."""
+        from nextdns_blocker.scheduler import ScheduleEvaluator
+
+        evaluator = ScheduleEvaluator()
+
+        config = {
+            "domain": "example.com",
+            "schedule": {
+                "available_hours": [
+                    {"days": ["monday"], "time_ranges": [{"start": "09:00", "end": "17:00"}]}
+                ]
+            },
+        }
+
+        status = evaluator.get_blocking_status(config)
+        assert status["schedule_type"] == "available_hours"
+        assert status["has_schedule"] is True
+
+    def test_get_blocking_status_no_schedule(self):
+        """Test get_blocking_status returns None schedule_type when no schedule."""
+        from nextdns_blocker.scheduler import ScheduleEvaluator
+
+        evaluator = ScheduleEvaluator()
+
+        config = {"domain": "example.com"}
+
+        status = evaluator.get_blocking_status(config)
+        assert status["schedule_type"] is None
+        assert status["has_schedule"] is False
