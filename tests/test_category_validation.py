@@ -516,3 +516,172 @@ class TestCategorySubdomainWarnings:
         # Only valid subdomain relationship should be logged
         assert caplog.text.count("Subdomain relationship") == 1
         assert "test.facebook.com" in caplog.text
+
+
+class TestIneffectiveBlocksWarnings:
+    """Tests for check_ineffective_blocks function (issue #139)."""
+
+    def test_no_ineffective_blocks(self, caplog):
+        """Test no warning when blocked domains are not subdomains of allowed."""
+        from nextdns_blocker.config import check_ineffective_blocks
+
+        domains = [{"domain": "facebook.com"}, {"domain": "twitter.com"}]
+        allowlist = [{"domain": "google.com"}]
+
+        with caplog.at_level("WARNING"):
+            check_ineffective_blocks(domains, allowlist)
+
+        assert "Ineffective block" not in caplog.text
+
+    def test_ineffective_block_warning_logged(self, caplog):
+        """Test warning is logged when denylist is subdomain of allowlist."""
+        from nextdns_blocker.config import check_ineffective_blocks
+
+        # ads.amazon.com is blocked, but amazon.com is allowed
+        # This means ads.amazon.com will NOT be blocked by NextDNS
+        domains = [{"domain": "ads.amazon.com"}]
+        allowlist = [{"domain": "amazon.com"}]
+
+        with caplog.at_level("WARNING"):
+            check_ineffective_blocks(domains, allowlist)
+
+        assert "Ineffective block" in caplog.text
+        assert "ads.amazon.com" in caplog.text
+        assert "amazon.com" in caplog.text
+        assert "IGNORED" in caplog.text
+
+    def test_multiple_ineffective_blocks(self, caplog):
+        """Test multiple warnings for multiple ineffective blocks."""
+        from nextdns_blocker.config import check_ineffective_blocks
+
+        domains = [
+            {"domain": "ads.amazon.com"},
+            {"domain": "tracking.facebook.com"},
+        ]
+        allowlist = [
+            {"domain": "amazon.com"},
+            {"domain": "facebook.com"},
+        ]
+
+        with caplog.at_level("WARNING"):
+            check_ineffective_blocks(domains, allowlist)
+
+        assert caplog.text.count("Ineffective block") == 2
+
+    def test_empty_domains_no_warning(self, caplog):
+        """Test no warning with empty domains list."""
+        from nextdns_blocker.config import check_ineffective_blocks
+
+        with caplog.at_level("WARNING"):
+            check_ineffective_blocks([], [{"domain": "test.com"}])
+
+        assert "Ineffective block" not in caplog.text
+
+    def test_empty_allowlist_no_warning(self, caplog):
+        """Test no warning with empty allowlist."""
+        from nextdns_blocker.config import check_ineffective_blocks
+
+        domains = [{"domain": "facebook.com"}]
+
+        with caplog.at_level("WARNING"):
+            check_ineffective_blocks(domains, [])
+
+        assert "Ineffective block" not in caplog.text
+
+    def test_invalid_domain_entries_skipped(self, caplog):
+        """Test invalid domain entries are skipped without error."""
+        from nextdns_blocker.config import check_ineffective_blocks
+
+        domains = [{"domain": "sub.example.com"}, {"domain": None}, {}]
+        allowlist = [{"domain": "example.com"}, {"domain": None}, {"other": "value"}]
+
+        with caplog.at_level("WARNING"):
+            check_ineffective_blocks(domains, allowlist)
+
+        # Only valid ineffective block should be logged
+        assert caplog.text.count("Ineffective block") == 1
+        assert "sub.example.com" in caplog.text
+
+
+class TestCategoryIneffectiveBlocksWarnings:
+    """Tests for check_category_ineffective_blocks function (issue #139)."""
+
+    def test_no_ineffective_category_blocks(self, caplog):
+        """Test no warning when category domains are not subdomains of allowed."""
+        from nextdns_blocker.config import check_category_ineffective_blocks
+
+        categories = [{"id": "social", "domains": ["facebook.com", "twitter.com"]}]
+        allowlist = [{"domain": "google.com"}]
+
+        with caplog.at_level("WARNING"):
+            check_category_ineffective_blocks(categories, allowlist)
+
+        assert "Ineffective block" not in caplog.text
+
+    def test_ineffective_category_block_warning_logged(self, caplog):
+        """Test warning is logged when category domain is subdomain of allowed."""
+        from nextdns_blocker.config import check_category_ineffective_blocks
+
+        categories = [{"id": "shopping", "domains": ["ads.amazon.com"]}]
+        allowlist = [{"domain": "amazon.com"}]
+
+        with caplog.at_level("WARNING"):
+            check_category_ineffective_blocks(categories, allowlist)
+
+        assert "Ineffective block" in caplog.text
+        assert "ads.amazon.com" in caplog.text
+        assert "shopping" in caplog.text
+        assert "amazon.com" in caplog.text
+        assert "IGNORED" in caplog.text
+
+    def test_multiple_category_ineffective_blocks(self, caplog):
+        """Test multiple warnings for multiple categories with ineffective blocks."""
+        from nextdns_blocker.config import check_category_ineffective_blocks
+
+        categories = [
+            {"id": "shopping", "domains": ["ads.amazon.com"]},
+            {"id": "social", "domains": ["tracking.facebook.com"]},
+        ]
+        allowlist = [
+            {"domain": "amazon.com"},
+            {"domain": "facebook.com"},
+        ]
+
+        with caplog.at_level("WARNING"):
+            check_category_ineffective_blocks(categories, allowlist)
+
+        assert caplog.text.count("Ineffective block") == 2
+
+    def test_empty_categories_no_warning(self, caplog):
+        """Test no warning with empty categories."""
+        from nextdns_blocker.config import check_category_ineffective_blocks
+
+        with caplog.at_level("WARNING"):
+            check_category_ineffective_blocks([], [{"domain": "test.com"}])
+
+        assert "Ineffective block" not in caplog.text
+
+    def test_empty_allowlist_no_warning(self, caplog):
+        """Test no warning with empty allowlist."""
+        from nextdns_blocker.config import check_category_ineffective_blocks
+
+        categories = [{"id": "social", "domains": ["facebook.com"]}]
+
+        with caplog.at_level("WARNING"):
+            check_category_ineffective_blocks(categories, [])
+
+        assert "Ineffective block" not in caplog.text
+
+    def test_invalid_entries_skipped(self, caplog):
+        """Test invalid entries are skipped without error."""
+        from nextdns_blocker.config import check_category_ineffective_blocks
+
+        categories = [{"id": "test", "domains": ["sub.example.com", None, 123]}]
+        allowlist = [{"domain": "example.com"}, {"domain": None}, {}]
+
+        with caplog.at_level("WARNING"):
+            check_category_ineffective_blocks(categories, allowlist)
+
+        # Only valid ineffective block should be logged
+        assert caplog.text.count("Ineffective block") == 1
+        assert "sub.example.com" in caplog.text

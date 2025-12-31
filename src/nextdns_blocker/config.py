@@ -632,6 +632,74 @@ def check_category_subdomain_relationships(
                     )
 
 
+def check_ineffective_blocks(
+    domains: list[dict[str, Any]], allowlist: list[dict[str, Any]]
+) -> None:
+    """
+    Warn when denylist entries are subdomains of allowed domains.
+
+    These blocks will be IGNORED by NextDNS because allowlist has higher priority.
+    This is the inverse of check_subdomain_relationships - here we check if a
+    blocked domain is a subdomain of an allowed domain (making the block useless).
+
+    Args:
+        domains: List of denylist domain configurations
+        allowlist: List of allowlist domain configurations
+    """
+    from .common import is_subdomain
+
+    for block_entry in domains:
+        block_domain = block_entry.get("domain", "")
+        if not block_domain or not isinstance(block_domain, str):
+            continue
+
+        for allow_entry in allowlist:
+            allow_domain = allow_entry.get("domain", "")
+            if not allow_domain or not isinstance(allow_domain, str):
+                continue
+
+            if is_subdomain(block_domain, allow_domain):
+                logger.warning(
+                    f"Ineffective block: '{block_domain}' is a subdomain of allowed "
+                    f"'{allow_domain}'. This block will be IGNORED by NextDNS."
+                )
+
+
+def check_category_ineffective_blocks(
+    categories: list[dict[str, Any]], allowlist: list[dict[str, Any]]
+) -> None:
+    """
+    Warn when category domains are subdomains of allowed domains.
+
+    These blocks will be IGNORED by NextDNS because allowlist has higher priority.
+
+    Args:
+        categories: List of category configurations
+        allowlist: List of allowlist domain configurations
+    """
+    from .common import is_subdomain
+
+    for category in categories:
+        category_id = category.get("id", "unknown")
+        category_domains = category.get("domains", [])
+
+        for block_domain in category_domains:
+            if not block_domain or not isinstance(block_domain, str):
+                continue
+
+            for allow_entry in allowlist:
+                allow_domain = allow_entry.get("domain", "")
+                if not allow_domain or not isinstance(allow_domain, str):
+                    continue
+
+                if is_subdomain(block_domain, allow_domain):
+                    logger.warning(
+                        f"Ineffective block: '{block_domain}' (category: {category_id}) "
+                        f"is a subdomain of allowed '{allow_domain}'. "
+                        f"This block will be IGNORED by NextDNS."
+                    )
+
+
 def validate_no_duplicate_domains(
     categories: list[dict[str, Any]], blocklist: list[dict[str, Any]]
 ) -> list[str]:
@@ -1141,6 +1209,11 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
     # This helps users understand that allowlist entries will override blocks
     check_subdomain_relationships(blocklist, allowlist)
     check_category_subdomain_relationships(categories, allowlist)
+
+    # Check for ineffective blocks (denylist subdomains of allowlist entries)
+    # These blocks will be ignored by NextDNS because allowlist has higher priority
+    check_ineffective_blocks(blocklist, allowlist)
+    check_category_ineffective_blocks(categories, allowlist)
 
     # Expand categories into individual domain entries
     expanded_domains = _expand_categories(categories)
