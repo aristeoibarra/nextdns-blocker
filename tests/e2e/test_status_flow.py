@@ -873,3 +873,177 @@ class TestStatusParentalControl:
         # Should still work, just without parental control info
         assert result.exit_code == 0
         assert "NextDNS Parental Control" not in result.output
+
+
+class TestStatusAllowlistScheduled:
+    """Tests for scheduled allowlist display in status command."""
+
+    @responses.activate
+    def test_status_shows_allowlist_with_scheduled_entries(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Test that status shows breakdown of scheduled allowlist entries."""
+        from .conftest import add_parental_control_mock
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir(parents=True)
+
+        (config_dir / ".env").write_text(
+            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
+            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
+            f"TIMEZONE={TEST_TIMEZONE}\n"
+        )
+
+        # Create config with mix of scheduled and always-active allowlist entries
+        domains_data = {
+            "blocklist": [{"domain": "test.com", "schedule": None}],
+            "allowlist": [
+                {"domain": "always1.com"},
+                {"domain": "always2.com"},
+                {
+                    "domain": "scheduled1.com",
+                    "schedule": {
+                        "available_hours": [
+                            {
+                                "days": ["monday"],
+                                "time_ranges": [{"start": "00:00", "end": "01:00"}],
+                            }
+                        ]
+                    },
+                },
+                {
+                    "domain": "scheduled2.com",
+                    "schedule": {
+                        "available_hours": [
+                            {
+                                "days": ["monday"],
+                                "time_ranges": [{"start": "00:00", "end": "01:00"}],
+                            }
+                        ]
+                    },
+                },
+            ],
+        }
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
+
+        add_denylist_mock(responses, domains=[])
+        add_allowlist_mock(responses, domains=["always1.com", "always2.com"])
+        add_parental_control_mock(responses)
+
+        with patch("nextdns_blocker.cli.is_macos", return_value=False):
+            with patch("nextdns_blocker.cli.is_windows", return_value=False):
+                with patch("nextdns_blocker.cli.get_crontab", return_value=""):
+                    result = runner.invoke(
+                        main,
+                        ["status", "--config-dir", str(config_dir), "--no-update-check"],
+                    )
+
+        assert result.exit_code == 0
+        assert "Allowlist" in result.output
+        assert "2 always active" in result.output
+        assert "2 scheduled" in result.output
+
+    @responses.activate
+    def test_status_shows_simple_allowlist_without_schedules(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Test that status shows simple count when no scheduled entries."""
+        from .conftest import add_parental_control_mock
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir(parents=True)
+
+        (config_dir / ".env").write_text(
+            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
+            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
+            f"TIMEZONE={TEST_TIMEZONE}\n"
+        )
+
+        # Only always-active entries
+        domains_data = {
+            "blocklist": [{"domain": "test.com", "schedule": None}],
+            "allowlist": [
+                {"domain": "always1.com"},
+                {"domain": "always2.com"},
+                {"domain": "always3.com"},
+            ],
+        }
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
+
+        add_denylist_mock(responses, domains=[])
+        add_allowlist_mock(responses, domains=["always1.com", "always2.com", "always3.com"])
+        add_parental_control_mock(responses)
+
+        with patch("nextdns_blocker.cli.is_macos", return_value=False):
+            with patch("nextdns_blocker.cli.is_windows", return_value=False):
+                with patch("nextdns_blocker.cli.get_crontab", return_value=""):
+                    result = runner.invoke(
+                        main,
+                        ["status", "--config-dir", str(config_dir), "--no-update-check"],
+                    )
+
+        assert result.exit_code == 0
+        assert "Allowlist" in result.output
+        assert "3 active" in result.output
+        # Should not show "scheduled" or "always active" breakdown
+        assert "scheduled" not in result.output
+        assert "always active" not in result.output
+
+    @responses.activate
+    def test_status_shows_all_scheduled_allowlist(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Test status when all allowlist entries are scheduled."""
+        from .conftest import add_parental_control_mock
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir(parents=True)
+
+        (config_dir / ".env").write_text(
+            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
+            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
+            f"TIMEZONE={TEST_TIMEZONE}\n"
+        )
+
+        # Only scheduled entries
+        domains_data = {
+            "blocklist": [{"domain": "test.com", "schedule": None}],
+            "allowlist": [
+                {
+                    "domain": "scheduled1.com",
+                    "schedule": {
+                        "available_hours": [
+                            {
+                                "days": ["monday"],
+                                "time_ranges": [{"start": "00:00", "end": "01:00"}],
+                            }
+                        ]
+                    },
+                },
+            ],
+        }
+        (config_dir / "config.json").write_text(json.dumps(domains_data))
+
+        add_denylist_mock(responses, domains=[])
+        add_allowlist_mock(responses, domains=[])
+        add_parental_control_mock(responses)
+
+        with patch("nextdns_blocker.cli.is_macos", return_value=False):
+            with patch("nextdns_blocker.cli.is_windows", return_value=False):
+                with patch("nextdns_blocker.cli.get_crontab", return_value=""):
+                    result = runner.invoke(
+                        main,
+                        ["status", "--config-dir", str(config_dir), "--no-update-check"],
+                    )
+
+        assert result.exit_code == 0
+        assert "Allowlist" in result.output
+        assert "1 scheduled" in result.output
+        # When no always-active, should not show that part
+        assert "always active" not in result.output

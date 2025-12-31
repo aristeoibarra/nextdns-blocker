@@ -1034,18 +1034,22 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
                 )
 
         # Collect allowlist statistics
-        allowlist_active = 0
-        allowlist_inactive = 0
+        allowlist_always_active = 0  # No schedule, always in allowlist
+        allowlist_scheduled_active = 0  # Has schedule, currently active
+        allowlist_scheduled_inactive = 0  # Has schedule, currently inactive
         for item in allowlist:
             domain = item["domain"]
             is_allowed = client.is_allowed(domain)
             has_schedule = item.get("schedule") is not None
             should_allow = evaluator.should_allow_domain(item)
 
-            if is_allowed:
-                allowlist_active += 1
+            if has_schedule:
+                if should_allow:
+                    allowlist_scheduled_active += 1
+                else:
+                    allowlist_scheduled_inactive += 1
             else:
-                allowlist_inactive += 1
+                allowlist_always_active += 1
 
             # Check for mismatches in scheduled allowlist
             if has_schedule and should_allow != is_allowed:
@@ -1138,7 +1142,23 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
 
         # Allowlist summary
         if allowlist:
-            console.print(f"  [dim]Allowlist:[/dim] {allowlist_active} active")
+            total_scheduled = allowlist_scheduled_active + allowlist_scheduled_inactive
+            if total_scheduled > 0:
+                # Show breakdown when there are scheduled entries
+                parts = []
+                if allowlist_always_active > 0:
+                    parts.append(f"{allowlist_always_active} always active")
+                if total_scheduled > 0:
+                    sched_detail = (
+                        f"{total_scheduled} scheduled "
+                        f"([green]{allowlist_scheduled_active} active[/green], "
+                        f"[dim]{allowlist_scheduled_inactive} inactive[/dim])"
+                    )
+                    parts.append(sched_detail)
+                console.print(f"  [dim]Allowlist:[/dim] {', '.join(parts)}")
+            else:
+                # Simple display when all entries are always-active
+                console.print(f"  [dim]Allowlist:[/dim] {allowlist_always_active} active")
 
         # NextDNS Parental Control section
         parental_control = client.get_parental_control()
