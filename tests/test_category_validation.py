@@ -995,3 +995,141 @@ class TestBlockedHoursScheduler:
         status = evaluator.get_blocking_status(config)
         assert status["schedule_type"] is None
         assert status["has_schedule"] is False
+
+
+class TestSuppressSubdomainWarning:
+    """Tests for suppress_subdomain_warning flag - issue #162."""
+
+    def test_validate_allowlist_suppress_warning_valid_true(self):
+        """Test validation accepts suppress_subdomain_warning: true."""
+        from nextdns_blocker.config import validate_allowlist_config
+
+        config = {
+            "domain": "aws.amazon.com",
+            "suppress_subdomain_warning": True,
+        }
+
+        errors = validate_allowlist_config(config, 0)
+        assert errors == []
+
+    def test_validate_allowlist_suppress_warning_valid_false(self):
+        """Test validation accepts suppress_subdomain_warning: false."""
+        from nextdns_blocker.config import validate_allowlist_config
+
+        config = {
+            "domain": "aws.amazon.com",
+            "suppress_subdomain_warning": False,
+        }
+
+        errors = validate_allowlist_config(config, 0)
+        assert errors == []
+
+    def test_validate_allowlist_suppress_warning_invalid_type(self):
+        """Test validation rejects non-boolean suppress_subdomain_warning."""
+        from nextdns_blocker.config import validate_allowlist_config
+
+        config = {
+            "domain": "aws.amazon.com",
+            "suppress_subdomain_warning": "yes",  # Should be boolean
+        }
+
+        errors = validate_allowlist_config(config, 0)
+        assert len(errors) == 1
+        assert "must be a boolean" in errors[0]
+
+    def test_check_subdomain_relationships_warning_suppressed(self, caplog):
+        """Test warning is suppressed when flag is set."""
+        from nextdns_blocker.config import check_subdomain_relationships
+
+        domains = [{"domain": "amazon.com"}]
+        allowlist = [
+            {
+                "domain": "aws.amazon.com",
+                "suppress_subdomain_warning": True,
+            }
+        ]
+
+        with caplog.at_level("WARNING"):
+            check_subdomain_relationships(domains, allowlist)
+
+        assert "subdomain" not in caplog.text.lower()
+
+    def test_check_subdomain_relationships_warning_not_suppressed(self, caplog):
+        """Test warning is shown when flag is not set."""
+        from nextdns_blocker.config import check_subdomain_relationships
+
+        domains = [{"domain": "amazon.com"}]
+        allowlist = [{"domain": "aws.amazon.com"}]
+
+        with caplog.at_level("WARNING"):
+            check_subdomain_relationships(domains, allowlist)
+
+        assert "subdomain" in caplog.text.lower()
+
+    def test_check_subdomain_relationships_warning_false_shows_warning(self, caplog):
+        """Test warning is shown when flag is explicitly false."""
+        from nextdns_blocker.config import check_subdomain_relationships
+
+        domains = [{"domain": "amazon.com"}]
+        allowlist = [
+            {
+                "domain": "aws.amazon.com",
+                "suppress_subdomain_warning": False,
+            }
+        ]
+
+        with caplog.at_level("WARNING"):
+            check_subdomain_relationships(domains, allowlist)
+
+        assert "subdomain" in caplog.text.lower()
+
+    def test_check_category_subdomain_warning_suppressed(self, caplog):
+        """Test category subdomain warning is suppressed when flag is set."""
+        from nextdns_blocker.config import check_category_subdomain_relationships
+
+        categories = [{"id": "e-commerce", "domains": ["amazon.com"]}]
+        allowlist = [
+            {
+                "domain": "aws.amazon.com",
+                "suppress_subdomain_warning": True,
+            }
+        ]
+
+        with caplog.at_level("WARNING"):
+            check_category_subdomain_relationships(categories, allowlist)
+
+        assert "Subdomain relationship" not in caplog.text
+
+    def test_check_category_subdomain_warning_not_suppressed(self, caplog):
+        """Test category subdomain warning is shown when flag is not set."""
+        from nextdns_blocker.config import check_category_subdomain_relationships
+
+        categories = [{"id": "e-commerce", "domains": ["amazon.com"]}]
+        allowlist = [{"domain": "aws.amazon.com"}]
+
+        with caplog.at_level("WARNING"):
+            check_category_subdomain_relationships(categories, allowlist)
+
+        assert "Subdomain relationship" in caplog.text
+
+    def test_mixed_suppressed_and_not_suppressed(self, caplog):
+        """Test some warnings suppressed and some not."""
+        from nextdns_blocker.config import check_category_subdomain_relationships
+
+        categories = [{"id": "e-commerce", "domains": ["amazon.com", "ebay.com"]}]
+        allowlist = [
+            {
+                "domain": "aws.amazon.com",
+                "suppress_subdomain_warning": True,  # Suppressed
+            },
+            {
+                "domain": "seller.ebay.com",  # Not suppressed
+            },
+        ]
+
+        with caplog.at_level("WARNING"):
+            check_category_subdomain_relationships(categories, allowlist)
+
+        # Only ebay warning should appear
+        assert "aws.amazon.com" not in caplog.text
+        assert "seller.ebay.com" in caplog.text

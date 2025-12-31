@@ -619,6 +619,13 @@ def validate_allowlist_config(
             schedule_errors = validate_schedule(schedule, f"allowlist '{domain}'")
         errors.extend(schedule_errors)
 
+    # Validate suppress_subdomain_warning if present (optional, must be boolean)
+    suppress_warning = config.get("suppress_subdomain_warning")
+    if suppress_warning is not None and not isinstance(suppress_warning, bool):
+        errors.append(
+            f"allowlist '{domain}': 'suppress_subdomain_warning' must be a boolean (true/false)"
+        )
+
     return errors
 
 
@@ -746,6 +753,8 @@ def check_subdomain_relationships(
     should understand that the allowlist entry will override the block
     for that specific subdomain in NextDNS.
 
+    Warnings can be suppressed per-entry with suppress_subdomain_warning: true.
+
     Args:
         domains: List of denylist domain configurations
         allowlist: List of allowlist domain configurations
@@ -755,6 +764,10 @@ def check_subdomain_relationships(
     for allow_entry in allowlist:
         allow_domain = allow_entry.get("domain", "")
         if not allow_domain or not isinstance(allow_domain, str):
+            continue
+
+        # Skip warning if explicitly suppressed
+        if allow_entry.get("suppress_subdomain_warning", False):
             continue
 
         for block_entry in domains:
@@ -779,6 +792,8 @@ def check_category_subdomain_relationships(
     but the user should understand that the allowlist entry will override
     the block for that specific subdomain in NextDNS.
 
+    Warnings can be suppressed per-entry with suppress_subdomain_warning: true.
+
     Args:
         categories: List of category configurations
         allowlist: List of allowlist domain configurations
@@ -788,6 +803,10 @@ def check_category_subdomain_relationships(
     for allow_entry in allowlist:
         allow_domain = allow_entry.get("domain", "")
         if not allow_domain or not isinstance(allow_domain, str):
+            continue
+
+        # Skip warning if explicitly suppressed
+        if allow_entry.get("suppress_subdomain_warning", False):
             continue
 
         for category in categories:
