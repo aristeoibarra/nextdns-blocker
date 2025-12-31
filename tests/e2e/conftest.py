@@ -292,6 +292,30 @@ def add_disallow_mock(
     )
 
 
+def add_parental_control_mock(
+    rsps: responses.RequestsMock,
+    profile_id: str = TEST_PROFILE_ID,
+    categories: list[dict[str, Any]] | None = None,
+    services: list[dict[str, Any]] | None = None,
+    safe_search: bool = False,
+    youtube_restricted: bool = False,
+    block_bypass: bool = False,
+) -> None:
+    """Add a GET parental control mock with specified configuration."""
+    rsps.add(
+        responses.GET,
+        f"{API_URL}/profiles/{profile_id}/parentalControl",
+        json={
+            "safeSearch": safe_search,
+            "youtubeRestrictedMode": youtube_restricted,
+            "blockBypass": block_bypass,
+            "categories": categories or [],
+            "services": services or [],
+        },
+        status=200,
+    )
+
+
 # =============================================================================
 # FIXTURES: COMPLETE API SETUP
 # =============================================================================

@@ -1140,6 +1140,64 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
         if allowlist:
             console.print(f"  [dim]Allowlist:[/dim] {allowlist_active} active")
 
+        # NextDNS Parental Control section
+        parental_control = client.get_parental_control()
+        if parental_control is not None:
+            # Get active categories
+            categories = parental_control.get("categories", [])
+            active_categories = [c["id"] for c in categories if c.get("active", False)]
+
+            # Get active services
+            services = parental_control.get("services", [])
+            active_services = [s["id"] for s in services if s.get("active", False)]
+
+            # Get settings
+            safe_search = parental_control.get("safeSearch", False)
+            youtube_restricted = parental_control.get("youtubeRestrictedMode", False)
+            block_bypass = parental_control.get("blockBypass", False)
+
+            # Only show section if there's something configured
+            has_parental_config = (
+                active_categories
+                or active_services
+                or any([safe_search, youtube_restricted, block_bypass])
+            )
+
+            if has_parental_config:
+                console.print()
+                console.print("  [bold]NextDNS Parental Control:[/bold]")
+
+                if active_categories:
+                    cat_list = ", ".join(active_categories)
+                    console.print(
+                        f"    Categories: [cyan]{cat_list}[/cyan] ({len(active_categories)} active)"
+                    )
+
+                if active_services:
+                    svc_list = ", ".join(active_services)
+                    console.print(
+                        f"    Services: [cyan]{svc_list}[/cyan] ({len(active_services)} active)"
+                    )
+
+                # Show settings
+                settings_parts = []
+                if safe_search:
+                    settings_parts.append("[green]safe_search ✓[/green]")
+                else:
+                    settings_parts.append("[dim]safe_search ✗[/dim]")
+
+                if youtube_restricted:
+                    settings_parts.append("[green]youtube_restricted ✓[/green]")
+                else:
+                    settings_parts.append("[dim]youtube_restricted ✗[/dim]")
+
+                if block_bypass:
+                    settings_parts.append("[green]block_bypass ✓[/green]")
+                else:
+                    settings_parts.append("[dim]block_bypass ✗[/dim]")
+
+                console.print(f"    Settings: {', '.join(settings_parts)}")
+
         # Scheduler not running warning
         if not scheduler_ok:
             console.print()
