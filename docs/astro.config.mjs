@@ -27,6 +27,10 @@ export default defineConfig({
                     items: [
                         { label: "Introduction", slug: "getting-started" },
                         {
+                            label: "Why nextdns-blocker?",
+                            slug: "why-nextdns-blocker",
+                        },
+                        {
                             label: "Installation",
                             slug: "getting-started/installation",
                         },
@@ -87,6 +91,10 @@ export default defineConfig({
                             slug: "configuration/unblock-delay",
                         },
                         { label: "Timezone", slug: "configuration/timezone" },
+                        {
+                            label: "Filtering Priority",
+                            slug: "configuration/filtering-priority",
+                        },
                     ],
                 },
                 {
