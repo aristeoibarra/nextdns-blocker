@@ -1,199 +1,543 @@
-"""Discord webhook notifications for block/unblock events."""
+"""Notification system with batching, async delivery, and multi-channel support."""
 
+import atexit
 import logging
-import os
+import subprocess
 import threading
-import time
+from abc import ABC, abstractmethod
+from collections.abc import Generator
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from enum import Enum
+from typing import Any, Optional
 
 import requests
 
 logger = logging.getLogger(__name__)
 
-# Discord embed colors
-COLOR_BLOCK = 15158332  # Red
-COLOR_UNBLOCK = 3066993  # Green
-COLOR_PENDING = 16776960  # Yellow
-COLOR_CANCEL = 9807270  # Gray
-COLOR_PANIC = 9109504  # Dark Red
-COLOR_ALLOW = 3066993  # Green (same as unblock - adding to allowlist is permissive)
-COLOR_DISALLOW = 15105570  # Orange (removing from allowlist is restrictive)
-
 # Notification timeout in seconds
 NOTIFICATION_TIMEOUT = 5
 
-# Rate limiting: minimum seconds between notifications
-# Discord allows ~30/min, so 3 second interval provides safety margin for bulk operations
-MIN_NOTIFICATION_INTERVAL = 3.0
+
+class EventType(Enum):
+    """Types of notification events."""
+
+    BLOCK = "block"
+    UNBLOCK = "unblock"
+    PENDING = "pending"
+    CANCEL_PENDING = "cancel_pending"
+    PANIC = "panic"
+    ALLOW = "allow"
+    DISALLOW = "disallow"
+    PC_ACTIVATE = "pc_activate"
+    PC_DEACTIVATE = "pc_deactivate"
+    ERROR = "error"
+    TEST = "test"
 
 
-class _NotificationRateLimiter:
-    """Thread-safe rate limiter for Discord notifications."""
+@dataclass
+class NotificationEvent:
+    """Represents a single notification event."""
 
-    def __init__(self, min_interval: float = MIN_NOTIFICATION_INTERVAL) -> None:
-        self._min_interval = min_interval
-        self._last_notification_time: float = 0.0
-        self._lock = threading.Lock()
+    event_type: EventType
+    domain: str
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def reset(self) -> None:
-        """Reset rate limit state. Used for testing."""
-        with self._lock:
-            self._last_notification_time = 0.0
 
-    def check(self) -> bool:
+@dataclass
+class BatchedNotification:
+    """Represents a collection of events to be sent as one notification."""
+
+    events: list[NotificationEvent] = field(default_factory=list)
+    profile_id: str = ""
+    sync_start: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    sync_end: Optional[datetime] = None
+
+
+class NotificationAdapter(ABC):
+    """Base class for notification adapters."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Human-readable adapter name."""
+        pass
+
+    @property
+    @abstractmethod
+    def is_configured(self) -> bool:
+        """Check if adapter has required configuration."""
+        pass
+
+    @abstractmethod
+    def send(self, batch: BatchedNotification) -> bool:
         """
-        Check if we can send a notification based on rate limiting.
+        Send a batched notification.
 
-        Uses time.monotonic() for accurate interval measurement that is not
-        affected by system clock changes.
+        Args:
+            batch: The notification batch to send
 
         Returns:
-            True if notification can be sent, False if rate limited
+            True if sent successfully, False otherwise
         """
-        with self._lock:
-            now = time.monotonic()
-            if now - self._last_notification_time < self._min_interval:
-                return False
-            self._last_notification_time = now
+        pass
+
+    @abstractmethod
+    def format_batch(self, batch: BatchedNotification) -> Any:
+        """Format batch for this adapter's API."""
+        pass
+
+
+class DiscordAdapter(NotificationAdapter):
+    """Discord webhook notification adapter."""
+
+    # Discord embed colors
+    COLOR_BLOCK = 15158332  # Red
+    COLOR_UNBLOCK = 3066993  # Green
+    COLOR_PENDING = 16776960  # Yellow
+    COLOR_CANCEL = 9807270  # Gray
+    COLOR_PANIC = 9109504  # Dark Red
+    COLOR_ALLOW = 3066993  # Green
+    COLOR_DISALLOW = 15105570  # Orange
+    COLOR_ERROR = 15158332  # Red
+    COLOR_BATCH = 3447003  # Blue
+
+    def __init__(self, webhook_url: Optional[str] = None) -> None:
+        self._webhook_url = webhook_url
+
+    @property
+    def name(self) -> str:
+        return "Discord"
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self._webhook_url)
+
+    def send(self, batch: BatchedNotification) -> bool:
+        if not self.is_configured:
+            logger.debug("Discord adapter not configured, skipping")
+            return False
+
+        payload = self.format_batch(batch)
+
+        try:
+            response = requests.post(
+                self._webhook_url,  # type: ignore[arg-type]
+                json=payload,
+                timeout=NOTIFICATION_TIMEOUT,
+            )
+            response.raise_for_status()
+            logger.debug(f"Discord notification sent with {len(batch.events)} events")
             return True
+        except requests.exceptions.Timeout:
+            logger.warning(f"Discord notification timeout ({NOTIFICATION_TIMEOUT}s)")
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"Discord notification connection error: {e}")
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"Discord notification HTTP error: {e}")
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Discord notification failed: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected Discord error: {type(e).__name__}: {e}")
+
+        return False
+
+    def format_batch(self, batch: BatchedNotification) -> dict[str, Any]:
+        """Format batch for Discord embed."""
+        # Group events by type
+        blocked = [e.domain for e in batch.events if e.event_type == EventType.BLOCK]
+        unblocked = [e.domain for e in batch.events if e.event_type == EventType.UNBLOCK]
+        allowed = [e.domain for e in batch.events if e.event_type == EventType.ALLOW]
+        disallowed = [e.domain for e in batch.events if e.event_type == EventType.DISALLOW]
+        pc_activated = [e.domain for e in batch.events if e.event_type == EventType.PC_ACTIVATE]
+        pc_deactivated = [e.domain for e in batch.events if e.event_type == EventType.PC_DEACTIVATE]
+        pending = [e.domain for e in batch.events if e.event_type == EventType.PENDING]
+        errors = [e.domain for e in batch.events if e.event_type == EventType.ERROR]
+        panic = [e.domain for e in batch.events if e.event_type == EventType.PANIC]
+
+        # Build description
+        lines: list[str] = []
+
+        if blocked:
+            domains_str = self._format_domain_list(blocked)
+            lines.append(f":red_circle: **Blocked ({len(blocked)}):** {domains_str}")
+
+        if unblocked:
+            domains_str = self._format_domain_list(unblocked)
+            lines.append(f":green_circle: **Unblocked ({len(unblocked)}):** {domains_str}")
+
+        if allowed:
+            domains_str = self._format_domain_list(allowed)
+            lines.append(f":white_check_mark: **Allowed ({len(allowed)}):** {domains_str}")
+
+        if disallowed:
+            domains_str = self._format_domain_list(disallowed)
+            lines.append(f":x: **Disallowed ({len(disallowed)}):** {domains_str}")
+
+        if pc_activated:
+            domains_str = self._format_domain_list(pc_activated)
+            lines.append(f":shield: **PC Activated ({len(pc_activated)}):** {domains_str}")
+
+        if pc_deactivated:
+            domains_str = self._format_domain_list(pc_deactivated)
+            lines.append(f":unlock: **PC Deactivated ({len(pc_deactivated)}):** {domains_str}")
+
+        if pending:
+            domains_str = self._format_domain_list(pending)
+            lines.append(f":clock3: **Scheduled ({len(pending)}):** {domains_str}")
+
+        if panic:
+            domains_str = self._format_domain_list(panic)
+            lines.append(f":rotating_light: **PANIC MODE:** {domains_str}")
+
+        if errors:
+            domains_str = self._format_domain_list(errors)
+            lines.append(f":warning: **Errors ({len(errors)}):** {domains_str}")
+
+        sync_time = batch.sync_end.strftime("%H:%M") if batch.sync_end else "N/A"
+        description = "\n".join(lines) if lines else "No changes"
+
+        return {
+            "embeds": [
+                {
+                    "title": ":bar_chart: NextDNS Blocker Sync Complete",
+                    "description": description,
+                    "color": self.COLOR_BATCH,
+                    "footer": {"text": f"Profile: {batch.profile_id} | Synced at {sync_time}"},
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            ]
+        }
+
+    def _format_domain_list(self, domains: list[str], max_show: int = 5) -> str:
+        """Format domain list with truncation."""
+        if len(domains) <= max_show:
+            return ", ".join(domains)
+        shown = ", ".join(domains[:max_show])
+        return f"{shown}... (+{len(domains) - max_show} more)"
 
 
-# Singleton instance for module-level rate limiting
-_rate_limiter = _NotificationRateLimiter()
+class MacOSAdapter(NotificationAdapter):
+    """macOS native notification adapter using osascript."""
+
+    def __init__(self, sound: bool = True) -> None:
+        self._sound = sound
+        self._is_macos = self._check_macos()
+
+    def _check_macos(self) -> bool:
+        """Check if running on macOS."""
+        import platform
+
+        return platform.system() == "Darwin"
+
+    @property
+    def name(self) -> str:
+        return "macOS"
+
+    @property
+    def is_configured(self) -> bool:
+        return self._is_macos
+
+    def send(self, batch: BatchedNotification) -> bool:
+        if not self.is_configured:
+            logger.debug("macOS adapter not available (not on macOS)")
+            return False
+
+        title, message = self.format_batch(batch)
+
+        try:
+            sound_part = 'sound name "Glass"' if self._sound else ""
+            script = f'display notification "{message}" with title "{title}" {sound_part}'
+
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if result.returncode == 0:
+                logger.debug(f"macOS notification sent with {len(batch.events)} events")
+                return True
+            else:
+                logger.warning(f"macOS notification failed: {result.stderr}")
+                return False
+
+        except subprocess.TimeoutExpired:
+            logger.warning("macOS notification timeout")
+        except FileNotFoundError:
+            logger.warning("osascript not found")
+        except Exception as e:
+            logger.error(f"Unexpected macOS notification error: {type(e).__name__}: {e}")
+
+        return False
+
+    def format_batch(self, batch: BatchedNotification) -> tuple[str, str]:
+        """Format batch for macOS notification."""
+        # Count events by type
+        blocked = sum(1 for e in batch.events if e.event_type == EventType.BLOCK)
+        unblocked = sum(1 for e in batch.events if e.event_type == EventType.UNBLOCK)
+        allowed = sum(1 for e in batch.events if e.event_type == EventType.ALLOW)
+        disallowed = sum(1 for e in batch.events if e.event_type == EventType.DISALLOW)
+        panic = any(e.event_type == EventType.PANIC for e in batch.events)
+
+        title = "NextDNS Blocker Sync"
+        parts: list[str] = []
+
+        if panic:
+            title = "PANIC MODE"
+            parts.append("Emergency block activated")
+
+        if blocked:
+            parts.append(f"Blocked: {blocked}")
+        if unblocked:
+            parts.append(f"Unblocked: {unblocked}")
+        if allowed:
+            parts.append(f"Allowed: {allowed}")
+        if disallowed:
+            parts.append(f"Disallowed: {disallowed}")
+
+        message = " | ".join(parts) if parts else "No changes"
+
+        # Escape quotes for osascript
+        message = message.replace('"', '\\"')
+        title = title.replace('"', '\\"')
+
+        return title, message
 
 
-def _reset_rate_limit() -> None:
-    """Reset rate limit state. Used for testing."""
-    _rate_limiter.reset()
-
-
-def is_notifications_enabled() -> bool:
+class NotificationManager:
     """
-    Check if Discord notifications are enabled.
+    Manages notification collection and batched async delivery.
 
-    Returns:
-        True if DISCORD_NOTIFICATIONS_ENABLED is set to 'true', False otherwise
+    Usage as context manager:
+        with NotificationManager.get_instance().sync_context(profile_id, config) as nm:
+            nm.queue(EventType.BLOCK, "reddit.com")
+            nm.queue(EventType.UNBLOCK, "github.com")
+        # Automatically flushes on exit
+
+    Usage explicit:
+        nm = NotificationManager.get_instance()
+        nm.start_batch(profile_id, config)
+        nm.queue(EventType.BLOCK, "reddit.com")
+        nm.flush()
     """
-    enabled = os.getenv("DISCORD_NOTIFICATIONS_ENABLED", "").lower()
-    return enabled == "true"
+
+    _instance: Optional["NotificationManager"] = None
+    _lock = threading.Lock()
+    _executor: Optional[ThreadPoolExecutor] = None
+    _pending_futures: list[Future[bool]] = []
+
+    def __init__(self) -> None:
+        self._events: list[NotificationEvent] = []
+        self._batch_active = False
+        self._profile_id = ""
+        self._adapters: list[NotificationAdapter] = []
+        self._sync_start: Optional[datetime] = None
+        self._enabled = True
+
+    @classmethod
+    def get_instance(cls) -> "NotificationManager":
+        """Get or create the singleton instance."""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    def reset_instance(cls) -> None:
+        """Reset the singleton instance. Used for testing."""
+        with cls._lock:
+            if cls._instance is not None:
+                cls._instance._events = []
+                cls._instance._batch_active = False
+                cls._instance._adapters = []
+            cls._instance = None
+
+    @classmethod
+    def _get_executor(cls) -> ThreadPoolExecutor:
+        """Get or create the thread pool executor."""
+        if cls._executor is None:
+            cls._executor = ThreadPoolExecutor(
+                max_workers=2,
+                thread_name_prefix="notification-",
+            )
+            atexit.register(cls._shutdown_executor)
+        return cls._executor
+
+    @classmethod
+    def _shutdown_executor(cls) -> None:
+        """Gracefully shutdown the executor on program exit."""
+        if cls._executor:
+            # Wait for pending notifications with timeout
+            for future in cls._pending_futures:
+                try:
+                    future.result(timeout=5.0)
+                except Exception as e:
+                    logger.debug(f"Notification future error during shutdown: {e}")
+            cls._executor.shutdown(wait=True, cancel_futures=True)
+            cls._executor = None
+            cls._pending_futures = []
+
+    def configure(self, config: dict[str, Any]) -> None:
+        """
+        Configure adapters from notification config.
+
+        Args:
+            config: Notification configuration dictionary with channels
+        """
+        self._adapters = []
+
+        notifications = config.get("notifications", {})
+        if not notifications:
+            logger.debug("No notifications section in config")
+            return
+
+        self._enabled = notifications.get("enabled", True)
+        if not self._enabled:
+            logger.debug("Notifications disabled in config")
+            return
+
+        channels = notifications.get("channels", {})
+
+        # Configure Discord adapter
+        discord_config = channels.get("discord", {})
+        if discord_config.get("enabled", False):
+            webhook_url = discord_config.get("webhook_url")
+            if webhook_url:
+                self._adapters.append(DiscordAdapter(webhook_url))
+                logger.debug("Discord adapter configured")
+
+        # Configure macOS adapter
+        macos_config = channels.get("macos", {})
+        if macos_config.get("enabled", False):
+            sound = macos_config.get("sound", True)
+            adapter = MacOSAdapter(sound=sound)
+            if adapter.is_configured:
+                self._adapters.append(adapter)
+                logger.debug("macOS adapter configured")
+
+    def start_batch(self, profile_id: str) -> None:
+        """Start collecting events for a batch."""
+        self._events = []
+        self._batch_active = True
+        self._profile_id = profile_id
+        self._sync_start = datetime.now(timezone.utc)
+
+    def queue(self, event_type: EventType, domain: str, **metadata: Any) -> None:
+        """Queue an event for batched delivery."""
+        if not self._enabled:
+            return
+
+        if not self._batch_active:
+            logger.debug(f"No batch active, dropping event: {event_type.value} {domain}")
+            return
+
+        self._events.append(
+            NotificationEvent(
+                event_type=event_type,
+                domain=domain,
+                metadata=metadata,
+            )
+        )
+        logger.debug(f"Queued notification: {event_type.value} {domain}")
+
+    def flush(self, async_send: bool = True) -> None:
+        """Send all queued events as a batch and clear the queue."""
+        if not self._enabled:
+            self._batch_active = False
+            self._events = []
+            return
+
+        if not self._events:
+            logger.debug("No events to flush")
+            self._batch_active = False
+            return
+
+        if not self._adapters:
+            logger.debug("No adapters configured, skipping flush")
+            self._batch_active = False
+            self._events = []
+            return
+
+        batch = BatchedNotification(
+            events=self._events.copy(),
+            profile_id=self._profile_id,
+            sync_start=self._sync_start or datetime.now(timezone.utc),
+            sync_end=datetime.now(timezone.utc),
+        )
+
+        if async_send:
+            future = self._get_executor().submit(self._send_batch, batch)
+            self._pending_futures.append(future)
+            # Clean up completed futures
+            self._pending_futures = [f for f in self._pending_futures if not f.done()]
+        else:
+            self._send_batch(batch)
+
+        self._events = []
+        self._batch_active = False
+
+    def _send_batch(self, batch: BatchedNotification) -> bool:
+        """Send batch to all configured adapters."""
+        success = False
+        for adapter in self._adapters:
+            try:
+                if adapter.send(batch):
+                    success = True
+            except Exception as e:
+                logger.warning(f"Notification adapter {adapter.name} failed: {e}")
+        return success
+
+    @contextmanager
+    def sync_context(
+        self, profile_id: str, config: dict[str, Any]
+    ) -> Generator["NotificationManager", None, None]:
+        """Context manager for sync operations."""
+        self.configure(config)
+        self.start_batch(profile_id)
+        try:
+            yield self
+        finally:
+            self.flush()
 
 
-def get_webhook_url() -> Optional[str]:
-    """
-    Get Discord webhook URL from environment.
-
-    Returns:
-        Webhook URL if set, None otherwise
-    """
-    return os.getenv("DISCORD_WEBHOOK_URL")
+def get_notification_manager() -> NotificationManager:
+    """Get the global NotificationManager instance."""
+    return NotificationManager.get_instance()
 
 
-def send_discord_notification(
-    domain: str, event_type: str, webhook_url: Optional[str] = None
+def send_notification(
+    event_type: EventType, domain: str, config: dict[str, Any], **metadata: Any
 ) -> None:
     """
-    Send a Discord webhook notification for a block/unblock event.
+    Send an immediate notification (not batched).
 
-    This function is designed to silently fail - it will never raise exceptions
-    to the caller. All errors are logged and swallowed to prevent notification
-    failures from interrupting the main application flow.
-
-    Silent failures occur when:
-    - Notifications are disabled AND webhook_url is not explicitly provided
-    - Webhook URL is not configured
-    - Network request fails or times out
-    - Rate limit exceeded (3 seconds between notifications)
-    - Unknown event type provided
+    Use this for individual commands like unblock, allow, disallow.
+    For sync operations, use NotificationManager.sync_context() instead.
 
     Args:
-        domain: Domain name that was blocked/unblocked
-        event_type: Event type - one of "block", "unblock", "pending",
-                    "cancel_pending", or "panic"
-        webhook_url: Optional explicit webhook URL. If provided, notifications
-                     are sent even if DISCORD_NOTIFICATIONS_ENABLED is not set.
-
-    Note:
-        This function does not raise exceptions. All errors are caught internally
-        and logged at appropriate levels (debug, warning, or error).
+        event_type: Type of event
+        domain: Domain name
+        config: Configuration dict with 'notifications' section
+        **metadata: Additional metadata
     """
-    # If webhook_url is explicitly passed, use it regardless of env setting
-    # Otherwise, check if notifications are enabled via environment
-    if webhook_url is None:
-        if not is_notifications_enabled():
-            return
-        webhook_url = get_webhook_url()
+    nm = get_notification_manager()
+    nm.configure(config)
 
-    if not webhook_url:
-        logger.debug("Discord webhook URL not configured, skipping notification")
+    if not nm._enabled or not nm._adapters:
         return
 
-    # Apply rate limiting to avoid Discord rate limits
-    if not _rate_limiter.check():
-        logger.debug(f"Rate limited, skipping notification for {event_type}: {domain}")
-        return
+    event = NotificationEvent(event_type=event_type, domain=domain, metadata=metadata)
+    batch = BatchedNotification(
+        events=[event],
+        profile_id=config.get("profile_id", ""),
+    )
+    batch.sync_end = batch.sync_start
 
-    # Determine title and color based on event type
-    if event_type == "block":
-        title = "Domain Blocked"
-        color = COLOR_BLOCK
-    elif event_type == "unblock":
-        title = "Domain Unblocked"
-        color = COLOR_UNBLOCK
-    elif event_type == "pending":
-        title = "Unblock Scheduled"
-        color = COLOR_PENDING
-    elif event_type == "cancel_pending":
-        title = "Scheduled Unblock Cancelled"
-        color = COLOR_CANCEL
-    elif event_type == "panic":
-        title = "Panic Mode Activated"
-        color = COLOR_PANIC
-    elif event_type == "allow":
-        title = "Domain Added to Allowlist"
-        color = COLOR_ALLOW
-    elif event_type == "disallow":
-        title = "Domain Removed from Allowlist"
-        color = COLOR_DISALLOW
-    else:
-        logger.warning(f"Unknown event type: {event_type}, skipping notification")
-        return
-
-    # Create Discord embed payload
-    payload = {
-        "embeds": [
-            {
-                "title": title,
-                "description": domain,
-                "color": color,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "footer": {"text": "NextDNS Blocker"},
-            }
-        ]
-    }
-
-    try:
-        response = requests.post(webhook_url, json=payload, timeout=NOTIFICATION_TIMEOUT)
-        response.raise_for_status()
-        logger.debug(f"Discord notification sent for {event_type}: {domain}")
-    except requests.exceptions.Timeout:
-        logger.warning(
-            f"Discord notification timeout for {event_type}: {domain} "
-            f"(timeout: {NOTIFICATION_TIMEOUT}s)"
-        )
-    except requests.exceptions.ConnectionError as e:
-        logger.warning(f"Discord notification connection error for {event_type}: {domain} - {e}")
-    except requests.exceptions.HTTPError as e:
-        logger.warning(f"Discord notification HTTP error for {event_type}: {domain} - {e}")
-    except requests.exceptions.RequestException as e:
-        logger.warning(f"Discord notification failed for {event_type}: {domain} - {e}")
-    except (ValueError, TypeError) as e:
-        # JSON serialization or payload construction errors
-        logger.warning(f"Discord notification payload error for {event_type}: {domain} - {e}")
-    except Exception as e:
-        # Catch any other Exception subclass (but not BaseException like KeyboardInterrupt/SystemExit)
-        # to ensure silent failure for notification errors
-        logger.error(
-            f"Unexpected error sending Discord notification for {event_type}: {domain} - "
-            f"{type(e).__name__}: {e}"
-        )
+    # Send synchronously for immediate feedback
+    nm._send_batch(batch)

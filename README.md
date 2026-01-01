@@ -20,6 +20,7 @@ Automated domain blocking with per-domain scheduling via the NextDNS API. Build 
 - **Automatic sync** - Watchdog runs every 2 minutes to enforce schedules
 - **Discord notifications** - Real-time alerts for block/unblock events
 - **Allowlist with schedules** - Time-based exceptions for specific domains
+- **Priority-based filtering** - Allowlist always wins over category/service blocks
 
 ## Quick Install
 

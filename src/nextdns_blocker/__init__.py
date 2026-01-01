@@ -22,7 +22,12 @@ from .exceptions import (
     DomainValidationError,
     NextDNSBlockerError,
 )
-from .notifications import send_discord_notification
+from .notifications import (
+    EventType,
+    NotificationManager,
+    get_notification_manager,
+    send_notification,
+)
 from .scheduler import ScheduleEvaluator
 
 __all__ = [
@@ -39,5 +44,8 @@ __all__ = [
     "ConfigurationError",
     "DomainValidationError",
     "APIError",
-    "send_discord_notification",
+    "EventType",
+    "NotificationManager",
+    "get_notification_manager",
+    "send_notification",
 ]

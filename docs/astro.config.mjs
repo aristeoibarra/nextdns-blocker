@@ -4,9 +4,6 @@ import { defineConfig } from "astro/config";
 
 // https://astro.build/config
 export default defineConfig({
-    redirects: {
-        "/": "/getting-started/",
-    },
     integrations: [
         starlight({
             title: "NextDNS Blocker",
@@ -29,6 +26,10 @@ export default defineConfig({
                     label: "Getting Started",
                     items: [
                         { label: "Introduction", slug: "getting-started" },
+                        {
+                            label: "Why nextdns-blocker?",
+                            slug: "why-nextdns-blocker",
+                        },
                         {
                             label: "Installation",
                             slug: "getting-started/installation",
@@ -90,6 +91,10 @@ export default defineConfig({
                             slug: "configuration/unblock-delay",
                         },
                         { label: "Timezone", slug: "configuration/timezone" },
+                        {
+                            label: "Filtering Priority",
+                            slug: "configuration/filtering-priority",
+                        },
                     ],
                 },
                 {

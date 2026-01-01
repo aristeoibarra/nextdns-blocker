@@ -993,7 +993,7 @@ def _process_pending_actions() -> None:
 
     from .client import NextDNSClient
     from .config import load_config
-    from .notifications import send_discord_notification
+    from .notifications import EventType, send_notification
     from .pending import cleanup_old_actions, get_ready_actions, mark_action_executed
 
     ready_actions = get_ready_actions()
@@ -1039,11 +1039,7 @@ def _process_pending_actions() -> None:
                 if client.unblock(domain):
                     mark_action_executed(action_id)
                     audit_log("UNBLOCK", f"{domain} (pending: {action_id})")
-                    send_discord_notification(
-                        domain,
-                        "unblock",
-                        webhook_url=config.get("discord_webhook_url"),
-                    )
+                    send_notification(EventType.UNBLOCK, domain, config)
                     click.echo(f"  Executed pending unblock: {domain}")
                 else:
                     logger.error(f"Failed to unblock {domain} (pending: {action_id})")

@@ -1,303 +1,445 @@
-"""Tests for Discord webhook notifications."""
+"""Tests for the notification system."""
 
 import json
-import os
-from datetime import datetime
-from unittest.mock import patch
+from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
 
-import requests
 import responses
 
 from nextdns_blocker.notifications import (
-    COLOR_BLOCK,
-    COLOR_UNBLOCK,
-    NOTIFICATION_TIMEOUT,
-    get_webhook_url,
-    is_notifications_enabled,
-    send_discord_notification,
+    BatchedNotification,
+    DiscordAdapter,
+    EventType,
+    MacOSAdapter,
+    NotificationEvent,
+    NotificationManager,
+    get_notification_manager,
+    send_notification,
 )
 
 
-class TestNotificationConfiguration:
-    """Tests for notification configuration functions."""
+class TestEventType:
+    """Tests for EventType enum."""
 
-    def test_is_notifications_enabled_true(self):
-        """Test that notifications are enabled when DISCORD_NOTIFICATIONS_ENABLED=true."""
-        with patch.dict(os.environ, {"DISCORD_NOTIFICATIONS_ENABLED": "true"}):
-            assert is_notifications_enabled() is True
-
-    def test_is_notifications_enabled_false(self):
-        """Test that notifications are disabled by default."""
-        with patch.dict(os.environ, {}, clear=True):
-            assert is_notifications_enabled() is False
-
-    def test_is_notifications_enabled_case_insensitive(self):
-        """Test that notification enabled check is case insensitive."""
-        with patch.dict(os.environ, {"DISCORD_NOTIFICATIONS_ENABLED": "TRUE"}):
-            assert is_notifications_enabled() is True
-        with patch.dict(os.environ, {"DISCORD_NOTIFICATIONS_ENABLED": "True"}):
-            assert is_notifications_enabled() is True
-
-    def test_get_webhook_url_set(self):
-        """Test getting webhook URL when set."""
-        test_url = "https://discord.com/api/webhooks/123/abc"
-        with patch.dict(os.environ, {"DISCORD_WEBHOOK_URL": test_url}):
-            assert get_webhook_url() == test_url
-
-    def test_get_webhook_url_not_set(self):
-        """Test getting webhook URL when not set."""
-        with patch.dict(os.environ, {}, clear=True):
-            assert get_webhook_url() is None
+    def test_event_types_exist(self):
+        """Test all expected event types exist."""
+        assert EventType.BLOCK.value == "block"
+        assert EventType.UNBLOCK.value == "unblock"
+        assert EventType.PENDING.value == "pending"
+        assert EventType.CANCEL_PENDING.value == "cancel_pending"
+        assert EventType.PANIC.value == "panic"
+        assert EventType.ALLOW.value == "allow"
+        assert EventType.DISALLOW.value == "disallow"
+        assert EventType.PC_ACTIVATE.value == "pc_activate"
+        assert EventType.PC_DEACTIVATE.value == "pc_deactivate"
+        assert EventType.ERROR.value == "error"
+        assert EventType.TEST.value == "test"
 
 
-class TestDiscordNotifications:
-    """Tests for Discord webhook notification sending."""
+class TestNotificationEvent:
+    """Tests for NotificationEvent dataclass."""
 
-    @responses.activate
-    def test_send_block_notification_success(self):
-        """Test successful block notification."""
-        webhook_url = "https://discord.com/api/webhooks/123/abc"
-        responses.add(responses.POST, webhook_url, json={}, status=204)
+    def test_create_event(self):
+        """Test creating a notification event."""
+        event = NotificationEvent(
+            event_type=EventType.BLOCK,
+            domain="reddit.com",
+        )
+        assert event.event_type == EventType.BLOCK
+        assert event.domain == "reddit.com"
+        assert isinstance(event.timestamp, datetime)
+        assert event.metadata == {}
 
-        with patch.dict(
-            os.environ,
-            {
-                "DISCORD_NOTIFICATIONS_ENABLED": "true",
-                "DISCORD_WEBHOOK_URL": webhook_url,
-            },
-        ):
-            send_discord_notification("reddit.com", "block")
+    def test_create_event_with_metadata(self):
+        """Test creating a notification event with metadata."""
+        event = NotificationEvent(
+            event_type=EventType.PC_ACTIVATE,
+            domain="category:gambling",
+            metadata={"category_id": "gambling"},
+        )
+        assert event.metadata["category_id"] == "gambling"
 
-        assert len(responses.calls) == 1
-        request = responses.calls[0].request
-        assert request.url == webhook_url
-        assert request.method == "POST"
 
-        payload = json.loads(request.body)
+class TestBatchedNotification:
+    """Tests for BatchedNotification dataclass."""
+
+    def test_create_empty_batch(self):
+        """Test creating an empty batch."""
+        batch = BatchedNotification()
+        assert batch.events == []
+        assert batch.profile_id == ""
+        assert isinstance(batch.sync_start, datetime)
+        assert batch.sync_end is None
+
+    def test_create_batch_with_events(self):
+        """Test creating a batch with events."""
+        events = [
+            NotificationEvent(EventType.BLOCK, "reddit.com"),
+            NotificationEvent(EventType.UNBLOCK, "github.com"),
+        ]
+        batch = BatchedNotification(
+            events=events,
+            profile_id="abc123",
+        )
+        assert len(batch.events) == 2
+        assert batch.profile_id == "abc123"
+
+
+class TestDiscordAdapter:
+    """Tests for DiscordAdapter."""
+
+    def test_name(self):
+        """Test adapter name."""
+        adapter = DiscordAdapter()
+        assert adapter.name == "Discord"
+
+    def test_is_configured_false_when_no_url(self):
+        """Test is_configured returns False when no webhook URL."""
+        adapter = DiscordAdapter()
+        assert adapter.is_configured is False
+
+    def test_is_configured_true_when_url_set(self):
+        """Test is_configured returns True when webhook URL is set."""
+        adapter = DiscordAdapter("https://discord.com/api/webhooks/123/abc")
+        assert adapter.is_configured is True
+
+    def test_format_batch_empty(self):
+        """Test formatting an empty batch."""
+        adapter = DiscordAdapter()
+        batch = BatchedNotification(profile_id="test123")
+        batch.sync_end = datetime.now(timezone.utc)
+
+        payload = adapter.format_batch(batch)
+
         assert "embeds" in payload
         assert len(payload["embeds"]) == 1
+        embed = payload["embeds"][0]
+        assert embed["description"] == "No changes"
+        assert "test123" in embed["footer"]["text"]
+
+    def test_format_batch_with_events(self):
+        """Test formatting a batch with events."""
+        adapter = DiscordAdapter()
+        batch = BatchedNotification(
+            events=[
+                NotificationEvent(EventType.BLOCK, "reddit.com"),
+                NotificationEvent(EventType.BLOCK, "twitter.com"),
+                NotificationEvent(EventType.UNBLOCK, "github.com"),
+            ],
+            profile_id="test123",
+        )
+        batch.sync_end = datetime.now(timezone.utc)
+
+        payload = adapter.format_batch(batch)
 
         embed = payload["embeds"][0]
-        assert embed["title"] == "Domain Blocked"
-        assert embed["description"] == "reddit.com"
-        assert embed["color"] == COLOR_BLOCK
-        assert embed["footer"]["text"] == "NextDNS Blocker"
-        assert "timestamp" in embed
+        assert "Blocked (2)" in embed["description"]
+        assert "Unblocked (1)" in embed["description"]
+        assert "reddit.com" in embed["description"]
+        assert "github.com" in embed["description"]
+
+    def test_format_batch_truncates_long_lists(self):
+        """Test that long domain lists are truncated."""
+        adapter = DiscordAdapter()
+        batch = BatchedNotification(
+            events=[NotificationEvent(EventType.BLOCK, f"domain{i}.com") for i in range(10)],
+            profile_id="test123",
+        )
+        batch.sync_end = datetime.now(timezone.utc)
+
+        payload = adapter.format_batch(batch)
+
+        embed = payload["embeds"][0]
+        assert "+5 more" in embed["description"]
 
     @responses.activate
-    def test_send_unblock_notification_success(self):
-        """Test successful unblock notification."""
+    def test_send_success(self):
+        """Test successful notification send."""
         webhook_url = "https://discord.com/api/webhooks/123/abc"
-        responses.add(responses.POST, webhook_url, json={}, status=204)
+        responses.add(responses.POST, webhook_url, body="", status=204)
 
-        with patch.dict(
-            os.environ,
-            {
-                "DISCORD_NOTIFICATIONS_ENABLED": "true",
-                "DISCORD_WEBHOOK_URL": webhook_url,
-            },
-        ):
-            send_discord_notification("reddit.com", "unblock")
+        adapter = DiscordAdapter(webhook_url)
+        batch = BatchedNotification(
+            events=[NotificationEvent(EventType.BLOCK, "reddit.com")],
+            profile_id="test",
+        )
+        batch.sync_end = datetime.now(timezone.utc)
 
+        result = adapter.send(batch)
+
+        assert result is True
         assert len(responses.calls) == 1
-        request = responses.calls[0].request
-        payload = json.loads(request.body)
-        embed = payload["embeds"][0]
-        assert embed["title"] == "Domain Unblocked"
-        assert embed["description"] == "reddit.com"
-        assert embed["color"] == COLOR_UNBLOCK
 
     @responses.activate
-    def test_notification_disabled(self):
-        """Test that no notification is sent when disabled."""
+    def test_send_http_error(self):
+        """Test notification send with HTTP error."""
         webhook_url = "https://discord.com/api/webhooks/123/abc"
+        responses.add(responses.POST, webhook_url, status=500)
 
-        with patch.dict(
-            os.environ,
-            {
-                "DISCORD_NOTIFICATIONS_ENABLED": "false",
-                "DISCORD_WEBHOOK_URL": webhook_url,
-            },
-        ):
-            send_discord_notification("reddit.com", "block")
+        adapter = DiscordAdapter(webhook_url)
+        batch = BatchedNotification(events=[], profile_id="test")
+        batch.sync_end = datetime.now(timezone.utc)
 
-        assert len(responses.calls) == 0
+        result = adapter.send(batch)
 
-    @responses.activate
-    def test_no_webhook_url(self):
-        """Test that no notification is sent when webhook URL is not set."""
-        with patch.dict(os.environ, {"DISCORD_NOTIFICATIONS_ENABLED": "true"}):
-            send_discord_notification("reddit.com", "block")
+        assert result is False
 
-        assert len(responses.calls) == 0
+    def test_send_not_configured(self):
+        """Test send returns False when not configured."""
+        adapter = DiscordAdapter()
+        batch = BatchedNotification(events=[], profile_id="test")
 
-    def test_notification_timeout(self):
-        """Test that notification handles timeout gracefully."""
-        webhook_url = "https://discord.com/api/webhooks/123/abc"
+        result = adapter.send(batch)
 
-        with patch("requests.post") as mock_post:
-            # Simulate timeout exception
-            mock_post.side_effect = requests.exceptions.Timeout("Request timeout")
+        assert result is False
 
-            with patch.dict(
-                os.environ,
-                {
-                    "DISCORD_NOTIFICATIONS_ENABLED": "true",
-                    "DISCORD_WEBHOOK_URL": webhook_url,
+
+class TestMacOSAdapter:
+    """Tests for MacOSAdapter."""
+
+    def test_name(self):
+        """Test adapter name."""
+        adapter = MacOSAdapter()
+        assert adapter.name == "macOS"
+
+    def test_format_batch_empty(self):
+        """Test formatting an empty batch."""
+        adapter = MacOSAdapter()
+        batch = BatchedNotification(profile_id="test")
+
+        title, message = adapter.format_batch(batch)
+
+        assert title == "NextDNS Blocker Sync"
+        assert message == "No changes"
+
+    def test_format_batch_with_blocks(self):
+        """Test formatting a batch with blocked domains."""
+        adapter = MacOSAdapter()
+        batch = BatchedNotification(
+            events=[
+                NotificationEvent(EventType.BLOCK, "reddit.com"),
+                NotificationEvent(EventType.BLOCK, "twitter.com"),
+            ],
+            profile_id="test",
+        )
+
+        title, message = adapter.format_batch(batch)
+
+        assert "Blocked: 2" in message
+
+    def test_format_batch_panic_mode(self):
+        """Test formatting a panic mode batch."""
+        adapter = MacOSAdapter()
+        batch = BatchedNotification(
+            events=[NotificationEvent(EventType.PANIC, "Emergency")],
+            profile_id="test",
+        )
+
+        title, message = adapter.format_batch(batch)
+
+        assert title == "PANIC MODE"
+
+    @patch("subprocess.run")
+    def test_send_success(self, mock_run):
+        """Test successful macOS notification send."""
+        mock_run.return_value = MagicMock(returncode=0)
+
+        adapter = MacOSAdapter()
+        # Force is_macos to True for testing
+        adapter._is_macos = True
+        batch = BatchedNotification(
+            events=[NotificationEvent(EventType.BLOCK, "test.com")],
+            profile_id="test",
+        )
+
+        result = adapter.send(batch)
+
+        assert result is True
+        mock_run.assert_called_once()
+
+    def test_send_not_macos(self):
+        """Test send returns False when not on macOS."""
+        adapter = MacOSAdapter()
+        adapter._is_macos = False
+        batch = BatchedNotification(events=[], profile_id="test")
+
+        result = adapter.send(batch)
+
+        assert result is False
+
+
+class TestNotificationManager:
+    """Tests for NotificationManager."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        NotificationManager.reset_instance()
+
+    def test_singleton(self):
+        """Test that get_instance returns same instance."""
+        nm1 = NotificationManager.get_instance()
+        nm2 = NotificationManager.get_instance()
+        assert nm1 is nm2
+
+    def test_configure_with_discord(self):
+        """Test configuring with Discord channel."""
+        nm = NotificationManager.get_instance()
+        config = {
+            "notifications": {
+                "enabled": True,
+                "channels": {
+                    "discord": {
+                        "enabled": True,
+                        "webhook_url": "https://discord.com/api/webhooks/123/abc",
+                    }
                 },
-            ):
-                # Should not raise exception
-                send_discord_notification("reddit.com", "block")
+            }
+        }
 
-            # Verify request was attempted
-            mock_post.assert_called_once()
+        nm.configure(config)
 
-    @responses.activate
-    def test_notification_http_error(self):
-        """Test that notification handles HTTP errors gracefully."""
-        webhook_url = "https://discord.com/api/webhooks/123/abc"
-        responses.add(responses.POST, webhook_url, json={"error": "Invalid webhook"}, status=404)
+        assert len(nm._adapters) == 1
+        assert isinstance(nm._adapters[0], DiscordAdapter)
 
-        with patch.dict(
-            os.environ,
-            {
-                "DISCORD_NOTIFICATIONS_ENABLED": "true",
-                "DISCORD_WEBHOOK_URL": webhook_url,
-            },
-        ):
-            # Should not raise exception
-            send_discord_notification("reddit.com", "block")
+    def test_configure_disabled(self):
+        """Test configuring with notifications disabled."""
+        nm = NotificationManager.get_instance()
+        config = {"notifications": {"enabled": False}}
 
-        assert len(responses.calls) == 1
+        nm.configure(config)
 
-    @responses.activate
-    def test_invalid_event_type(self):
-        """Test that invalid event types are handled gracefully."""
-        webhook_url = "https://discord.com/api/webhooks/123/abc"
+        assert nm._enabled is False
+        assert len(nm._adapters) == 0
 
-        with patch.dict(
-            os.environ,
-            {
-                "DISCORD_NOTIFICATIONS_ENABLED": "true",
-                "DISCORD_WEBHOOK_URL": webhook_url,
-            },
-        ):
-            send_discord_notification("reddit.com", "invalid_event")
+    def test_start_batch(self):
+        """Test starting a batch."""
+        nm = NotificationManager.get_instance()
+        nm.configure({"notifications": {"enabled": True}})
 
-        assert len(responses.calls) == 0
+        nm.start_batch("profile123")
 
-    @responses.activate
-    def test_notification_payload_structure(self):
-        """Test that notification payload has correct structure."""
-        webhook_url = "https://discord.com/api/webhooks/123/abc"
-        responses.add(responses.POST, webhook_url, json={}, status=204)
+        assert nm._batch_active is True
+        assert nm._profile_id == "profile123"
+        assert nm._events == []
 
-        with patch.dict(
-            os.environ,
-            {
-                "DISCORD_NOTIFICATIONS_ENABLED": "true",
-                "DISCORD_WEBHOOK_URL": webhook_url,
-            },
-        ):
-            send_discord_notification("example.com", "block")
+    def test_queue_event(self):
+        """Test queuing an event."""
+        nm = NotificationManager.get_instance()
+        nm.configure({"notifications": {"enabled": True}})
+        nm.start_batch("profile123")
 
-        request = responses.calls[0].request
-        payload = json.loads(request.body)
+        nm.queue(EventType.BLOCK, "reddit.com")
 
-        # Verify payload structure
-        assert isinstance(payload, dict)
-        assert "embeds" in payload
-        assert isinstance(payload["embeds"], list)
-        assert len(payload["embeds"]) == 1
+        assert len(nm._events) == 1
+        assert nm._events[0].event_type == EventType.BLOCK
+        assert nm._events[0].domain == "reddit.com"
 
-        embed = payload["embeds"][0]
-        assert "title" in embed
-        assert "description" in embed
-        assert "color" in embed
-        assert "timestamp" in embed
-        assert "footer" in embed
-        assert embed["footer"]["text"] == "NextDNS Blocker"
+    def test_queue_without_batch_drops_event(self):
+        """Test that queuing without active batch drops the event."""
+        nm = NotificationManager.get_instance()
+        nm.configure({"notifications": {"enabled": True}})
 
-        # Verify timestamp format (ISO format with timezone)
-        timestamp = embed["timestamp"]
-        # Should be parseable as ISO datetime
-        datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        nm.queue(EventType.BLOCK, "reddit.com")
+
+        assert len(nm._events) == 0
+
+    def test_flush_clears_events(self):
+        """Test that flush clears events."""
+        nm = NotificationManager.get_instance()
+        nm.configure({"notifications": {"enabled": True}})
+        nm.start_batch("profile123")
+        nm.queue(EventType.BLOCK, "reddit.com")
+
+        nm.flush(async_send=False)
+
+        assert nm._events == []
+        assert nm._batch_active is False
 
     @responses.activate
-    def test_notification_uses_correct_timeout(self):
-        """Test that notification uses the correct timeout value."""
+    def test_sync_context(self):
+        """Test sync_context context manager."""
         webhook_url = "https://discord.com/api/webhooks/123/abc"
+        responses.add(responses.POST, webhook_url, body="", status=204)
 
-        with patch("requests.post") as mock_post:
-            mock_post.return_value.status_code = 204
-            mock_post.return_value.raise_for_status = lambda: None
-
-            with patch.dict(
-                os.environ,
-                {
-                    "DISCORD_NOTIFICATIONS_ENABLED": "true",
-                    "DISCORD_WEBHOOK_URL": webhook_url,
+        nm = NotificationManager.get_instance()
+        config = {
+            "profile_id": "test123",
+            "notifications": {
+                "enabled": True,
+                "channels": {
+                    "discord": {
+                        "enabled": True,
+                        "webhook_url": webhook_url,
+                    }
                 },
-            ):
-                send_discord_notification("example.com", "block")
+            },
+        }
 
-            # Verify timeout was used
-            mock_post.assert_called_once()
-            call_kwargs = mock_post.call_args[1]
-            assert call_kwargs["timeout"] == NOTIFICATION_TIMEOUT
+        # Use sync_context but override flush to be synchronous for testing
+        nm.configure(config)
+        nm.start_batch("test123")
+        nm.queue(EventType.BLOCK, "reddit.com")
+        nm.flush(async_send=False)
+
+        # Verify notification was sent
+        assert len(responses.calls) == 1
+        assert nm._batch_active is False
 
 
-class TestAllowlistNotifications:
-    """Tests for allowlist notification types (allow/disallow)."""
+class TestSendNotification:
+    """Tests for send_notification helper function."""
 
-    def test_allow_notification_has_correct_color(self):
-        """Test that allow notifications use the correct color."""
-        from nextdns_blocker.notifications import COLOR_ALLOW
-
-        assert COLOR_ALLOW == 3066993  # Green
-
-    def test_disallow_notification_has_correct_color(self):
-        """Test that disallow notifications use the correct color."""
-        from nextdns_blocker.notifications import COLOR_DISALLOW
-
-        assert COLOR_DISALLOW == 15105570  # Orange
+    def setup_method(self):
+        """Reset singleton before each test."""
+        NotificationManager.reset_instance()
 
     @responses.activate
-    def test_allow_notification_sent_with_correct_title(self):
-        """Test that allow notification is sent with correct title."""
+    def test_send_notification(self):
+        """Test sending an immediate notification."""
         webhook_url = "https://discord.com/api/webhooks/123/abc"
-        responses.add(responses.POST, webhook_url, status=204)
+        responses.add(responses.POST, webhook_url, body="", status=204)
 
-        with patch.dict(
-            os.environ,
-            {
-                "DISCORD_NOTIFICATIONS_ENABLED": "true",
-                "DISCORD_WEBHOOK_URL": webhook_url,
+        config = {
+            "profile_id": "test123",
+            "notifications": {
+                "enabled": True,
+                "channels": {
+                    "discord": {
+                        "enabled": True,
+                        "webhook_url": webhook_url,
+                    }
+                },
             },
-        ):
-            send_discord_notification("aws.amazon.com", "allow")
+        }
+
+        send_notification(EventType.UNBLOCK, "github.com", config)
 
         assert len(responses.calls) == 1
-        request_body = json.loads(responses.calls[0].request.body)
-        assert request_body["embeds"][0]["title"] == "Domain Added to Allowlist"
-        assert request_body["embeds"][0]["description"] == "aws.amazon.com"
+        payload = json.loads(responses.calls[0].request.body)
+        assert "github.com" in payload["embeds"][0]["description"]
 
-    @responses.activate
-    def test_disallow_notification_sent_with_correct_title(self):
-        """Test that disallow notification is sent with correct title."""
-        webhook_url = "https://discord.com/api/webhooks/123/abc"
-        responses.add(responses.POST, webhook_url, status=204)
+    def test_send_notification_no_config(self):
+        """Test send_notification with no notification config."""
+        config = {}
 
-        with patch.dict(
-            os.environ,
-            {
-                "DISCORD_NOTIFICATIONS_ENABLED": "true",
-                "DISCORD_WEBHOOK_URL": webhook_url,
-            },
-        ):
-            send_discord_notification("aws.amazon.com", "disallow")
+        # Should not raise
+        send_notification(EventType.BLOCK, "test.com", config)
 
-        assert len(responses.calls) == 1
-        request_body = json.loads(responses.calls[0].request.body)
-        assert request_body["embeds"][0]["title"] == "Domain Removed from Allowlist"
-        assert request_body["embeds"][0]["description"] == "aws.amazon.com"
+
+class TestGetNotificationManager:
+    """Tests for get_notification_manager function."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        NotificationManager.reset_instance()
+
+    def test_returns_manager(self):
+        """Test that function returns a NotificationManager."""
+        nm = get_notification_manager()
+        assert isinstance(nm, NotificationManager)
+
+    def test_returns_same_instance(self):
+        """Test that function returns the same instance."""
+        nm1 = get_notification_manager()
+        nm2 = get_notification_manager()
+        assert nm1 is nm2

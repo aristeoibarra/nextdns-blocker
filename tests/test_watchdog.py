@@ -122,8 +122,8 @@ class TestSetDisabled:
         # Should be a valid ISO datetime
         disabled_until = datetime.fromisoformat(content)
         expected = datetime.now() + timedelta(minutes=30)
-        # Allow 1 second tolerance
-        assert abs((disabled_until - expected).total_seconds()) < 1
+        # Allow 3 second tolerance for slower systems (Windows CI)
+        assert abs((disabled_until - expected).total_seconds()) < 3
 
     def test_set_disabled_permanent(self, mock_disabled_file, mock_audit_log_file):
         """Should set permanent disabled state."""

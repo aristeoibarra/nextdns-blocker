@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.5.0] - 2025-12-31
+
+### Added
+- **Notification system revamp**: Complete overhaul with batching, async delivery, and multi-channel support
+  - Batch multiple notifications to reduce noise
+  - Async delivery for improved performance
+  - Multi-channel architecture for future extensibility
+- **Schedule templates**: Reusable schedule templates with `blocked_hours` support
+  - Define named templates and reference them across multiple domains
+  - New `blocked_hours` syntax as alternative to `available_hours`
+  - Reduces configuration duplication and maintenance
+- **Ineffective block detection**: Automatically detect denylist entries that are subdomains of allowlist entries
+  - Warns when a blocked domain would be ineffective due to parent domain in allowlist
+  - Helps maintain clean and effective configurations
+- **Formatted config summary**: New formatted output for `config show` command
+  - Cleaner, more readable configuration display
+  - Highlights key settings and domain counts
+- **Scheduled allowlist status**: Show active/inactive state for scheduled allowlist entries in status command
+  - Visual indicators for entries currently active based on schedule
+- **NextDNS parental control visibility**: Display NextDNS parental control settings in status command
+  - Shows which native NextDNS categories and services are enabled
+- **suppress_subdomain_warning option**: New option for allowlist entries to suppress subdomain warnings
+  - Useful when intentionally allowing specific subdomains
+- **Duplicate domain validation**: Prevent duplicate domains in configuration
+  - Validates on config load and edit
+  - Clear error messages for duplicates
+
+### Changed
+- **Documentation site**: New Astro-based landing page with improved visual hierarchy
+  - Modern documentation landing page at nextdns-blocker.pages.dev
+  - Refined layout and navigation
+
+### Fixed
+- **Windows CI timing**: Increased timing tolerance for Windows CI tests
+- **Notification tests**: Updated tests to work with refactored notification API
+- **Category/service duplication**: Check if categories/services already active before adding
+
+### Documentation
+- Added 'Why nextdns-blocker?' page highlighting community pain points and solutions
+- Added allowlist vs parental control priority documentation
+- Synced documentation with current codebase features
+
+### Maintenance
+- Updated pre-commit hooks to latest versions
+- Bumped peter-evans/repository-dispatch from 3 to 4
+- Bumped Docker Python from 3.12-alpine to 3.14-alpine
+
 ## [6.4.0] - 2025-12-21
 
 ### Added
@@ -588,6 +635,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[6.5.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.3.0...v6.4.0
 [6.3.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.2.0...v6.3.0
 [6.2.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.1.1...v6.2.0

@@ -215,6 +215,50 @@ Block by service in NextDNS:
 
 NextDNS Blocker adds scheduled access on top of these blocks.
 
+### Filtering Priority
+
+NextDNS processes filtering rules in this order:
+
+| Priority | Source | Result |
+|----------|--------|--------|
+| 1 (Highest) | **Allowlist** | ALLOWED |
+| 2 | Denylist | BLOCKED |
+| 3 | Parental Control (categories/services) | BLOCKED |
+| 4 | Privacy blocklists | BLOCKED |
+| 5 | Normal resolution | ALLOWED |
+
+**Key point:** Allowlist always wins over any blocking rule.
+
+### Exception Example: Discord with Gaming Block
+
+Block the gaming category but allow Discord for communication:
+
+```json
+{
+  "nextdns": {
+    "categories": [
+      {
+        "id": "gaming",
+        "description": "Block gaming sites",
+        "unblock_delay": "never"
+      }
+    ]
+  },
+  "allowlist": [
+    {
+      "domain": "discord.com",
+      "description": "Exception to gaming block - communication allowed"
+    }
+  ]
+}
+```
+
+**Result**:
+- Steam, Fortnite, Roblox, etc. → **Blocked** (by gaming category)
+- Discord → **Allowed** (allowlist overrides category block)
+
+This pattern is useful when a category blocks more than intended. See [Filtering Priority](/configuration/filtering-priority/) for more examples.
+
 ## Setup Steps
 
 ### 1. Set Up on Child's Device

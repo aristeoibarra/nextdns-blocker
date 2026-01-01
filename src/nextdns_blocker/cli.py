@@ -33,6 +33,7 @@ from .completion import (
 )
 from .config import (
     DEFAULT_PAUSE_MINUTES,
+    _expand_categories,
     get_config_dir,
     load_config,
     load_domains,
@@ -45,7 +46,12 @@ from .config_cli import register_config
 from .exceptions import ConfigurationError, DomainValidationError
 from .init import run_interactive_wizard, run_non_interactive
 from .nextdns_cli import register_nextdns
-from .notifications import send_discord_notification
+from .notifications import (
+    EventType,
+    NotificationManager,
+    get_notification_manager,
+    send_notification,
+)
 from .platform_utils import get_executable_path, is_macos, is_windows
 from .scheduler import ScheduleEvaluator
 from .watchdog import (
@@ -349,11 +355,7 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
             # Create pending action
             action = create_pending_action(domain, unblock_delay, requested_by="cli")
             if action:
-                send_discord_notification(
-                    domain=f"{domain} (scheduled)",
-                    event_type="pending",
-                    webhook_url=config.get("discord_webhook_url"),
-                )
+                send_notification(EventType.PENDING, f"{domain} (scheduled)", config)
                 execute_at = action["execute_at"]
                 console.print(f"\n  [yellow]Unblock scheduled for '{domain}'[/yellow]")
                 console.print(f"  Delay: {unblock_delay}")
@@ -372,9 +374,7 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
 
         if client.unblock(domain):
             audit_log("UNBLOCK", domain)
-            send_discord_notification(
-                domain, "unblock", webhook_url=config.get("discord_webhook_url")
-            )
+            send_notification(EventType.UNBLOCK, domain, config)
             console.print(f"\n  [green]Unblocked: {domain}[/green]\n")
         else:
             console.print(f"\n  [red]Error: Failed to unblock '{domain}'[/red]\n", highlight=False)
@@ -401,6 +401,7 @@ def _sync_denylist(
     dry_run: bool,
     verbose: bool,
     panic_active: bool,
+    nm: "NotificationManager",
 ) -> tuple[int, int]:
     """
     Synchronize denylist domains based on schedules.
@@ -413,6 +414,7 @@ def _sync_denylist(
         dry_run: If True, only show what would be done
         verbose: If True, show detailed output
         panic_active: If True, skip unblocks
+        nm: NotificationManager for queuing notifications
 
     Returns:
         Tuple of (blocked_count, unblocked_count)
@@ -432,15 +434,13 @@ def _sync_denylist(
             else:
                 if client.block(domain):
                     audit_log("BLOCK", domain)
-                    send_discord_notification(
-                        domain, "block", webhook_url=config.get("discord_webhook_url")
-                    )
+                    nm.queue(EventType.BLOCK, domain)
                     blocked_count += 1
 
         elif not should_block and is_blocked:
             # Domain should be unblocked
             unblocked = _handle_unblock(
-                domain, domain_config, domains, client, config, dry_run, verbose, panic_active
+                domain, domain_config, domains, client, config, dry_run, verbose, panic_active, nm
             )
             if unblocked:
                 unblocked_count += 1
@@ -457,6 +457,7 @@ def _handle_unblock(
     dry_run: bool,
     verbose: bool,
     panic_active: bool,
+    nm: "NotificationManager",
 ) -> bool:
     """
     Handle unblocking a domain with delay logic.
@@ -470,6 +471,7 @@ def _handle_unblock(
         dry_run: If True, only show what would be done
         verbose: If True, show detailed output
         panic_active: If True, skip unblocks
+        nm: NotificationManager for queuing notifications
 
     Returns:
         True if domain was unblocked immediately, False otherwise
@@ -519,9 +521,7 @@ def _handle_unblock(
     else:
         if client.unblock(domain):
             audit_log("UNBLOCK", domain)
-            send_discord_notification(
-                domain, "unblock", webhook_url=config.get("discord_webhook_url")
-            )
+            nm.queue(EventType.UNBLOCK, domain)
             return True
     return False
 
@@ -534,6 +534,7 @@ def _sync_allowlist(
     dry_run: bool,
     verbose: bool,
     panic_active: bool,
+    nm: "NotificationManager",
 ) -> tuple[int, int]:
     """
     Synchronize allowlist domains based on schedules.
@@ -550,6 +551,7 @@ def _sync_allowlist(
         dry_run: If True, only show what would be done
         verbose: If True, show detailed output
         panic_active: If True, skip all allowlist operations
+        nm: NotificationManager for queuing notifications
 
     Returns:
         Tuple of (allowed_count, disallowed_count)
@@ -577,9 +579,7 @@ def _sync_allowlist(
             else:
                 if client.allow(domain):
                     audit_log("ALLOW", domain)
-                    send_discord_notification(
-                        domain, "allow", webhook_url=config.get("discord_webhook_url")
-                    )
+                    nm.queue(EventType.ALLOW, domain)
                     allowed_count += 1
 
         elif not should_allow and is_allowed:
@@ -589,9 +589,7 @@ def _sync_allowlist(
             else:
                 if client.disallow(domain):
                     audit_log("DISALLOW", domain)
-                    send_discord_notification(
-                        domain, "disallow", webhook_url=config.get("discord_webhook_url")
-                    )
+                    nm.queue(EventType.DISALLOW, domain)
                     disallowed_count += 1
 
     return allowed_count, disallowed_count
@@ -605,6 +603,7 @@ def _sync_nextdns_categories(
     dry_run: bool,
     verbose: bool,
     panic_active: bool,
+    nm: "NotificationManager",
 ) -> tuple[int, int]:
     """
     Synchronize NextDNS Parental Control categories based on schedules.
@@ -620,6 +619,7 @@ def _sync_nextdns_categories(
         dry_run: If True, only show what would be done
         verbose: If True, show detailed output
         panic_active: If True, skip deactivations (maintain blocks)
+        nm: NotificationManager for queuing notifications
 
     Returns:
         Tuple of (activated_count, deactivated_count)
@@ -645,11 +645,7 @@ def _sync_nextdns_categories(
             else:
                 if client.activate_category(category_id):
                     audit_log("PC_ACTIVATE", f"category:{category_id}")
-                    send_discord_notification(
-                        f"category:{category_id}",
-                        "block",
-                        webhook_url=config.get("discord_webhook_url"),
-                    )
+                    nm.queue(EventType.PC_ACTIVATE, f"category:{category_id}")
                     activated_count += 1
 
         elif not should_block and is_active:
@@ -664,11 +660,7 @@ def _sync_nextdns_categories(
             else:
                 if client.deactivate_category(category_id):
                     audit_log("PC_DEACTIVATE", f"category:{category_id}")
-                    send_discord_notification(
-                        f"category:{category_id}",
-                        "unblock",
-                        webhook_url=config.get("discord_webhook_url"),
-                    )
+                    nm.queue(EventType.PC_DEACTIVATE, f"category:{category_id}")
                     deactivated_count += 1
 
     return activated_count, deactivated_count
@@ -682,6 +674,7 @@ def _sync_nextdns_services(
     dry_run: bool,
     verbose: bool,
     panic_active: bool,
+    nm: "NotificationManager",
 ) -> tuple[int, int]:
     """
     Synchronize NextDNS Parental Control services based on schedules.
@@ -697,6 +690,7 @@ def _sync_nextdns_services(
         dry_run: If True, only show what would be done
         verbose: If True, show detailed output
         panic_active: If True, skip deactivations (maintain blocks)
+        nm: NotificationManager for queuing notifications
 
     Returns:
         Tuple of (activated_count, deactivated_count)
@@ -722,11 +716,7 @@ def _sync_nextdns_services(
             else:
                 if client.activate_service(service_id):
                     audit_log("PC_ACTIVATE", f"service:{service_id}")
-                    send_discord_notification(
-                        f"service:{service_id}",
-                        "block",
-                        webhook_url=config.get("discord_webhook_url"),
-                    )
+                    nm.queue(EventType.PC_ACTIVATE, f"service:{service_id}")
                     activated_count += 1
 
         elif not should_block and is_active:
@@ -741,11 +731,7 @@ def _sync_nextdns_services(
             else:
                 if client.deactivate_service(service_id):
                     audit_log("PC_DEACTIVATE", f"service:{service_id}")
-                    send_discord_notification(
-                        f"service:{service_id}",
-                        "unblock",
-                        webhook_url=config.get("discord_webhook_url"),
-                    )
+                    nm.queue(EventType.PC_DEACTIVATE, f"service:{service_id}")
                     deactivated_count += 1
 
     return activated_count, deactivated_count
@@ -914,52 +900,69 @@ def sync(
         # - Parental Control: activations continue, deactivations skipped
         # =========================================================================
 
-        # Sync denylist domains
-        blocked_count, unblocked_count = _sync_denylist(
-            domains, client, evaluator, config, dry_run, verbose, panic_active
-        )
-
-        # Sync allowlist (schedule-aware, panic-aware)
-        allowed_count, disallowed_count = _sync_allowlist(
-            allowlist, client, evaluator, config, dry_run, verbose, panic_active
-        )
-
-        # Sync NextDNS Parental Control (if configured)
-        pc_activated = 0
-        pc_deactivated = 0
-        if nextdns_config:
-            # Sync global parental control settings
-            _sync_nextdns_parental_control(nextdns_config, client, config, dry_run, verbose)
-
-            # Sync categories
-            nextdns_categories = nextdns_config.get("categories", [])
-            if nextdns_categories:
-                cat_activated, cat_deactivated = _sync_nextdns_categories(
-                    nextdns_categories, client, evaluator, config, dry_run, verbose, panic_active
-                )
-                pc_activated += cat_activated
-                pc_deactivated += cat_deactivated
-
-            # Sync services
-            nextdns_services = nextdns_config.get("services", [])
-            if nextdns_services:
-                svc_activated, svc_deactivated = _sync_nextdns_services(
-                    nextdns_services, client, evaluator, config, dry_run, verbose, panic_active
-                )
-                pc_activated += svc_activated
-                pc_deactivated += svc_deactivated
-
-        # Print summary
-        if not dry_run:
-            _print_sync_summary(
-                blocked_count,
-                unblocked_count,
-                allowed_count,
-                disallowed_count,
-                verbose,
-                pc_activated,
-                pc_deactivated,
+        # Use NotificationManager context for batched notifications
+        nm = get_notification_manager()
+        with nm.sync_context(config["profile_id"], config):
+            # Sync denylist domains
+            blocked_count, unblocked_count = _sync_denylist(
+                domains, client, evaluator, config, dry_run, verbose, panic_active, nm
             )
+
+            # Sync allowlist (schedule-aware, panic-aware)
+            allowed_count, disallowed_count = _sync_allowlist(
+                allowlist, client, evaluator, config, dry_run, verbose, panic_active, nm
+            )
+
+            # Sync NextDNS Parental Control (if configured)
+            pc_activated = 0
+            pc_deactivated = 0
+            if nextdns_config:
+                # Sync global parental control settings
+                _sync_nextdns_parental_control(nextdns_config, client, config, dry_run, verbose)
+
+                # Sync categories
+                nextdns_categories = nextdns_config.get("categories", [])
+                if nextdns_categories:
+                    cat_activated, cat_deactivated = _sync_nextdns_categories(
+                        nextdns_categories,
+                        client,
+                        evaluator,
+                        config,
+                        dry_run,
+                        verbose,
+                        panic_active,
+                        nm,
+                    )
+                    pc_activated += cat_activated
+                    pc_deactivated += cat_deactivated
+
+                # Sync services
+                nextdns_services = nextdns_config.get("services", [])
+                if nextdns_services:
+                    svc_activated, svc_deactivated = _sync_nextdns_services(
+                        nextdns_services,
+                        client,
+                        evaluator,
+                        config,
+                        dry_run,
+                        verbose,
+                        panic_active,
+                        nm,
+                    )
+                    pc_activated += svc_activated
+                    pc_deactivated += svc_deactivated
+
+            # Print summary
+            if not dry_run:
+                _print_sync_summary(
+                    blocked_count,
+                    unblocked_count,
+                    allowed_count,
+                    disallowed_count,
+                    verbose,
+                    pc_activated,
+                    pc_deactivated,
+                )
 
     except ConfigurationError as e:
         console.print(f"  [red]Config error: {e}[/red]", highlight=False)
@@ -1033,18 +1036,22 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
                 )
 
         # Collect allowlist statistics
-        allowlist_active = 0
-        allowlist_inactive = 0
+        allowlist_always_active = 0  # No schedule, always in allowlist
+        allowlist_scheduled_active = 0  # Has schedule, currently active
+        allowlist_scheduled_inactive = 0  # Has schedule, currently inactive
         for item in allowlist:
             domain = item["domain"]
             is_allowed = client.is_allowed(domain)
             has_schedule = item.get("schedule") is not None
             should_allow = evaluator.should_allow_domain(item)
 
-            if is_allowed:
-                allowlist_active += 1
+            if has_schedule:
+                if should_allow:
+                    allowlist_scheduled_active += 1
+                else:
+                    allowlist_scheduled_inactive += 1
             else:
-                allowlist_inactive += 1
+                allowlist_always_active += 1
 
             # Check for mismatches in scheduled allowlist
             if has_schedule and should_allow != is_allowed:
@@ -1137,7 +1144,81 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
 
         # Allowlist summary
         if allowlist:
-            console.print(f"  [dim]Allowlist:[/dim] {allowlist_active} active")
+            total_scheduled = allowlist_scheduled_active + allowlist_scheduled_inactive
+            if total_scheduled > 0:
+                # Show breakdown when there are scheduled entries
+                parts = []
+                if allowlist_always_active > 0:
+                    parts.append(f"{allowlist_always_active} always active")
+                if total_scheduled > 0:
+                    sched_detail = (
+                        f"{total_scheduled} scheduled "
+                        f"([green]{allowlist_scheduled_active} active[/green], "
+                        f"[dim]{allowlist_scheduled_inactive} inactive[/dim])"
+                    )
+                    parts.append(sched_detail)
+                console.print(f"  [dim]Allowlist:[/dim] {', '.join(parts)}")
+            else:
+                # Simple display when all entries are always-active
+                console.print(f"  [dim]Allowlist:[/dim] {allowlist_always_active} active")
+
+        # NextDNS Parental Control section
+        parental_control = client.get_parental_control()
+        if parental_control is not None:
+            # Get active categories
+            categories = parental_control.get("categories", [])
+            active_categories = [c["id"] for c in categories if c.get("active", False)]
+
+            # Get active services
+            services = parental_control.get("services", [])
+            active_services = [s["id"] for s in services if s.get("active", False)]
+
+            # Get settings
+            safe_search = parental_control.get("safeSearch", False)
+            youtube_restricted = parental_control.get("youtubeRestrictedMode", False)
+            block_bypass = parental_control.get("blockBypass", False)
+
+            # Only show section if there's something configured
+            has_parental_config = (
+                active_categories
+                or active_services
+                or any([safe_search, youtube_restricted, block_bypass])
+            )
+
+            if has_parental_config:
+                console.print()
+                console.print("  [bold]NextDNS Parental Control:[/bold]")
+
+                if active_categories:
+                    cat_list = ", ".join(active_categories)
+                    console.print(
+                        f"    Categories: [cyan]{cat_list}[/cyan] ({len(active_categories)} active)"
+                    )
+
+                if active_services:
+                    svc_list = ", ".join(active_services)
+                    console.print(
+                        f"    Services: [cyan]{svc_list}[/cyan] ({len(active_services)} active)"
+                    )
+
+                # Show settings
+                settings_parts = []
+                if safe_search:
+                    settings_parts.append("[green]safe_search ✓[/green]")
+                else:
+                    settings_parts.append("[dim]safe_search ✗[/dim]")
+
+                if youtube_restricted:
+                    settings_parts.append("[green]youtube_restricted ✓[/green]")
+                else:
+                    settings_parts.append("[dim]youtube_restricted ✗[/dim]")
+
+                if block_bypass:
+                    settings_parts.append("[green]block_bypass ✓[/green]")
+                else:
+                    settings_parts.append("[dim]block_bypass ✗[/dim]")
+
+                console.print(f"    Settings: {', '.join(settings_parts)}")
 
         # Scheduler not running warning
         if not scheduler_ok:
@@ -1213,9 +1294,7 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
 
         if client.allow(domain):
             audit_log("ALLOW", domain)
-            send_discord_notification(
-                domain, "allow", webhook_url=config.get("discord_webhook_url")
-            )
+            send_notification(EventType.ALLOW, domain, config)
             console.print(f"\n  [green]Added to allowlist: {domain}[/green]\n")
         else:
             console.print("\n  [red]Error: Failed to add to allowlist[/red]\n", highlight=False)
@@ -1252,9 +1331,7 @@ def disallow(domain: str, config_dir: Optional[Path]) -> None:
 
         if client.disallow(domain):
             audit_log("DISALLOW", domain)
-            send_discord_notification(
-                domain, "disallow", webhook_url=config.get("discord_webhook_url")
-            )
+            send_notification(EventType.DISALLOW, domain, config)
             console.print(f"\n  [green]Removed from allowlist: {domain}[/green]\n")
         else:
             console.print(
@@ -1347,27 +1424,42 @@ def health(config_dir: Optional[Path]) -> None:
     help="Config directory (default: auto-detect)",
 )
 def test_notifications(config_dir: Optional[Path]) -> None:
-    """Send a test notification to verify Discord integration."""
+    """Send a test notification to verify notification configuration."""
     try:
         config = load_config(config_dir)
-        webhook_url = config.get("discord_webhook_url")
+        notifications = config.get("notifications", {})
 
-        if not webhook_url:
+        if not notifications:
             console.print(
-                "\n  [red]Error: DISCORD_WEBHOOK_URL is not set in configuration.[/red]",
+                "\n  [red]Error: No 'notifications' section in config.json[/red]",
                 highlight=False,
             )
-            console.print("      Please add it to your .env file.\n", highlight=False)
+            console.print("      Please add notification configuration.\n", highlight=False)
             sys.exit(1)
 
-        console.print("\n  Sending test notification...")
+        if not notifications.get("enabled", True):
+            console.print(
+                "\n  [yellow]Warning: Notifications are disabled in config[/yellow]",
+                highlight=False,
+            )
+            sys.exit(1)
 
-        # We pass the loaded webhook_url explicitly
-        send_discord_notification(
-            event_type="test", domain="Test Connection", webhook_url=webhook_url
-        )
+        channels = notifications.get("channels", {})
+        enabled_channels = [name for name, cfg in channels.items() if cfg.get("enabled")]
 
-        console.print(" [green]Notification sent! Check your Discord channel.[/green]\n")
+        if not enabled_channels:
+            console.print(
+                "\n  [red]Error: No notification channels enabled[/red]",
+                highlight=False,
+            )
+            console.print("      Enable at least one channel in config.json\n", highlight=False)
+            sys.exit(1)
+
+        console.print(f"\n  Sending test notification to: {', '.join(enabled_channels)}...")
+
+        send_notification(EventType.TEST, "Test Connection", config)
+
+        console.print("  [green]Notification sent! Check your configured channels.[/green]\n")
 
     except ConfigurationError as e:
         console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
@@ -1871,17 +1963,31 @@ def validate(
 
     domains_list: list[dict[str, Any]] = []
     allowlist_list: list[dict[str, Any]] = []
+    categories_list: list[dict[str, Any]] = []
     if isinstance(domains_data, dict):
         domains_list = domains_data.get("blocklist", [])
         allowlist_list = domains_data.get("allowlist", [])
+        categories_list = domains_data.get("categories", [])
+
+    # Expand categories to get individual domain entries
+    expanded_category_domains = _expand_categories(categories_list)
+    total_domains = len(domains_list) + len(expanded_category_domains)
+    categories_count = len(categories_list)
 
     # Update summary
-    results["summary"]["domains_count"] = len(domains_list)
+    results["summary"]["domains_count"] = total_domains
     results["summary"]["allowlist_count"] = len(allowlist_list)
 
     # Check 3: Count and validate domains
-    if domains_list:
-        add_check("domains configured", True, f"{len(domains_list)} domains")
+    if total_domains > 0:
+        if categories_count > 0:
+            add_check(
+                "domains configured",
+                True,
+                f"{total_domains} domains ({len(domains_list)} blocklist + {len(expanded_category_domains)} from {categories_count} categories)",
+            )
+        else:
+            add_check("domains configured", True, f"{total_domains} domains")
     else:
         add_check("domains configured", False, "no domains found")
 
@@ -1889,8 +1995,11 @@ def validate(
     if allowlist_list:
         add_check("allowlist entries", True, f"{len(allowlist_list)} entries")
 
+    # Combine blocklist and expanded category domains for validation
+    all_blocked_domains = domains_list + expanded_category_domains
+
     # Check 5: Count protected domains
-    protected_domains = [d for d in domains_list if d.get("protected", False)]
+    protected_domains = [d for d in all_blocked_domains if d.get("protected", False)]
     results["summary"]["protected_count"] = len(protected_domains)
     if protected_domains:
         add_check("protected domains", True, f"{len(protected_domains)} protected")
@@ -1899,7 +2008,7 @@ def validate(
     domain_errors: list[str] = []
     schedule_count = 0
 
-    for idx, domain_config in enumerate(domains_list):
+    for idx, domain_config in enumerate(all_blocked_domains):
         errors = validate_domain_config(domain_config, idx)
         domain_errors.extend(errors)
         if domain_config.get("schedule"):

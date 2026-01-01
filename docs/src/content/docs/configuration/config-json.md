@@ -21,6 +21,13 @@ The `config.json` file defines your domain schedules, blocklist, and allowlist.
     "timezone": "America/New_York",
     "editor": null
   },
+  "notifications": {
+    "enabled": true,
+    "channels": {
+      "discord": { ... },
+      "macos": { ... }
+    }
+  },
   "blocklist": [
     {
       "domain": "example.com",
@@ -68,6 +75,49 @@ Global settings for NextDNS Blocker.
 |-------|------|---------|-------------|
 | `timezone` | string | Auto-detected | IANA timezone for schedules |
 | `editor` | string | `$EDITOR` | Editor for `config edit` |
+
+### notifications
+
+Configuration for notification channels.
+
+```json
+{
+  "notifications": {
+    "enabled": true,
+    "channels": {
+      "discord": {
+        "enabled": true,
+        "webhook_url": "https://discord.com/api/webhooks/..."
+      },
+      "macos": {
+        "enabled": true,
+        "sound": true
+      }
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `true` | Master switch for all notifications |
+| `channels` | object | `{}` | Channel-specific configurations |
+
+**Discord Channel:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean | Yes | Enable Discord notifications |
+| `webhook_url` | string | Yes | Full Discord webhook URL |
+
+**macOS Channel:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable macOS native notifications |
+| `sound` | boolean | `true` | Play sound with notification |
+
+See [Notifications](/features/notifications/) for complete setup guide.
 
 ### blocklist
 
@@ -264,6 +314,19 @@ Array of time windows.
   "settings": {
     "timezone": "America/New_York",
     "editor": "code --wait"
+  },
+  "notifications": {
+    "enabled": true,
+    "channels": {
+      "discord": {
+        "enabled": true,
+        "webhook_url": "https://discord.com/api/webhooks/123456/abcdef..."
+      },
+      "macos": {
+        "enabled": true,
+        "sound": true
+      }
+    }
   },
   "blocklist": [
     {

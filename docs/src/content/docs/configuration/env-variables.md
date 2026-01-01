@@ -80,37 +80,6 @@ API_RETRIES=3
 
 Retries use exponential backoff (1s, 2s, 4s, etc.).
 
-### DISCORD_WEBHOOK_URL
-
-Discord webhook for notifications.
-
-```bash
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/1234567890/abcdefg
-```
-
-**How to create:**
-1. Open Discord server settings
-2. Go to Integrations → Webhooks
-3. Create webhook, copy URL
-
-**Format validation:**
-- Must start with `https://discord.com/api/webhooks/`
-- Must include webhook ID and token
-
-### DISCORD_NOTIFICATIONS_ENABLED
-
-Enable/disable Discord notifications.
-
-```bash
-DISCORD_NOTIFICATIONS_ENABLED=true
-```
-
-| Value | Description |
-|-------|-------------|
-| `true` | Send notifications |
-| `false` | Disable notifications (default) |
-
-Requires `DISCORD_WEBHOOK_URL` to be set.
 
 ## Advanced Variables
 
@@ -167,15 +136,16 @@ NEXTDNS_PROFILE_ID=abc123
 API_TIMEOUT=10
 API_RETRIES=3
 
-# Optional - Discord Notifications
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/123456/abcdef
-DISCORD_NOTIFICATIONS_ENABLED=true
-
 # Advanced - Rate Limiting (usually not needed)
 # RATE_LIMIT_REQUESTS=30
 # RATE_LIMIT_WINDOW=60
 # CACHE_TTL=60
 ```
+
+:::note
+Notifications are now configured in `config.json` instead of `.env`.
+See [Notifications](/features/notifications/) for setup instructions.
+:::
 
 ## Security
 
@@ -257,13 +227,3 @@ curl -H "X-Api-Key: YOUR_API_KEY" https://api.nextdns.io/profiles
 2. Check internet connection
 3. Check NextDNS service status
 
-### Discord notifications not working
-
-1. Verify webhook URL is complete
-2. Check `DISCORD_NOTIFICATIONS_ENABLED=true`
-3. Test webhook manually:
-   ```bash
-   curl -X POST -H "Content-Type: application/json" \
-     -d '{"content": "Test"}' \
-     "YOUR_WEBHOOK_URL"
-   ```

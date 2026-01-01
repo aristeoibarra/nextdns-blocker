@@ -226,7 +226,7 @@ class TestBlockAllDomains:
             patch("nextdns_blocker.config.load_domains", return_value=(domains, [])),
             patch("nextdns_blocker.client.NextDNSClient", return_value=mock_client),
             patch("nextdns_blocker.common.audit_log"),
-            patch("nextdns_blocker.notifications.send_discord_notification"),
+            patch("nextdns_blocker.notifications.send_notification"),
         ):
             count = _block_all_domains()
             assert count == 2

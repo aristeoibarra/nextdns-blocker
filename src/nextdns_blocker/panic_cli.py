@@ -32,7 +32,7 @@ def _block_all_domains() -> int:
     from .client import NextDNSClient
     from .common import audit_log
     from .config import load_config, load_domains
-    from .notifications import send_discord_notification
+    from .notifications import EventType, send_notification
 
     blocked_domains: list[str] = []
 
@@ -57,10 +57,10 @@ def _block_all_domains() -> int:
 
         # Send single notification for panic activation
         if blocked_domains:
-            send_discord_notification(
-                domain=f"PANIC MODE ({len(blocked_domains)} domains blocked)",
-                event_type="panic",
-                webhook_url=config.get("discord_webhook_url"),
+            send_notification(
+                EventType.PANIC,
+                f"PANIC MODE ({len(blocked_domains)} domains blocked)",
+                config,
             )
 
         return len(blocked_domains)

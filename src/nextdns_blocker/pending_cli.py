@@ -152,7 +152,7 @@ def cmd_cancel(action_id: str, yes: bool, config_dir: Optional[Path]) -> None:
         sys.exit(1)
 
     from .config import load_config
-    from .notifications import send_discord_notification
+    from .notifications import EventType, send_notification
 
     # Support partial ID matching
     actions = get_pending_actions(status="pending")
@@ -182,21 +182,18 @@ def cmd_cancel(action_id: str, yes: bool, config_dir: Optional[Path]) -> None:
             return
 
     if cancel_pending_action(action.get("id", "")):
-        # Load config for webhook URL if needed
-        webhook_url = None
+        # Load config for notification
         try:
             config = load_config(config_dir)
-            webhook_url = config.get("discord_webhook_url")
+            # Send notification
+            send_notification(
+                EventType.CANCEL_PENDING,
+                action.get("domain", "unknown"),
+                config,
+            )
         except (OSError, ValueError, KeyError) as e:
-            # Ignore errors loading config; Discord notification is optional
-            logger.debug(f"Could not load config for webhook: {e}")
-
-        # Send notification
-        send_discord_notification(
-            domain=action.get("domain", "unknown"),
-            event_type="cancel_pending",
-            webhook_url=webhook_url,
-        )
+            # Ignore errors loading config; notification is optional
+            logger.debug(f"Could not load config for notification: {e}")
 
         console.print(
             f"\n  [green]Cancelled pending unblock for {action.get('domain', 'unknown')}[/green]\n"
