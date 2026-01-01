@@ -203,14 +203,14 @@ class TestMacOSAdapter:
         assert adapter.name == "macOS"
 
     def test_format_batch_empty(self):
-        """Test formatting an empty batch."""
+        """Test formatting an empty batch returns empty message (no notification)."""
         adapter = MacOSAdapter()
         batch = BatchedNotification(profile_id="test")
 
         title, message = adapter.format_batch(batch)
 
         assert title == "NextDNS Blocker Sync"
-        assert message == "No changes"
+        assert message == ""  # Empty message means no notification will be sent
 
     def test_format_batch_with_blocks(self):
         """Test formatting a batch with blocked domains."""

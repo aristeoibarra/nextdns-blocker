@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.5.3] - 2026-01-01
+
+### Fixed
+- **NextDNS parental control API**: Unwrap `data` envelope from API response and use PATCH for services
+  - Fix `get_parental_control()` to correctly extract data from the API response envelope
+  - Change `activate_service()` to use PATCH (services are predefined like categories)
+  - Change `deactivate_service()` to use PATCH with `active:false`
+- **macOS notifications**: Skip sending notification when no changes occurred
+  - Add `PC_ACTIVATE` and `PC_DEACTIVATE` event types to macOS notification formatter
+  - Avoid empty notifications when batch contains no actual changes
+
 ## [6.5.2] - 2025-12-31
 
 ### Fixed
@@ -651,6 +662,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[6.5.3]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.2...v6.5.3
 [6.5.2]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.1...v6.5.2
 [6.5.1]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.0...v6.5.1
 [6.5.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.4.0...v6.5.0

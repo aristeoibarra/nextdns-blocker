@@ -248,6 +248,11 @@ class MacOSAdapter(NotificationAdapter):
 
         title, message = self.format_batch(batch)
 
+        # Don't send notification if there's nothing to report
+        if not message:
+            logger.debug("No changes to notify, skipping macOS notification")
+            return True
+
         try:
             sound_part = 'sound name "Glass"' if self._sound else ""
             script = f'display notification "{message}" with title "{title}" {sound_part}'
@@ -282,6 +287,8 @@ class MacOSAdapter(NotificationAdapter):
         unblocked = sum(1 for e in batch.events if e.event_type == EventType.UNBLOCK)
         allowed = sum(1 for e in batch.events if e.event_type == EventType.ALLOW)
         disallowed = sum(1 for e in batch.events if e.event_type == EventType.DISALLOW)
+        pc_activated = sum(1 for e in batch.events if e.event_type == EventType.PC_ACTIVATE)
+        pc_deactivated = sum(1 for e in batch.events if e.event_type == EventType.PC_DEACTIVATE)
         panic = any(e.event_type == EventType.PANIC for e in batch.events)
 
         title = "NextDNS Blocker Sync"
@@ -299,8 +306,12 @@ class MacOSAdapter(NotificationAdapter):
             parts.append(f"Allowed: {allowed}")
         if disallowed:
             parts.append(f"Disallowed: {disallowed}")
+        if pc_activated:
+            parts.append(f"PC activated: {pc_activated}")
+        if pc_deactivated:
+            parts.append(f"PC deactivated: {pc_deactivated}")
 
-        message = " | ".join(parts) if parts else "No changes"
+        message = " | ".join(parts) if parts else ""
 
         # Escape quotes for osascript
         message = message.replace('"', '\\"')
