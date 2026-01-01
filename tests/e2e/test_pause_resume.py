@@ -177,7 +177,7 @@ class TestSyncWhilePaused:
                 # Try to sync - should skip
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir)],
+                    ["config", "sync", "--config-dir", str(config_dir)],
                 )
 
         assert result.exit_code == 0
@@ -234,7 +234,7 @@ class TestPauseResumeWorkflow:
                 # Step 2: Try to sync - should be skipped
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir)],
+                    ["config", "sync", "--config-dir", str(config_dir)],
                 )
                 assert result.exit_code == 0
                 assert "skipping sync" in result.output.lower()
@@ -252,7 +252,7 @@ class TestPauseResumeWorkflow:
 
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir)],
+                    ["config", "sync", "--config-dir", str(config_dir)],
                 )
                 assert result.exit_code == 0
                 # Should actually sync now
@@ -314,7 +314,7 @@ class TestPauseExpiration:
                 with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                     result = runner.invoke(
                         main,
-                        ["sync", "--config-dir", str(config_dir)],
+                        ["config", "sync", "--config-dir", str(config_dir)],
                     )
 
             assert result.exit_code == 0

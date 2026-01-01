@@ -585,7 +585,9 @@ class TestSyncWithAllowlist:
         pause_file = tmp_path / ".paused"
         with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
             with patch("nextdns_blocker.cli.audit_log"):
-                result = runner.invoke(main, ["sync", "-v", "--config-dir", str(tmp_path)])
+                result = runner.invoke(
+                    main, ["config", "sync", "-v", "--config-dir", str(tmp_path)]
+                )
 
         assert result.exit_code == 0
 
@@ -614,7 +616,9 @@ class TestSyncWithAllowlist:
 
         pause_file = tmp_path / ".paused"
         with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
-            result = runner.invoke(main, ["sync", "--dry-run", "--config-dir", str(tmp_path)])
+            result = runner.invoke(
+                main, ["config", "sync", "--dry-run", "--config-dir", str(tmp_path)]
+            )
 
         assert result.exit_code == 0
         assert "DRY RUN" in result.output

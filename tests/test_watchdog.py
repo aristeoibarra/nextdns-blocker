@@ -150,7 +150,7 @@ class TestCronHelpers:
 
     def test_has_sync_cron_present(self):
         """Should return True when sync cron is present."""
-        crontab = "*/2 * * * * cd /path && nextdns-blocker sync"
+        crontab = "*/2 * * * * cd /path && nextdns-blocker config sync"
         assert watchdog.has_sync_cron(crontab) is True
 
     def test_has_sync_cron_absent(self):
@@ -171,7 +171,7 @@ class TestCronHelpers:
     def test_filter_our_cron_jobs_removes_blocker(self):
         """Should remove nextdns-blocker jobs."""
         crontab = """0 * * * * other_job
-*/2 * * * * cd /path && nextdns-blocker sync
+*/2 * * * * cd /path && nextdns-blocker config sync
 30 * * * * another_job"""
         result = watchdog.filter_our_cron_jobs(crontab)
         assert len(result) == 2
@@ -273,7 +273,9 @@ class TestCmdCheck:
 
     def test_cmd_check_all_present(self, runner):
         """Should do nothing when all cron jobs present."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
 
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "get_crontab", return_value=crontab):
@@ -293,7 +295,9 @@ class TestCmdStatus:
 
     def test_cmd_status_all_ok(self, runner, mock_disabled_file):
         """Should show OK status when all cron jobs present."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
 
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
@@ -316,7 +320,9 @@ class TestCmdStatus:
     def test_cmd_status_disabled(self, runner, mock_disabled_file):
         """Should show disabled status when watchdog disabled."""
         mock_disabled_file.write_text("permanent")
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
 
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
@@ -471,7 +477,9 @@ class TestCmdUninstall:
 
     def test_cmd_uninstall_success(self, runner, mock_audit_log_file):
         """Should uninstall cron jobs successfully."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
                 with patch.object(watchdog, "get_crontab", return_value=crontab):
@@ -491,7 +499,7 @@ class TestCmdUninstall:
 
     def test_cmd_uninstall_preserves_other_jobs(self, runner, mock_audit_log_file):
         """Should preserve non-blocker cron jobs."""
-        crontab = "0 * * * * other_job\n*/2 * * * * nextdns-blocker sync\n"
+        crontab = "0 * * * * other_job\n*/2 * * * * nextdns-blocker config sync\n"
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
                 with patch.object(watchdog, "get_crontab", return_value=crontab):
@@ -517,7 +525,7 @@ class TestCmdCheckRestoration:
         # First call returns no sync, second returns with sync added
         crontab_states = [
             "* * * * * nextdns-blocker watchdog check\n",
-            "* * * * * nextdns-blocker watchdog check\n*/2 * * * * nextdns-blocker sync\n",
+            "* * * * * nextdns-blocker watchdog check\n*/2 * * * * nextdns-blocker config sync\n",
         ]
         call_count = [0]
 
@@ -540,8 +548,8 @@ class TestCmdCheckRestoration:
     ):
         """Should restore missing watchdog cron."""
         crontab_states = [
-            "*/2 * * * * nextdns-blocker sync\n",
-            "*/2 * * * * nextdns-blocker sync\n",
+            "*/2 * * * * nextdns-blocker config sync\n",
+            "*/2 * * * * nextdns-blocker config sync\n",
         ]
         call_count = [0]
 
@@ -614,7 +622,9 @@ class TestMain:
 
     def test_main_check_command(self, runner, mock_disabled_file):
         """Should run check command."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
                 with patch.object(watchdog, "get_crontab", return_value=crontab):
@@ -928,7 +938,9 @@ class TestCmdStatusMultiplatform:
 
     def test_cmd_status_linux(self, runner, mock_disabled_file):
         """Should show cron status on Linux."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
                 with patch.object(watchdog, "get_crontab", return_value=crontab):
@@ -956,7 +968,9 @@ class TestCmdCheckMultiplatform:
 
     def test_cmd_check_linux_all_present(self, runner, mock_disabled_file):
         """Should do nothing when cron jobs are present."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
                 with patch.object(watchdog, "get_crontab", return_value=crontab):
@@ -1150,7 +1164,7 @@ class TestCreateSyncPlist:
 
         parsed = plistlib.loads(sync_plist.read_bytes())
         assert parsed["Label"] == watchdog.LAUNCHD_SYNC_LABEL
-        assert parsed["ProgramArguments"] == ["/usr/bin/test", "sync"]
+        assert parsed["ProgramArguments"] == ["/usr/bin/test", "config", "sync"]
         assert parsed["StartInterval"] == 120
 
     def test_create_sync_plist_failure(self, temp_log_dir):

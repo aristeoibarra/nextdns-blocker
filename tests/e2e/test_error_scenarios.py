@@ -62,7 +62,7 @@ class TestAPIErrors:
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir)],
+                    ["config", "sync", "--config-dir", str(config_dir)],
                 )
 
         # Should handle the error gracefully
@@ -100,7 +100,7 @@ class TestAPIErrors:
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir)],
+                    ["config", "sync", "--config-dir", str(config_dir)],
                 )
 
         # Should handle the error
@@ -138,7 +138,7 @@ class TestAPIErrors:
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir)],
+                    ["config", "sync", "--config-dir", str(config_dir)],
                 )
 
         # Should handle rate limiting
@@ -167,7 +167,7 @@ class TestProtectedDomainErrors:
         )
 
         domains_data = {
-            "blocklist": [{"domain": "gambling.com", "protected": True, "schedule": None}]
+            "blocklist": [{"domain": "gambling.com", "unblock_delay": "never", "schedule": None}]
         }
         (config_dir / "config.json").write_text(json.dumps(domains_data))
 
@@ -257,7 +257,7 @@ class TestConfigurationErrors:
 
         result = runner.invoke(
             main,
-            ["sync", "--config-dir", str(config_dir)],
+            ["config", "sync", "--config-dir", str(config_dir)],
         )
 
         assert result.exit_code != 0
@@ -281,7 +281,7 @@ class TestConfigurationErrors:
 
         result = runner.invoke(
             main,
-            ["sync", "--config-dir", str(config_dir)],
+            ["config", "sync", "--config-dir", str(config_dir)],
         )
 
         assert result.exit_code != 0
@@ -299,23 +299,26 @@ class TestConfigurationErrors:
         log_dir.mkdir(parents=True)
 
         (config_dir / ".env").write_text(
-            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
-            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
-            f"TIMEZONE=Invalid/Timezone\n"
+            f"NEXTDNS_API_KEY={TEST_API_KEY}\n" f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
         )
 
-        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
+        # Put invalid timezone in config.json
+        domains_data = {
+            "blocklist": [{"domain": "youtube.com", "schedule": None}],
+            "settings": {"timezone": "Invalid/Timezone"},
+        }
         (config_dir / "config.json").write_text(json.dumps(domains_data))
 
         with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir)],
+                    ["config", "sync", "--config-dir", str(config_dir)],
                 )
 
-        # Should fail or warn about invalid timezone
-        assert result.exit_code != 0 or "timezone" in result.output.lower()
+        # Should fail with invalid timezone error
+        assert result.exit_code != 0
+        assert "timezone" in result.output.lower()
 
 
 class TestMalformedDomainsFile:
@@ -341,7 +344,7 @@ class TestMalformedDomainsFile:
 
         result = runner.invoke(
             main,
-            ["sync", "--config-dir", str(config_dir)],
+            ["config", "sync", "--config-dir", str(config_dir)],
         )
 
         assert result.exit_code != 0
@@ -367,7 +370,7 @@ class TestMalformedDomainsFile:
 
         result = runner.invoke(
             main,
-            ["sync", "--config-dir", str(config_dir)],
+            ["config", "sync", "--config-dir", str(config_dir)],
         )
 
         # Should handle missing key
@@ -399,7 +402,7 @@ class TestHelpCommand:
         result = runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
-        assert "sync" in result.output
+        assert "config" in result.output  # sync is now under config
         assert "init" in result.output
         assert "pause" in result.output
         assert "resume" in result.output
@@ -411,7 +414,7 @@ class TestHelpCommand:
         runner: CliRunner,
     ) -> None:
         """Test that sync --help shows available options."""
-        result = runner.invoke(main, ["sync", "--help"])
+        result = runner.invoke(main, ["config", "sync", "--help"])
 
         assert result.exit_code == 0
         assert "--dry-run" in result.output

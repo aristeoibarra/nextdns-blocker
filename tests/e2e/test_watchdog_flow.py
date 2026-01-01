@@ -92,7 +92,7 @@ class TestWatchdogInstallUninstall:
         log_dir = tmp_path / "logs"
         log_dir.mkdir(parents=True)
 
-        existing_cron = "# existing jobs\n*/2 * * * * /usr/local/bin/nextdns-blocker sync >> /tmp/log 2>&1\n* * * * * /usr/local/bin/nextdns-blocker watchdog check >> /tmp/log 2>&1"
+        existing_cron = "# existing jobs\n*/2 * * * * /usr/local/bin/nextdns-blocker config sync >> /tmp/log 2>&1\n* * * * * /usr/local/bin/nextdns-blocker watchdog check >> /tmp/log 2>&1"
 
         with patch("nextdns_blocker.watchdog.is_macos", return_value=False):
             with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
@@ -107,7 +107,7 @@ class TestWatchdogInstallUninstall:
         # Verify crontab was updated to remove our jobs
         if mock_set.called:
             new_cron = mock_set.call_args[0][0]
-            assert "nextdns-blocker sync" not in new_cron
+            assert "nextdns-blocker config sync" not in new_cron
             assert "nextdns-blocker watchdog" not in new_cron
 
 
@@ -123,7 +123,7 @@ class TestWatchdogStatus:
         log_dir = tmp_path / "logs"
         log_dir.mkdir(parents=True)
 
-        existing_cron = "*/2 * * * * /usr/local/bin/nextdns-blocker sync\n* * * * * /usr/local/bin/nextdns-blocker watchdog check"
+        existing_cron = "*/2 * * * * /usr/local/bin/nextdns-blocker config sync\n* * * * * /usr/local/bin/nextdns-blocker watchdog check"
 
         with patch("nextdns_blocker.watchdog.is_macos", return_value=False):
             with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
@@ -176,7 +176,7 @@ class TestWatchdogCheck:
             if len(calls) == 0:
                 calls.append(1)
                 return ""
-            return "*/2 * * * * /usr/local/bin/nextdns-blocker sync"
+            return "*/2 * * * * /usr/local/bin/nextdns-blocker config sync"
 
         with patch("nextdns_blocker.watchdog.is_macos", return_value=False):
             with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
@@ -336,7 +336,7 @@ class TestWatchdogRecoveryWorkflow:
                                 assert result.exit_code == 0
 
                                 # Verify jobs are installed
-                                assert "nextdns-blocker sync" in crontab_state[0]
+                                assert "nextdns-blocker config sync" in crontab_state[0]
                                 assert "nextdns-blocker watchdog" in crontab_state[0]
 
                                 # Step 2: Simulate job deletion (user manually removes cron)
@@ -347,7 +347,7 @@ class TestWatchdogRecoveryWorkflow:
                                 assert result.exit_code == 0
 
                                 # Step 4: Verify jobs are restored
-                                assert "nextdns-blocker sync" in crontab_state[0]
+                                assert "nextdns-blocker config sync" in crontab_state[0]
 
     def test_disabled_watchdog_does_not_restore_jobs(
         self,

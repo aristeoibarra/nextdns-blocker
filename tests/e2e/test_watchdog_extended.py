@@ -119,7 +119,7 @@ class TestCronJobDefinitions:
         result = get_cron_sync()
 
         assert "*/2 * * * *" in result
-        assert "nextdns-blocker sync" in result
+        assert "nextdns-blocker config sync" in result
         assert "cron.log" in result
 
     @patch("nextdns_blocker.watchdog.get_log_dir")
@@ -340,7 +340,7 @@ class TestCronManagement:
 
     def test_has_sync_cron(self) -> None:
         """Test has_sync_cron detection."""
-        crontab_with = "*/2 * * * * nextdns-blocker sync >> log 2>&1"
+        crontab_with = "*/2 * * * * nextdns-blocker config sync >> log 2>&1"
         crontab_without = "0 * * * * other-job"
 
         assert has_sync_cron(crontab_with) is True
@@ -356,7 +356,7 @@ class TestCronManagement:
 
     def test_filter_our_cron_jobs(self) -> None:
         """Test filter_our_cron_jobs removes our entries."""
-        crontab = """*/2 * * * * nextdns-blocker sync
+        crontab = """*/2 * * * * nextdns-blocker config sync
 * * * * * nextdns-blocker watchdog check
 0 * * * * other-job
 """

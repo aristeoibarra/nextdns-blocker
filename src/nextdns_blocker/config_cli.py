@@ -299,8 +299,6 @@ def _format_schedule_summary(schedule: Optional[dict[str, Any]]) -> str:
 
 def _get_unblock_display(domain_config: dict[str, Any]) -> str:
     """Get unblock delay display string."""
-    if domain_config.get("protected", False):
-        return "never"
     delay = domain_config.get("unblock_delay")
     if delay == "never":
         return "never"
@@ -372,12 +370,8 @@ def cmd_show(config_dir: Optional[Path], output_json: bool) -> None:
                 schedule = cat.get("schedule")
                 schedule_str = _format_schedule_summary(schedule)
 
-                # Get unblock delay (use first domain's or category default)
-                unblock = "0"
-                if cat.get("protected", False):
-                    unblock = "never"
-                elif cat.get("unblock_delay"):
-                    unblock = cat.get("unblock_delay")
+                # Get unblock delay (use category default)
+                unblock = cat.get("unblock_delay", "0")
 
                 table.add_row(cat_id, str(len(cat_domains)), schedule_str, unblock)
 
@@ -554,8 +548,7 @@ def cmd_set(key: str, value: str, config_dir: Optional[Path]) -> None:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Config directory (default: auto-detect)",
 )
-@click.pass_context
-def cmd_validate(ctx: click.Context, output_json: bool, config_dir: Optional[Path]) -> None:
+def cmd_validate(output_json: bool, config_dir: Optional[Path]) -> None:
     """Validate configuration files before deployment.
 
     Checks config.json for:
@@ -565,12 +558,9 @@ def cmd_validate(ctx: click.Context, output_json: bool, config_dir: Optional[Pat
     - No blocklist/allowlist conflicts
     """
     # Import here to avoid circular imports
-    from .cli import validate as root_validate
+    from .cli import validate_impl
 
-    # Call the root validate function (without deprecation warning)
-    ctx.invoke(
-        root_validate, output_json=output_json, config_dir=config_dir, _from_config_group=True
-    )
+    validate_impl(output_json=output_json, config_dir=config_dir)
 
 
 @config_cli.command("sync")
@@ -581,25 +571,16 @@ def cmd_validate(ctx: click.Context, output_json: bool, config_dir: Optional[Pat
     type=click.Path(file_okay=False, path_type=Path),
     help="Config directory (default: auto-detect)",
 )
-@click.pass_context
 def cmd_sync(
-    ctx: click.Context,
     dry_run: bool,
     verbose: bool,
     config_dir: Optional[Path],
 ) -> None:
     """Synchronize domain blocking with schedules."""
     # Import here to avoid circular imports
-    from .cli import sync as root_sync
+    from .cli import sync_impl
 
-    # Call the root sync function (without deprecation warning)
-    ctx.invoke(
-        root_sync,
-        dry_run=dry_run,
-        verbose=verbose,
-        config_dir=config_dir,
-        _from_config_group=True,
-    )
+    sync_impl(dry_run=dry_run, verbose=verbose, config_dir=config_dir)
 
 
 # =============================================================================

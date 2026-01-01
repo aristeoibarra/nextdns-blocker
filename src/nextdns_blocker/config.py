@@ -1496,12 +1496,11 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
 
 def _load_timezone_setting(config_dir: Path) -> str:
     """
-    Load timezone setting from config.json or fall back to .env/default.
+    Load timezone setting from config.json or fall back to default.
 
     Priority:
     1. config.json settings.timezone
-    2. TIMEZONE environment variable (legacy)
-    3. DEFAULT_TIMEZONE constant
+    2. DEFAULT_TIMEZONE constant
 
     Args:
         config_dir: Directory containing config files
@@ -1509,7 +1508,6 @@ def _load_timezone_setting(config_dir: Path) -> str:
     Returns:
         Timezone string (e.g., 'America/New_York')
     """
-    # Try config.json first
     config_file = config_dir / "config.json"
     if config_file.exists():
         try:
@@ -1529,11 +1527,6 @@ def _load_timezone_setting(config_dir: Path) -> str:
             logger.debug(f"Could not parse timezone from config.json: {e}")
         except OSError as e:
             logger.debug(f"Could not read config.json for timezone: {e}")
-
-    # Fall back to environment variable (legacy support)
-    env_tz = os.getenv("TIMEZONE")
-    if env_tz:
-        return env_tz
 
     # Default
     return DEFAULT_TIMEZONE
@@ -1805,7 +1798,7 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
     # Build configuration dictionary
     config = _build_config_dict(config_dir)
 
-    # Load timezone from config.json (or legacy .env)
+    # Load timezone from config.json
     config["timezone"] = _load_timezone_setting(config_dir)
 
     # Validate all configuration
@@ -1822,19 +1815,13 @@ def get_protected_domains(domains: list[dict[str, Any]]) -> list[str]:
     """
     Extract domains that cannot be unblocked from config.
 
-    Includes domains with protected=true (legacy) or unblock_delay="never".
-
     Args:
         domains: List of domain configurations
 
     Returns:
-        List of protected domain names
+        List of domain names with unblock_delay="never"
     """
-    return [
-        d["domain"]
-        for d in domains
-        if d.get("protected", False) or d.get("unblock_delay") == "never"
-    ]
+    return [d["domain"] for d in domains if d.get("unblock_delay") == "never"]
 
 
 def get_unblock_delay(domains: list[dict[str, Any]], domain: str) -> Optional[str]:
@@ -1847,12 +1834,8 @@ def get_unblock_delay(domains: list[dict[str, Any]], domain: str) -> Optional[st
 
     Returns:
         unblock_delay value ('never', '24h', '4h', '30m', '0') or None if not set.
-        Returns 'never' for domains with protected=true (backward compatibility).
     """
     for d in domains:
         if d.get("domain") == domain:
-            # Backward compatibility: protected=true -> unblock_delay='never'
-            if d.get("protected", False):
-                return "never"
             return d.get("unblock_delay")
     return None

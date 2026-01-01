@@ -94,7 +94,7 @@ def get_cron_sync() -> str:
     log_file = str(log_dir / "cron.log")
     safe_exe = _escape_shell_path(exe)
     safe_log = _escape_shell_path(log_file)
-    return f"*/2 * * * * {safe_exe} sync >> {safe_log} 2>&1"
+    return f"*/2 * * * * {safe_exe} config sync >> {safe_log} 2>&1"
 
 
 def get_cron_watchdog() -> str:
@@ -302,7 +302,7 @@ def set_crontab(content: str) -> bool:
 
 def has_sync_cron(crontab: str) -> bool:
     """Check if sync cron job is present."""
-    return "nextdns-blocker sync" in crontab
+    return "nextdns-blocker config sync" in crontab
 
 
 def has_watchdog_cron(crontab: str) -> bool:
@@ -517,7 +517,7 @@ def _install_launchd_jobs() -> None:
     sync_plist = get_sync_plist_path()
     sync_content = generate_plist(
         label=LAUNCHD_SYNC_LABEL,
-        program_args=exe_args + ["sync"],
+        program_args=exe_args + ["config", "sync"],
         start_interval=120,  # 2 minutes
         log_file=log_dir / "launchd_sync.log",
     )
@@ -672,7 +672,7 @@ def _create_sync_plist() -> bool:
     sync_plist.parent.mkdir(parents=True, exist_ok=True)
     sync_content = generate_plist(
         label=LAUNCHD_SYNC_LABEL,
-        program_args=exe_args + ["sync"],
+        program_args=exe_args + ["config", "sync"],
         start_interval=120,
         log_file=log_dir / "launchd_sync.log",
     )
@@ -701,7 +701,7 @@ def _run_sync_after_restore() -> None:
     try:
         exe_args = get_executable_args()
         result = subprocess.run(
-            exe_args + ["sync"],
+            exe_args + ["config", "sync"],
             timeout=SUBPROCESS_TIMEOUT,
             capture_output=True,
             text=True,
@@ -817,7 +817,7 @@ def _install_windows_tasks() -> None:
     _run_schtasks(["/delete", "/tn", WINDOWS_TASK_WATCHDOG_NAME, "/f"])
 
     # Create sync task (every 2 minutes)
-    sync_cmd = _build_task_command(exe, "sync", sync_log)
+    sync_cmd = _build_task_command(exe, "config sync", sync_log)
     result_sync = _run_schtasks(
         [
             "/create",
@@ -913,7 +913,7 @@ def _check_windows_tasks() -> None:
         log_dir.mkdir(parents=True, exist_ok=True)
         exe = get_executable_path()
         sync_log = str(log_dir / "sync.log")
-        sync_cmd = _build_task_command(exe, "sync", sync_log)
+        sync_cmd = _build_task_command(exe, "config sync", sync_log)
 
         result = _run_schtasks(
             [

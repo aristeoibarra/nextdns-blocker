@@ -236,7 +236,7 @@ class TestSyncCommand:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        result = runner.invoke(main, ["sync", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "sync", "--config-dir", str(tmp_path)])
         assert result.exit_code == 0
         assert "Paused" in result.output or "paused" in result.output.lower()
 
@@ -257,7 +257,7 @@ class TestSyncCommand:
             '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
-        result = runner.invoke(main, ["sync", "--dry-run", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "sync", "--dry-run", "--config-dir", str(tmp_path)])
         assert result.exit_code == 0
         assert "DRY RUN" in result.output
 
@@ -278,7 +278,7 @@ class TestSyncCommand:
             '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
-        result = runner.invoke(main, ["sync", "-v", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "sync", "-v", "--config-dir", str(tmp_path)])
         assert result.exit_code == 0
 
     @responses.activate
@@ -305,7 +305,7 @@ class TestSyncCommand:
         )
 
         with patch("nextdns_blocker.cli.audit_log"):
-            result = runner.invoke(main, ["sync", "--config-dir", str(tmp_path)])
+            result = runner.invoke(main, ["config", "sync", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
 
@@ -1077,7 +1077,7 @@ class TestSyncCommandEdgeCases:
         )
 
         with patch("nextdns_blocker.cli.audit_log"):
-            result = runner.invoke(main, ["sync", "--config-dir", str(tmp_path)])
+            result = runner.invoke(main, ["config", "sync", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
 
@@ -1138,7 +1138,7 @@ class TestStatusCommandEdgeCases:
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
         domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"blocklist": [{"domain": "protected.com", "protected": true}], "allowlist": []}'
+            '{"blocklist": [{"domain": "protected.com", "unblock_delay": "never"}], "allowlist": []}'
         )
 
         result = runner.invoke(main, ["status", "--config-dir", str(tmp_path)])
@@ -1160,7 +1160,7 @@ class TestValidateCommand:
             '{"blocklist": [{"domain": "example.com"}, {"domain": "test.org"}], "allowlist": []}'
         )
 
-        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "validate", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "Configuration OK" in result.output
@@ -1173,11 +1173,11 @@ class TestValidateCommand:
 
         domains_file = tmp_path / "config.json"
         domains_file.write_text(
-            '{"blocklist": [{"domain": "example.com", "protected": true}, '
-            '{"domain": "test.org", "protected": true}], "allowlist": []}'
+            '{"blocklist": [{"domain": "example.com", "unblock_delay": "never"}, '
+            '{"domain": "test.org", "unblock_delay": "never"}], "allowlist": []}'
         )
 
-        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "validate", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "2 protected" in result.output
@@ -1193,7 +1193,7 @@ class TestValidateCommand:
             '"allowlist": [{"domain": "allowed.com"}, {"domain": "safe.org"}]}'
         )
 
-        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "validate", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "2 entries" in result.output
@@ -1210,7 +1210,7 @@ class TestValidateCommand:
             "}}]}"
         )
 
-        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "validate", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "schedule" in result.output.lower()
@@ -1219,7 +1219,7 @@ class TestValidateCommand:
         """Should fail when config.json is missing."""
         # No config.json file created
 
-        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "validate", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 1
         assert "not found" in result.output.lower() or "failed" in result.output.lower()
@@ -1232,7 +1232,7 @@ class TestValidateCommand:
         domains_file = tmp_path / "config.json"
         domains_file.write_text("{invalid json}")
 
-        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "validate", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 1
         assert "invalid" in result.output.lower() or "error" in result.output.lower()
@@ -1245,7 +1245,7 @@ class TestValidateCommand:
         domains_file = tmp_path / "config.json"
         domains_file.write_text('{"blocklist": [{"domain": "invalid domain.com"}]}')
 
-        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "validate", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 1
         assert "invalid" in result.output.lower()
@@ -1262,7 +1262,7 @@ class TestValidateCommand:
             "}}]}"
         )
 
-        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "validate", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 1
         assert "invalid" in result.output.lower() or "error" in result.output.lower()
@@ -1277,7 +1277,7 @@ class TestValidateCommand:
             '{"blocklist": [{"domain": "example.com"}], "allowlist": [{"domain": "example.com"}]}'
         )
 
-        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "validate", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 1
         assert "conflict" in result.output.lower() or "both" in result.output.lower()
@@ -1292,7 +1292,9 @@ class TestValidateCommand:
         domains_file = tmp_path / "config.json"
         domains_file.write_text('{"blocklist": [{"domain": "example.com"}], "allowlist": []}')
 
-        result = runner.invoke(main, ["validate", "--json", "--config-dir", str(tmp_path)])
+        result = runner.invoke(
+            main, ["config", "validate", "--json", "--config-dir", str(tmp_path)]
+        )
 
         assert result.exit_code == 0
         # Should be valid JSON
@@ -1311,7 +1313,9 @@ class TestValidateCommand:
         domains_file = tmp_path / "config.json"
         domains_file.write_text('{"blocklist": [{"domain": "invalid domain"}]}')
 
-        result = runner.invoke(main, ["validate", "--json", "--config-dir", str(tmp_path)])
+        result = runner.invoke(
+            main, ["config", "validate", "--json", "--config-dir", str(tmp_path)]
+        )
 
         assert result.exit_code == 1
         output = json.loads(result.output)
@@ -1326,7 +1330,7 @@ class TestValidateCommand:
         domains_file = tmp_path / "config.json"
         domains_file.write_text('{"blocklist": []}')
 
-        result = runner.invoke(main, ["validate", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["config", "validate", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 1
         assert "no domains" in result.output.lower()

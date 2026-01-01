@@ -282,37 +282,6 @@ class TestConfigEdit:
             mock_run.assert_called_once()
 
 
-class TestDeprecationWarnings:
-    """Test deprecation warnings for root commands."""
-
-    def test_root_validate_shows_deprecation(self, runner, temp_config_dir, new_config_format):
-        """Test root validate command shows deprecation warning."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
-        config_file.write_text(json.dumps(new_config_format))
-
-        result = runner.invoke(main, ["validate", "--config-dir", str(temp_config_dir)])
-        assert "Deprecated" in result.output
-        assert "config validate" in result.output
-
-    def test_root_validate_json_no_deprecation(self, runner, temp_config_dir, new_config_format):
-        """Test root validate --json does not show deprecation warning."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
-        config_file.write_text(json.dumps(new_config_format))
-
-        result = runner.invoke(main, ["validate", "--json", "--config-dir", str(temp_config_dir)])
-        # JSON output should not have deprecation warning mixed in
-        output = json.loads(result.output)
-        assert "valid" in output
-
-    def test_config_validate_no_deprecation(self, runner, temp_config_dir, new_config_format):
-        """Test config validate does not show deprecation warning."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
-        config_file.write_text(json.dumps(new_config_format))
-
-        result = runner.invoke(main, ["config", "validate", "--config-dir", str(temp_config_dir)])
-        assert "Deprecated" not in result.output
-
-
 class TestBlocklistSupport:
     """Test blocklist key support."""
 

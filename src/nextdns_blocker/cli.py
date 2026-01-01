@@ -841,29 +841,16 @@ def _print_sync_summary(
         console.print("  Sync: [green]No changes needed[/green]")
 
 
-@main.command()
-@click.option("--dry-run", is_flag=True, help="Show changes without applying")
-@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Config directory (default: auto-detect)",
-)
-@click.option("--_from_config_group", is_flag=True, hidden=True)
-def sync(
+def sync_impl(
     dry_run: bool,
     verbose: bool,
     config_dir: Optional[Path],
-    _from_config_group: bool = False,
 ) -> None:
-    """Synchronize domain blocking with schedules."""
-    # Show deprecation warning if called directly
-    if not _from_config_group:
-        console.print(
-            "\n  [yellow]⚠ Deprecated:[/yellow] Use 'nextdns-blocker config sync' instead.\n",
-            highlight=False,
-        )
+    """
+    Synchronize domain blocking with schedules.
 
+    This is the implementation function called by config_cli.py.
+    """
     setup_logging(verbose)
 
     # Check pause state
@@ -1027,10 +1014,8 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
             else:
                 allowed_count += 1
 
-            # Check for protected domains
+            # Check for protected domains (unblock_delay="never")
             domain_delay = domain_config.get("unblock_delay")
-            if domain_config.get("protected", False):
-                domain_delay = "never"
             if domain_delay == "never":
                 protected_domains.append(domain)
 
@@ -1247,9 +1232,6 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
                 status_icon = "🔴" if is_blocked else "🟢"
 
                 domain_delay = domain_config.get("unblock_delay")
-                if domain_config.get("protected", False):
-                    domain_delay = "never"
-
                 if domain_delay == "never":
                     delay_flag = " [blue]\\[never][/blue]"
                 elif domain_delay and domain_delay != "0":
@@ -1886,18 +1868,11 @@ def update(yes: bool) -> None:
         sys.exit(1)
 
 
-@main.command()
-@click.option("--json", "output_json", is_flag=True, help="Output in JSON format")
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Config directory (default: auto-detect)",
-)
-@click.option("--_from_config_group", is_flag=True, hidden=True)
-def validate(
-    output_json: bool, config_dir: Optional[Path], _from_config_group: bool = False
-) -> None:
-    """Validate configuration files before deployment.
+def validate_impl(output_json: bool, config_dir: Optional[Path]) -> None:
+    """
+    Validate configuration files before deployment.
+
+    This is the implementation function called by config_cli.py.
 
     Checks config.json for:
     - Valid JSON syntax
@@ -1905,13 +1880,6 @@ def validate(
     - Valid schedule time formats (HH:MM)
     - No denylist/allowlist conflicts
     """
-    # Show deprecation warning if called directly (but not for JSON output)
-    if not _from_config_group and not output_json:
-        console.print(
-            "\n  [yellow]⚠ Deprecated:[/yellow] Use 'nextdns-blocker config validate' instead.\n",
-            highlight=False,
-        )
-
     import json as json_module
 
     # Determine config directory
@@ -2017,8 +1985,8 @@ def validate(
     # Combine blocklist and expanded category domains for validation
     all_blocked_domains = domains_list + expanded_category_domains
 
-    # Check 5: Count protected domains
-    protected_domains = [d for d in all_blocked_domains if d.get("protected", False)]
+    # Check 5: Count protected domains (unblock_delay="never")
+    protected_domains = [d for d in all_blocked_domains if d.get("unblock_delay") == "never"]
     results["summary"]["protected_count"] = len(protected_domains)
     if protected_domains:
         add_check("protected domains", True, f"{len(protected_domains)} protected")
