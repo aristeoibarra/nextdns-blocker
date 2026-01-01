@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.5.1] - 2025-12-31
+
+### Fixed
+- **NextDNS parental control API**: Use correct HTTP methods for categories and services
+  - Categories: Use PATCH for all operations (activate/deactivate) as categories are predefined in NextDNS
+  - Services: Use POST to add new services, DELETE to remove, PATCH for existing
+  - Add `service_exists` helper to check service state before activation
+
 ## [6.5.0] - 2025-12-31
 
 ### Added
@@ -635,6 +643,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[6.5.1]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.0...v6.5.1
 [6.5.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.3.0...v6.4.0
 [6.3.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.2.0...v6.3.0
