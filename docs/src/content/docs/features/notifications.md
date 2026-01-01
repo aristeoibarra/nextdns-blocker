@@ -1,214 +1,232 @@
 ---
-title: Discord Notifications
-description: Real-time alerts for blocking events
+title: Notifications
+description: Real-time alerts for blocking events via multiple channels
 ---
 
-Get instant notifications on Discord when domains are blocked, unblocked, or when special modes are activated.
+Get instant notifications when domains are blocked, unblocked, or when special modes are activated. NextDNS Blocker supports multiple notification channels with batching and async delivery.
 
-## Setup
+## Supported Channels
 
-### 1. Create Discord Webhook
+| Channel | Description |
+|---------|-------------|
+| **Discord** | Webhook notifications with rich embeds |
+| **macOS** | Native system notifications via osascript |
+
+## Configuration
+
+Notifications are configured in `config.json` under the `notifications` section:
+
+```json
+{
+  "notifications": {
+    "enabled": true,
+    "channels": {
+      "discord": {
+        "enabled": true,
+        "webhook_url": "https://discord.com/api/webhooks/1234567890/abcdefghijklmnop"
+      },
+      "macos": {
+        "enabled": true,
+        "sound": true
+      }
+    }
+  }
+}
+```
+
+### Global Settings
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `true` | Master switch for all notifications |
+| `channels` | object | `{}` | Channel-specific configurations |
+
+### Discord Channel
+
+```json
+{
+  "discord": {
+    "enabled": true,
+    "webhook_url": "https://discord.com/api/webhooks/..."
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean | Yes | Enable Discord notifications |
+| `webhook_url` | string | Yes | Full Discord webhook URL |
+
+**Creating a Discord Webhook:**
 
 1. Open Discord server settings
-2. Go to **Integrations** → **Webhooks**
+2. Go to **Integrations** > **Webhooks**
 3. Click **New Webhook**
 4. Name it (e.g., "NextDNS Blocker")
 5. Select the channel for notifications
 6. Click **Copy Webhook URL**
 
-### 2. Configure NextDNS Blocker
+### macOS Channel
 
-Add to your `.env` file:
-
-```bash
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/1234567890/abcdefghijklmnop
-DISCORD_NOTIFICATIONS_ENABLED=true
+```json
+{
+  "macos": {
+    "enabled": true,
+    "sound": true
+  }
+}
 ```
 
-### 3. Verify Setup
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | No | Enable macOS native notifications |
+| `sound` | boolean | `true` | Play sound with notification |
 
-Run a sync to test:
-
-```bash
-nextdns-blocker sync --verbose
-```
-
-Check Discord for notification.
+**Note:** macOS notifications only work when running on macOS. The channel is automatically disabled on other platforms.
 
 ## Notification Types
 
-### Block Event
+### Sync Complete (Batched)
 
-When a domain is blocked:
+After each sync, a summary notification is sent:
 
+**Discord Example:**
 ```
-🔴 Domain Blocked
+:bar_chart: NextDNS Blocker Sync Complete
 
-Domain: reddit.com
-Time: 2024-01-15 09:00:00
-Reason: Outside available hours
+:red_circle: Blocked (3): reddit.com, twitter.com, instagram.com
+:green_circle: Unblocked (1): github.com
+:shield: PC Activated (2): gambling, tiktok
+:clock3: Scheduled (1): bumble.com
 
-Next available: 12:00
-```
-
-**Color**: Red
-
-### Unblock Event
-
-When a domain is unblocked:
-
-```
-🟢 Domain Unblocked
-
-Domain: reddit.com
-Time: 2024-01-15 12:00:00
-Reason: Within schedule
-
-Blocks at: 13:00
+Profile: abc123 | Synced at 14:30
 ```
 
-**Color**: Green
-
-### Pending Action Created
-
-When an unblock is queued:
-
+**macOS Example:**
 ```
-🟡 Pending Unblock
-
-Domain: bumble.com
-Delay: 24h
-Executes: 2024-01-16 14:30:00
-ID: pnd_20240115_143000_a1b2c3
+NextDNS Blocker Sync
+Blocked: 3 | Unblocked: 1 | Allowed: 0
 ```
 
-**Color**: Yellow
+### Event Types
 
-### Pending Action Cancelled
+| Event | Icon | Color | Description |
+|-------|------|-------|-------------|
+| Block | :red_circle: | Red | Domain added to denylist |
+| Unblock | :green_circle: | Green | Domain removed from denylist |
+| Allow | :white_check_mark: | Green | Domain added to allowlist |
+| Disallow | :x: | Orange | Domain removed from allowlist |
+| PC Activate | :shield: | Blue | Parental Control category/service activated |
+| PC Deactivate | :unlock: | Blue | Parental Control category/service deactivated |
+| Pending | :clock3: | Yellow | Unblock scheduled with delay |
+| Panic | :rotating_light: | Dark Red | Panic mode activated |
+| Error | :warning: | Red | Operation failed |
 
-When you cancel a pending unblock:
+## Features
 
-```
-⚪ Pending Cancelled
+### Batching
 
-Domain: bumble.com
-Was scheduled for: 2024-01-16 14:30:00
-Cancelled at: 2024-01-15 15:00:00
-```
+Instead of sending individual notifications for each domain change, events are collected during a sync operation and sent as a single notification:
 
-**Color**: Gray
+- Reduces notification spam
+- Provides a summary view
+- Groups events by type
 
-### Panic Mode Activated
+### Async Delivery
 
-When panic mode starts:
+Notifications are sent asynchronously in a background thread:
 
-```
-🚨 PANIC MODE ACTIVATED
+- Sync operations don't wait for notification delivery
+- Notification failures don't affect sync success
+- Multiple adapters can send in parallel
 
-Duration: 60 minutes
-Expires: 2024-01-15 15:30:00
-All domains now blocked
-```
+### Rate Limiting
 
-**Color**: Red (urgent)
+Discord webhooks have rate limits. NextDNS Blocker handles this by:
 
-### Allow/Disallow Events
+- Batching events to reduce API calls
+- Logging rate limit errors without retrying
 
-When allowlist changes:
+## Testing
 
-```
-✅ Domain Allowed
-
-Domain: aws.amazon.com
-Added to allowlist
-```
-
-```
-❌ Domain Disallowed
-
-Domain: aws.amazon.com
-Removed from allowlist
-```
-
-## Configuration Options
-
-### DISCORD_WEBHOOK_URL
-
-The full webhook URL from Discord.
+Verify your notification setup:
 
 ```bash
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+nextdns-blocker test-notifications
 ```
 
-**Format validation**:
-- Must start with `https://discord.com/api/webhooks/`
-- Must include webhook ID and token
+This sends a test message to all configured and enabled channels.
 
-### DISCORD_NOTIFICATIONS_ENABLED
+## Complete Configuration Example
 
-Enable or disable notifications.
-
-```bash
-DISCORD_NOTIFICATIONS_ENABLED=true   # Enabled
-DISCORD_NOTIFICATIONS_ENABLED=false  # Disabled
+```json
+{
+  "version": "1.0",
+  "settings": {
+    "timezone": "America/New_York"
+  },
+  "notifications": {
+    "enabled": true,
+    "channels": {
+      "discord": {
+        "enabled": true,
+        "webhook_url": "https://discord.com/api/webhooks/123456789/abcdef..."
+      },
+      "macos": {
+        "enabled": true,
+        "sound": true
+      }
+    }
+  },
+  "blocklist": [...]
+}
 ```
-
-Default: `false`
-
-## Rate Limiting
-
-Notifications are rate-limited to prevent spam:
-
-- **Minimum interval**: 3 seconds between notifications
-- **Batch similar events**: Multiple blocks/unblocks grouped
-- **Non-blocking**: Notification failures don't affect sync
-
-## Notification Channel Ideas
-
-### Separate Channels
-
-Create different webhooks for different purposes:
-
-1. **#nextdns-alerts** - All notifications
-2. **#nextdns-panic** - Only panic mode (urgent)
-3. **#accountability** - Share with accountability partner
-
-### Private vs Shared
-
-- **Private channel**: Personal monitoring
-- **Shared channel**: Accountability with trusted person
 
 ## Disabling Notifications
 
-### Temporarily
+### Disable All Notifications
 
-Comment out or change in `.env`:
-
-```bash
-DISCORD_NOTIFICATIONS_ENABLED=false
+```json
+{
+  "notifications": {
+    "enabled": false
+  }
+}
 ```
 
-### Permanently
+### Disable Specific Channel
 
-Remove from `.env`:
-
-```bash
-# DISCORD_WEBHOOK_URL=...
-# DISCORD_NOTIFICATIONS_ENABLED=...
+```json
+{
+  "notifications": {
+    "enabled": true,
+    "channels": {
+      "discord": {
+        "enabled": false,
+        "webhook_url": "..."
+      }
+    }
+  }
+}
 ```
+
+### Remove Configuration
+
+Simply remove the `notifications` section from `config.json`.
 
 ## Troubleshooting
 
-### Notifications not appearing
+### Discord notifications not appearing
 
 1. **Check webhook URL**:
-   - Copy fresh from Discord
-   - Ensure no extra spaces
+   - Verify URL starts with `https://discord.com/api/webhooks/`
+   - Copy fresh from Discord settings
 
-2. **Check enabled flag**:
+2. **Check configuration**:
    ```bash
-   grep DISCORD ~/.config/nextdns-blocker/.env
+   nextdns-blocker config show
    ```
+   Look for the `notifications` section.
 
 3. **Test webhook manually**:
    ```bash
@@ -218,35 +236,26 @@ Remove from `.env`:
      "YOUR_WEBHOOK_URL"
    ```
 
-4. **Check sync logs**:
+4. **Check logs**:
    ```bash
    tail -20 ~/.local/share/nextdns-blocker/logs/cron.log
    ```
 
-### Webhook invalid
+### macOS notifications not appearing
 
-Discord webhook deleted or expired:
+1. **Check System Preferences**:
+   - Go to System Preferences > Notifications
+   - Ensure notifications are allowed for Terminal/iTerm
 
-1. Create new webhook in Discord
-2. Update `.env` with new URL
-3. Test with sync
+2. **Check platform**:
+   - macOS notifications only work on macOS
+   - The channel is auto-disabled on other platforms
 
-### Duplicate notifications
+### Webhook invalid or expired
 
-Might be from:
-- Multiple sync runs
-- Watchdog restart
-
-Rate limiting should prevent most duplicates.
-
-### Notifications delayed
-
-Discord webhook delivery can be delayed by:
-- Discord server load
-- Network issues
-- Rate limiting
-
-Usually resolves within seconds.
+1. Recreate webhook in Discord
+2. Update `config.json` with new URL
+3. Test with `nextdns-blocker test-notifications`
 
 ## Privacy Considerations
 
@@ -254,6 +263,7 @@ Usually resolves within seconds.
 
 Notifications include:
 - Domain names being blocked/unblocked
+- Category/service names (Parental Control)
 - Timestamps
 - Action types
 
@@ -262,21 +272,26 @@ Notifications include:
 Notifications don't include:
 - Your IP address
 - NextDNS credentials
-- Full configuration
+- Full configuration details
 
 ### Recommendations
 
 1. Use a private Discord server
-2. Don't share webhook URL
-3. Consider separate notification channel
-4. Review who has access to the channel
+2. Don't share webhook URLs
+3. Consider a dedicated notification channel
+4. Review channel access permissions
 
-## Alternative Notification Methods
+## Channel Ideas
 
-Currently, only Discord is supported. Future possibilities:
-- Slack
-- Email
-- Telegram
-- Webhook (generic)
+### Separate Channels
 
-Feature requests welcome on GitHub.
+Create different webhooks for different purposes:
+
+1. **#nextdns-alerts** - All sync notifications
+2. **#nextdns-panic** - Only panic mode (urgent)
+3. **#accountability** - Share with accountability partner
+
+### Private vs Shared
+
+- **Private channel**: Personal monitoring
+- **Shared channel**: Accountability with trusted person

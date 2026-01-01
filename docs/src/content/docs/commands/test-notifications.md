@@ -1,9 +1,9 @@
 ---
 title: test-notifications
-description: Send a test notification to verify Discord integration
+description: Send a test notification to verify notification channels
 ---
 
-The `test-notifications` command sends a test message to your configured Discord webhook to verify the integration is working correctly.
+The `test-notifications` command sends a test message to all configured notification channels to verify the integration is working correctly.
 
 ## Usage
 
@@ -20,12 +20,27 @@ nextdns-blocker test-notifications [OPTIONS]
 
 ## Prerequisites
 
-Before using this command, you need:
+Before using this command, configure notifications in your `config.json`:
 
-1. **Discord webhook URL** - Create one in your Discord server settings
-2. **Configured in `.env`** - Add `DISCORD_WEBHOOK_URL=your_url`
+```json
+{
+  "notifications": {
+    "enabled": true,
+    "channels": {
+      "discord": {
+        "enabled": true,
+        "webhook_url": "https://discord.com/api/webhooks/..."
+      },
+      "macos": {
+        "enabled": true,
+        "sound": true
+      }
+    }
+  }
+}
+```
 
-## Setting Up Discord Notifications
+## Setting Up Notifications
 
 ### 1. Create a Discord Webhook
 
@@ -36,19 +51,28 @@ Before using this command, you need:
 5. Click **New Webhook**
 6. Copy the webhook URL
 
-### 2. Configure NextDNS Blocker
+### 2. Configure in config.json
 
-Add to your `.env` file:
-
-```bash
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/123456789/abcdef...
-```
-
-Or edit existing configuration:
+Edit your configuration:
 
 ```bash
 nextdns-blocker config edit
-# Add the webhook URL to your .env file
+```
+
+Add the notifications section:
+
+```json
+{
+  "notifications": {
+    "enabled": true,
+    "channels": {
+      "discord": {
+        "enabled": true,
+        "webhook_url": "https://discord.com/api/webhooks/123456789/abcdef..."
+      }
+    }
+  }
+}
 ```
 
 ### 3. Test the Integration
@@ -68,10 +92,10 @@ nextdns-blocker test-notifications
 Output:
 ```
   Sending test notification...
-  Notification sent! Check your Discord channel.
+  Discord: Sent successfully
+  macOS: Sent successfully
+  All notifications sent!
 ```
-
-You should see a message in your Discord channel confirming the connection.
 
 ### Missing Configuration
 
@@ -81,13 +105,26 @@ nextdns-blocker test-notifications
 
 Output:
 ```
-  Error: DISCORD_WEBHOOK_URL is not set in configuration.
-      Please add it to your .env file.
+  No notification channels configured.
+  Add a 'notifications' section to your config.json
+```
+
+### Partial Success
+
+```bash
+nextdns-blocker test-notifications
+```
+
+Output:
+```
+  Sending test notification...
+  Discord: Sent successfully
+  macOS: Not available (not on macOS)
 ```
 
 ## What Notifications Are Sent
 
-When enabled, NextDNS Blocker sends Discord notifications for:
+When enabled, NextDNS Blocker sends notifications for:
 
 | Event | Description |
 |-------|-------------|
@@ -96,82 +133,101 @@ When enabled, NextDNS Blocker sends Discord notifications for:
 | Panic mode ended | Alert when emergency mode expires |
 | Unblock request | When a pending unblock is created |
 | Unblock executed | When a pending unblock completes |
+| Parental Control changes | Category/service activations |
 
 ## Notification Format
 
-Test notifications appear in Discord like:
+Test notifications appear as:
 
+**Discord:**
 ```
-🧪 NextDNS Blocker Test
+:test_tube: NextDNS Blocker Test
 Test Connection
 Connection successful!
 ```
 
-Regular notifications include:
-- Event type icon
-- Domain or action details
-- Timestamp
+**macOS:**
+```
+NextDNS Blocker Test
+Connection successful!
+```
 
 ## Troubleshooting
 
-### Webhook URL not set
+### No channels configured
 
 ```
-Error: DISCORD_WEBHOOK_URL is not set in configuration.
+No notification channels configured.
 ```
 
-**Solution**: Add the webhook URL to your `.env` file:
+**Solution**: Add the `notifications` section to your `config.json`:
 
-```bash
-echo 'DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...' >> ~/.config/nextdns-blocker/.env
+```json
+{
+  "notifications": {
+    "enabled": true,
+    "channels": {
+      "discord": {
+        "enabled": true,
+        "webhook_url": "https://discord.com/api/webhooks/..."
+      }
+    }
+  }
+}
 ```
 
-### Invalid webhook URL
+### Discord webhook failed
 
-If the notification fails silently:
+If Discord notification fails silently:
 
-1. Verify the webhook URL is correct
+1. Verify the webhook URL is correct and complete
 2. Check the webhook hasn't been deleted in Discord
 3. Ensure the channel still exists
 4. Try creating a new webhook
 
-### Notification not appearing
+### macOS notifications not available
+
+```
+macOS: Not available (not on macOS)
+```
+
+This is expected when running on Linux or Windows. macOS notifications only work on macOS.
+
+### Notification not appearing in Discord
 
 1. Check the correct Discord channel
 2. Verify webhook permissions in Discord
 3. Check if notifications are muted for that channel
-4. Try the webhook URL in a browser/curl to test directly
+4. Test the webhook URL directly:
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Test"}' \
+  "YOUR_WEBHOOK_URL"
+```
 
 ### Rate limiting
 
 Discord webhooks have rate limits. If sending many notifications:
 - Wait a few minutes before testing again
-- Consider reducing notification frequency
+- NextDNS Blocker batches notifications to reduce API calls
 
-## Disabling Notifications
+## Supported Channels
 
-To disable Discord notifications:
-
-1. Remove or comment out `DISCORD_WEBHOOK_URL` in `.env`:
-
-```bash
-# DISCORD_WEBHOOK_URL=https://...
-```
-
-2. Or set it to empty:
-
-```bash
-DISCORD_WEBHOOK_URL=
-```
+| Channel | Platform | Description |
+|---------|----------|-------------|
+| Discord | All | Webhook notifications with rich embeds |
+| macOS | macOS only | Native system notifications |
 
 ## Security Notes
 
 - Keep your webhook URL private
-- Don't share your `.env` file
-- Webhook URLs can be used by anyone to post to your channel
+- Webhook URLs allow anyone to post to your channel
 - Regenerate the webhook if compromised
+- Consider using a private Discord server
 
 ## Related
 
 - [Notifications Feature](/features/notifications/) - Complete notification setup guide
-- [Configuration](/configuration/env-variables/) - Environment variable reference
+- [config.json Structure](/configuration/config-json/) - Configuration file reference

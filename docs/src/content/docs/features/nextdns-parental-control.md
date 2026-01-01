@@ -66,7 +66,7 @@ The `parental_control` object configures global NextDNS settings:
 
 ## Valid Category IDs
 
-NextDNS supports 5 native categories:
+NextDNS supports 7 native categories:
 
 | Category ID | Description |
 |-------------|-------------|
@@ -75,6 +75,8 @@ NextDNS supports 5 native categories:
 | `dating` | Dating apps and websites |
 | `piracy` | Piracy and torrent sites |
 | `social-networks` | Social networking platforms |
+| `gaming` | Gaming platforms and services |
+| `video-streaming` | Video streaming services |
 
 ## Valid Service IDs
 
@@ -256,7 +258,7 @@ Don't confuse `nextdns.categories` with the top-level `categories` in config.jso
 |---------|---------------------|----------------------|
 | Source | NextDNS Parental Control API | Your custom groups |
 | Domains | Managed by NextDNS | You define the domains |
-| IDs | Fixed (5 options) | Any custom ID |
+| IDs | Fixed (7 options) | Any custom ID |
 | Use case | Block entire content types | Group your domains |
 
 You can use both together for maximum control.
