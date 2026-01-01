@@ -22,6 +22,12 @@
         "description": "Adult content - always blocked",
         "unblock_delay": "never",
         "schedule": null
+      },
+      {
+        "id": "gaming",
+        "description": "Gaming sites - blocked (but Discord allowed via allowlist)",
+        "unblock_delay": "never",
+        "schedule": null
       }
     ],
     "services": [
@@ -270,6 +276,10 @@
     {
       "domain": "developer.amazon.com",
       "description": "Amazon Developer - always accessible"
+    },
+    {
+      "domain": "discord.com",
+      "description": "Exception to gaming category - allowlist overrides category blocks"
     }
   ]
 }
