@@ -776,7 +776,9 @@ class NextDNSClient:
         if result is None:
             logger.warning("Failed to fetch parental control config from API")
             return None
-        return result
+        # API returns {"data": {...}}, unwrap it
+        data: dict[str, Any] = result.get("data", result)
+        return data
 
     def update_parental_control(
         self,
@@ -1061,8 +1063,8 @@ class NextDNSClient:
         """
         Activate a Parental Control service (start blocking).
 
-        If the service doesn't exist, adds it with POST.
-        If it exists but is inactive, updates it with PATCH.
+        Uses PATCH to activate the service. Services in NextDNS are predefined
+        (like categories), so we just activate/deactivate them.
 
         Args:
             service_id: The service ID to activate
@@ -1070,26 +1072,11 @@ class NextDNSClient:
         Returns:
             True if successful, False otherwise
         """
-        exists = self.service_exists(service_id)
-        if exists is None:
-            logger.error(f"Failed to check if service exists: {service_id}")
-            return False
-
-        if exists:
-            # Service exists, use PATCH to activate
-            result = self.request(
-                "PATCH",
-                f"/profiles/{self.profile_id}/parentalControl/services/{service_id}",
-                {"active": True},
-            )
-        else:
-            # Service doesn't exist, add it with POST
-            result = self.request(
-                "POST",
-                f"/profiles/{self.profile_id}/parentalControl/services",
-                {"id": service_id, "active": True},
-            )
-
+        result = self.request(
+            "PATCH",
+            f"/profiles/{self.profile_id}/parentalControl/services/{service_id}",
+            {"active": True},
+        )
         if result is not None:
             logger.info(f"Parental control service activated: {service_id}")
             return True
@@ -1100,7 +1087,8 @@ class NextDNSClient:
         """
         Deactivate a Parental Control service (stop blocking).
 
-        Uses DELETE to remove the service from parental control.
+        Uses PATCH to deactivate the service. Services in NextDNS are predefined
+        (like categories), so we just activate/deactivate them.
 
         Args:
             service_id: The service ID to deactivate
@@ -1109,8 +1097,9 @@ class NextDNSClient:
             True if successful, False otherwise
         """
         result = self.request(
-            "DELETE",
+            "PATCH",
             f"/profiles/{self.profile_id}/parentalControl/services/{service_id}",
+            {"active": False},
         )
         if result is not None:
             logger.info(f"Parental control service deactivated: {service_id}")
