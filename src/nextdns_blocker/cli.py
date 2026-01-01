@@ -765,18 +765,30 @@ def _sync_nextdns_parental_control(
     youtube_restricted = parental_control.get("youtube_restricted_mode")
     block_bypass = parental_control.get("block_bypass")
 
+    # Get current state from NextDNS to compare
+    current = client.get_parental_control()
+    if current is None:
+        logger.warning("Could not fetch current parental control state")
+        return False
+
+    # Build list of settings that need to change
+    changes: list[str] = []
+    if safe_search is not None and current.get("safeSearch") != safe_search:
+        changes.append(f"safe_search={safe_search}")
+    if (
+        youtube_restricted is not None
+        and current.get("youtubeRestrictedMode") != youtube_restricted
+    ):
+        changes.append(f"youtube_restricted_mode={youtube_restricted}")
+    if block_bypass is not None and current.get("blockBypass") != block_bypass:
+        changes.append(f"block_bypass={block_bypass}")
+
+    if not changes:
+        logger.debug("Parental control settings already in sync")
+        return True
+
     if dry_run:
-        settings = []
-        if safe_search is not None:
-            settings.append(f"safe_search={safe_search}")
-        if youtube_restricted is not None:
-            settings.append(f"youtube_restricted_mode={youtube_restricted}")
-        if block_bypass is not None:
-            settings.append(f"block_bypass={block_bypass}")
-        if settings:
-            console.print(
-                f"  [yellow]Would UPDATE parental control: {', '.join(settings)}[/yellow]"
-            )
+        console.print(f"  [yellow]Would UPDATE parental control: {', '.join(changes)}[/yellow]")
         return True
 
     if client.update_parental_control(
