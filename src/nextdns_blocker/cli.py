@@ -1964,10 +1964,17 @@ def validate(
     domains_list: list[dict[str, Any]] = []
     allowlist_list: list[dict[str, Any]] = []
     categories_list: list[dict[str, Any]] = []
+    schedules_dict: dict[str, Any] = {}
     if isinstance(domains_data, dict):
         domains_list = domains_data.get("blocklist", [])
         allowlist_list = domains_data.get("allowlist", [])
         categories_list = domains_data.get("categories", [])
+        schedules_dict = domains_data.get("schedules", {})
+
+    # Get valid schedule template names for reference validation
+    valid_schedule_names: set[str] = (
+        set(schedules_dict.keys()) if isinstance(schedules_dict, dict) else set()
+    )
 
     # Expand categories to get individual domain entries
     expanded_category_domains = _expand_categories(categories_list)
@@ -2009,7 +2016,7 @@ def validate(
     schedule_count = 0
 
     for idx, domain_config in enumerate(all_blocked_domains):
-        errors = validate_domain_config(domain_config, idx)
+        errors = validate_domain_config(domain_config, idx, valid_schedule_names)
         domain_errors.extend(errors)
         if domain_config.get("schedule"):
             schedule_count += 1
@@ -2018,7 +2025,7 @@ def validate(
 
     # Check 7: Validate allowlist entries
     for idx, allowlist_config in enumerate(allowlist_list):
-        errors = validate_allowlist_config(allowlist_config, idx)
+        errors = validate_allowlist_config(allowlist_config, idx, valid_schedule_names)
         domain_errors.extend(errors)
 
     if domain_errors:
