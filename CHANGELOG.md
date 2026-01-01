@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.5.2] - 2025-12-31
+
+### Fixed
+- **Config validate schedule references**: Pass schedule template names to validation functions
+  - `validate_domain_config` and `validate_allowlist_config` now receive valid schedule names
+  - Enables proper validation of schedule template references in domain and allowlist configurations
+  - Previously, schedule references were not validated against defined templates
+
 ## [6.5.1] - 2025-12-31
 
 ### Fixed
@@ -643,6 +651,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[6.5.2]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.1...v6.5.2
 [6.5.1]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.0...v6.5.1
 [6.5.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.3.0...v6.4.0
