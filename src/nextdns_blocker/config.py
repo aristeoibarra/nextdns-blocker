@@ -1613,7 +1613,6 @@ def _build_config_dict(config_dir: Path) -> dict[str, Any]:
     return {
         "api_key": os.getenv("NEXTDNS_API_KEY"),
         "profile_id": os.getenv("NEXTDNS_PROFILE_ID"),
-        "discord_webhook_url": os.getenv("DISCORD_WEBHOOK_URL"),
         "timeout": safe_int(os.getenv("API_TIMEOUT"), DEFAULT_TIMEOUT, "API_TIMEOUT"),
         "retries": safe_int(os.getenv("API_RETRIES"), DEFAULT_RETRIES, "API_RETRIES"),
         "script_dir": str(config_dir),
@@ -1662,20 +1661,123 @@ def _validate_timezone(timezone: str) -> None:
         ) from e
 
 
-def _validate_optional_webhook(config: dict[str, Any]) -> None:
+def validate_notification_channel(channel_name: str, channel_config: dict[str, Any]) -> list[str]:
     """
-    Validate and sanitize Discord webhook URL if provided.
+    Validate a single notification channel configuration.
 
     Args:
-        config: Configuration dictionary (modified in place)
+        channel_name: Name of the channel (discord, macos)
+        channel_config: Channel configuration dictionary
+
+    Returns:
+        List of error messages (empty if valid)
     """
-    webhook_url = config.get("discord_webhook_url")
-    if webhook_url and not validate_discord_webhook(webhook_url):
-        logger.warning(
-            "Invalid DISCORD_WEBHOOK_URL format - notifications disabled. "
-            "Expected format: https://discord.com/api/webhooks/{id}/{token}"
-        )
-        config["discord_webhook_url"] = None
+    errors: list[str] = []
+
+    if not isinstance(channel_config, dict):
+        return [f"notifications.channels.{channel_name}: must be an object"]
+
+    # Validate 'enabled' field
+    enabled = channel_config.get("enabled")
+    if enabled is not None and not isinstance(enabled, bool):
+        errors.append(f"notifications.channels.{channel_name}.enabled: must be a boolean")
+
+    # Channel-specific validation
+    if channel_name == "discord":
+        webhook_url = channel_config.get("webhook_url")
+        if channel_config.get("enabled", False):
+            if not webhook_url:
+                errors.append(
+                    "notifications.channels.discord: webhook_url is required when enabled"
+                )
+            elif not validate_discord_webhook(webhook_url):
+                errors.append(
+                    "notifications.channels.discord: invalid webhook_url format. "
+                    "Expected: https://discord.com/api/webhooks/{id}/{token}"
+                )
+
+    elif channel_name == "macos":
+        sound = channel_config.get("sound")
+        if sound is not None and not isinstance(sound, bool):
+            errors.append("notifications.channels.macos.sound: must be a boolean")
+
+    return errors
+
+
+def validate_notifications_config(notifications: dict[str, Any]) -> list[str]:
+    """
+    Validate the notifications configuration section.
+
+    Args:
+        notifications: Notifications configuration dictionary
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: list[str] = []
+
+    if not isinstance(notifications, dict):
+        return ["'notifications' must be an object"]
+
+    # Validate boolean fields
+    for field in ["enabled", "batch", "on_sync", "on_error"]:
+        value = notifications.get(field)
+        if value is not None and not isinstance(value, bool):
+            errors.append(f"notifications.{field}: must be a boolean")
+
+    # Validate channels
+    channels = notifications.get("channels", {})
+    if not isinstance(channels, dict):
+        errors.append("notifications.channels: must be an object")
+    else:
+        for channel_name, channel_config in channels.items():
+            errors.extend(validate_notification_channel(channel_name, channel_config))
+
+    return errors
+
+
+def _load_notifications_config(config_dir: Path) -> dict[str, Any]:
+    """
+    Load notifications configuration from config.json.
+
+    Args:
+        config_dir: Directory containing config.json
+
+    Returns:
+        Notifications configuration dictionary (empty if not configured)
+    """
+    config_file = config_dir / "config.json"
+    if not config_file.exists():
+        return {}
+
+    try:
+        with open(config_file, encoding="utf-8") as f:
+            config_data = json.load(f)
+
+        if not isinstance(config_data, dict):
+            return {}
+
+        notifications = config_data.get("notifications", {})
+        if not isinstance(notifications, dict):
+            return {}
+
+        # Validate the notifications config
+        errors = validate_notifications_config(notifications)
+        if errors:
+            for error in errors:
+                logger.error(error)
+            raise ConfigurationError(
+                f"Notification configuration validation failed: {len(errors)} error(s)"
+            )
+
+        return notifications
+
+    except json.JSONDecodeError as e:
+        logger.debug(f"Could not parse notifications from config.json: {e}")
+        return {}
+    except OSError as e:
+        logger.debug(f"Could not read config.json for notifications: {e}")
+        return {}
 
 
 def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
@@ -1709,7 +1811,9 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
     # Validate all configuration
     _validate_required_credentials(config)
     _validate_timezone(config["timezone"])
-    _validate_optional_webhook(config)
+
+    # Load notifications config from config.json
+    config["notifications"] = _load_notifications_config(config_dir)
 
     return config
 

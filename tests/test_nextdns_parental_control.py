@@ -1153,10 +1153,8 @@ class TestSyncNextDNSCategories:
         categories = [{"id": "gambling", "schedule": None}]
         config = {}
 
-        with (
-            patch("nextdns_blocker.cli.audit_log"),
-            patch("nextdns_blocker.cli.send_discord_notification"),
-        ):
+        nm_mock = MagicMock()
+        with patch("nextdns_blocker.cli.audit_log"):
             activated, deactivated = _sync_nextdns_categories(
                 categories,
                 client,
@@ -1165,6 +1163,7 @@ class TestSyncNextDNSCategories:
                 dry_run=False,
                 verbose=False,
                 panic_active=False,
+                nm=nm_mock,
             )
 
         assert activated == 1
@@ -1198,10 +1197,8 @@ class TestSyncNextDNSCategories:
         categories = [{"id": "gambling", "schedule": {"available_hours": []}}]
         config = {}
 
-        with (
-            patch("nextdns_blocker.cli.audit_log"),
-            patch("nextdns_blocker.cli.send_discord_notification"),
-        ):
+        nm_mock = MagicMock()
+        with patch("nextdns_blocker.cli.audit_log"):
             activated, deactivated = _sync_nextdns_categories(
                 categories,
                 client,
@@ -1210,6 +1207,7 @@ class TestSyncNextDNSCategories:
                 dry_run=False,
                 verbose=False,
                 panic_active=False,
+                nm=nm_mock,
             )
 
         assert activated == 0
@@ -1236,8 +1234,16 @@ class TestSyncNextDNSCategories:
         categories = [{"id": "gambling", "schedule": {"available_hours": []}}]
         config = {}
 
+        nm_mock = MagicMock()
         activated, deactivated = _sync_nextdns_categories(
-            categories, client, evaluator, config, dry_run=False, verbose=False, panic_active=True
+            categories,
+            client,
+            evaluator,
+            config,
+            dry_run=False,
+            verbose=False,
+            panic_active=True,
+            nm=nm_mock,
         )
 
         # Should not deactivate during panic mode
@@ -1276,10 +1282,8 @@ class TestSyncNextDNSServices:
         services = [{"id": "tiktok", "schedule": None}]
         config = {}
 
-        with (
-            patch("nextdns_blocker.cli.audit_log"),
-            patch("nextdns_blocker.cli.send_discord_notification"),
-        ):
+        nm_mock = MagicMock()
+        with patch("nextdns_blocker.cli.audit_log"):
             activated, deactivated = _sync_nextdns_services(
                 services,
                 client,
@@ -1288,6 +1292,7 @@ class TestSyncNextDNSServices:
                 dry_run=False,
                 verbose=False,
                 panic_active=False,
+                nm=nm_mock,
             )
 
         assert activated == 1
@@ -1321,10 +1326,8 @@ class TestSyncNextDNSServices:
         services = [{"id": "tiktok", "schedule": {"available_hours": []}}]
         config = {}
 
-        with (
-            patch("nextdns_blocker.cli.audit_log"),
-            patch("nextdns_blocker.cli.send_discord_notification"),
-        ):
+        nm_mock = MagicMock()
+        with patch("nextdns_blocker.cli.audit_log"):
             activated, deactivated = _sync_nextdns_services(
                 services,
                 client,
@@ -1333,6 +1336,7 @@ class TestSyncNextDNSServices:
                 dry_run=False,
                 verbose=False,
                 panic_active=False,
+                nm=nm_mock,
             )
 
         assert activated == 0
@@ -1359,8 +1363,16 @@ class TestSyncNextDNSServices:
         services = [{"id": "tiktok", "schedule": {"available_hours": []}}]
         config = {}
 
+        nm_mock = MagicMock()
         activated, deactivated = _sync_nextdns_services(
-            services, client, evaluator, config, dry_run=False, verbose=False, panic_active=True
+            services,
+            client,
+            evaluator,
+            config,
+            dry_run=False,
+            verbose=False,
+            panic_active=True,
+            nm=nm_mock,
         )
 
         # Should not deactivate during panic mode

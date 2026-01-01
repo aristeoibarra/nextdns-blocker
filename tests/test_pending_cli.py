@@ -140,7 +140,7 @@ class TestPendingCancel:
         with (
             patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file),
             patch("nextdns_blocker.pending.audit_log"),
-            patch("nextdns_blocker.notifications.send_discord_notification"),
+            patch("nextdns_blocker.notifications.send_notification"),
             patch("nextdns_blocker.config.load_config", return_value={}),
         ):
             result = runner.invoke(pending_cli, ["cancel", "abc123", "-y"])
