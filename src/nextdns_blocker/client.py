@@ -1063,8 +1063,8 @@ class NextDNSClient:
         """
         Activate a Parental Control service (start blocking).
 
-        Uses PATCH to activate the service. Services in NextDNS are predefined
-        (like categories), so we just activate/deactivate them.
+        First tries PATCH for existing services. If service doesn't exist (404),
+        falls back to POST to add it.
 
         Args:
             service_id: The service ID to activate
@@ -1072,6 +1072,7 @@ class NextDNSClient:
         Returns:
             True if successful, False otherwise
         """
+        # First try PATCH for existing services
         result = self.request(
             "PATCH",
             f"/profiles/{self.profile_id}/parentalControl/services/{service_id}",
@@ -1080,6 +1081,18 @@ class NextDNSClient:
         if result is not None:
             logger.info(f"Parental control service activated: {service_id}")
             return True
+
+        # If PATCH failed (likely 404 for new service), try POST to add it
+        logger.debug(f"PATCH failed for {service_id}, trying POST to add service")
+        result = self.request(
+            "POST",
+            f"/profiles/{self.profile_id}/parentalControl/services",
+            {"id": service_id, "active": True},
+        )
+        if result is not None:
+            logger.info(f"Parental control service added and activated: {service_id}")
+            return True
+
         logger.error(f"Failed to activate parental control service: {service_id}")
         return False
 
