@@ -452,8 +452,8 @@ class TestAddCategory:
     def test_add_category_success(self, client):
         """Successfully add a category."""
         responses.add(
-            responses.POST,
-            f"{API_URL}/profiles/testprofile/parentalControl/categories",
+            responses.PATCH,
+            f"{API_URL}/profiles/testprofile/parentalControl/categories/gambling",
             json={"success": True},
             status=200,
         )
@@ -464,8 +464,8 @@ class TestAddCategory:
     def test_activate_category_success(self, client):
         """Successfully activate a category."""
         responses.add(
-            responses.POST,
-            f"{API_URL}/profiles/testprofile/parentalControl/categories",
+            responses.PATCH,
+            f"{API_URL}/profiles/testprofile/parentalControl/categories/gambling",
             json={"success": True},
             status=200,
         )
@@ -480,7 +480,7 @@ class TestRemoveCategory:
     def test_remove_category_success(self, client):
         """Successfully remove a category."""
         responses.add(
-            responses.DELETE,
+            responses.PATCH,
             f"{API_URL}/profiles/testprofile/parentalControl/categories/gambling",
             json={"success": True},
             status=200,
@@ -492,7 +492,7 @@ class TestRemoveCategory:
     def test_deactivate_category_success(self, client):
         """Successfully deactivate a category."""
         responses.add(
-            responses.DELETE,
+            responses.PATCH,
             f"{API_URL}/profiles/testprofile/parentalControl/categories/gambling",
             json={"success": True},
             status=200,
@@ -518,7 +518,15 @@ class TestAddService:
 
     @responses.activate
     def test_activate_service_success(self, client):
-        """Successfully activate a service."""
+        """Successfully activate a service that doesn't exist yet."""
+        # Mock: check if service exists (empty list = doesn't exist)
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={"services": [], "categories": []},
+            status=200,
+        )
+        # Mock: add service with POST
         responses.add(
             responses.POST,
             f"{API_URL}/profiles/testprofile/parentalControl/services",
@@ -897,8 +905,8 @@ class TestNextDNSCLIAddCategorySuccess:
 
         # Mock API response
         responses.add(
-            responses.POST,
-            f"{API_URL}/profiles/testprofile/parentalControl/categories",
+            responses.PATCH,
+            f"{API_URL}/profiles/testprofile/parentalControl/categories/gambling",
             json={"success": True},
             status=200,
         )
@@ -923,8 +931,8 @@ class TestNextDNSCLIAddCategorySuccess:
 
         # Mock API failure
         responses.add(
-            responses.POST,
-            f"{API_URL}/profiles/testprofile/parentalControl/categories",
+            responses.PATCH,
+            f"{API_URL}/profiles/testprofile/parentalControl/categories/gambling",
             json={"error": "Failed"},
             status=500,
         )
@@ -969,7 +977,7 @@ class TestNextDNSCLIRemoveCategorySuccess:
 
         # Mock API response
         responses.add(
-            responses.DELETE,
+            responses.PATCH,
             f"{API_URL}/profiles/testprofile/parentalControl/categories/gambling",
             json={"success": True},
             status=200,
@@ -1014,7 +1022,21 @@ class TestNextDNSCLIAddServiceSuccess:
         config_file = tmp_path / "config.json"
         config_file.write_text('{"blocklist": []}')
 
-        # Mock API response
+        # Mock: is_service_active check (returns False = not active)
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={"services": [], "categories": []},
+            status=200,
+        )
+        # Mock: service_exists check (for activate_service)
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={"services": [], "categories": []},
+            status=200,
+        )
+        # Mock: add service with POST
         responses.add(
             responses.POST,
             f"{API_URL}/profiles/testprofile/parentalControl/services",
@@ -1144,8 +1166,8 @@ class TestSyncNextDNSCategories:
         )
         # Mock: activate succeeds
         responses.add(
-            responses.POST,
-            f"{API_URL}/profiles/testprofile/parentalControl/categories",
+            responses.PATCH,
+            f"{API_URL}/profiles/testprofile/parentalControl/categories/gambling",
             json={"success": True},
             status=200,
         )
@@ -1188,7 +1210,7 @@ class TestSyncNextDNSCategories:
         )
         # Mock: deactivate succeeds
         responses.add(
-            responses.DELETE,
+            responses.PATCH,
             f"{API_URL}/profiles/testprofile/parentalControl/categories/gambling",
             json={"success": True},
             status=200,
@@ -1271,7 +1293,14 @@ class TestSyncNextDNSServices:
             json={"categories": [], "services": [{"id": "tiktok", "active": False}]},
             status=200,
         )
-        # Mock: activate succeeds
+        # Mock: check if service exists (for activate_service)
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={"categories": [], "services": []},
+            status=200,
+        )
+        # Mock: activate succeeds (POST for new service)
         responses.add(
             responses.POST,
             f"{API_URL}/profiles/testprofile/parentalControl/services",
@@ -1315,7 +1344,7 @@ class TestSyncNextDNSServices:
             json={"categories": [], "services": [{"id": "tiktok", "active": True}]},
             status=200,
         )
-        # Mock: deactivate succeeds
+        # Mock: deactivate succeeds (DELETE)
         responses.add(
             responses.DELETE,
             f"{API_URL}/profiles/testprofile/parentalControl/services/tiktok",

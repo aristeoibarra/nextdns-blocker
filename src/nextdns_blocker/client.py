@@ -887,9 +887,28 @@ class NextDNSClient:
                 return is_active
         return False
 
+    def service_exists(self, service_id: str) -> Optional[bool]:
+        """
+        Check if a Parental Control service exists in the profile.
+
+        Args:
+            service_id: The service ID (e.g., 'tiktok', 'netflix')
+
+        Returns:
+            True if exists, False if not, None if request failed
+        """
+        services = self.get_parental_control_services()
+        if services is None:
+            return None
+
+        return any(svc.get("id") == service_id for svc in services)
+
     def add_category(self, category_id: str, active: bool = True) -> bool:
         """
-        Add a category to Parental Control.
+        Add/activate a category in Parental Control.
+
+        Uses PATCH to set the active state. NextDNS parental control categories
+        are predefined and cannot be added/removed, only activated/deactivated.
 
         Args:
             category_id: The category ID (e.g., 'gambling', 'porn')
@@ -899,9 +918,9 @@ class NextDNSClient:
             True if successful, False otherwise
         """
         result = self.request(
-            "POST",
-            f"/profiles/{self.profile_id}/parentalControl/categories",
-            {"id": category_id, "active": active},
+            "PATCH",
+            f"/profiles/{self.profile_id}/parentalControl/categories/{category_id}",
+            {"active": active},
         )
 
         if result is not None:
@@ -909,34 +928,41 @@ class NextDNSClient:
             logger.info(f"Parental control category {status}: {category_id}")
             return True
 
-        logger.error(f"Failed to add parental control category: {category_id}")
+        logger.error(f"Failed to update parental control category: {category_id}")
         return False
 
     def remove_category(self, category_id: str) -> bool:
         """
-        Remove a category from Parental Control.
+        Deactivate a category in Parental Control.
+
+        Uses PATCH to set active=False. NextDNS parental control categories
+        are predefined and cannot be removed, only deactivated.
 
         Args:
-            category_id: The category ID to remove
+            category_id: The category ID to deactivate
 
         Returns:
             True if successful, False otherwise
         """
         result = self.request(
-            "DELETE",
+            "PATCH",
             f"/profiles/{self.profile_id}/parentalControl/categories/{category_id}",
+            {"active": False},
         )
 
         if result is not None:
-            logger.info(f"Removed parental control category: {category_id}")
+            logger.info(f"Deactivated parental control category: {category_id}")
             return True
 
-        logger.error(f"Failed to remove parental control category: {category_id}")
+        logger.error(f"Failed to deactivate parental control category: {category_id}")
         return False
 
     def add_service(self, service_id: str, active: bool = True) -> bool:
         """
         Add a service to Parental Control.
+
+        Uses POST to add the service. Unlike categories which are predefined,
+        services must be added before they can be controlled.
 
         Args:
             service_id: The service ID (e.g., 'tiktok', 'netflix')
@@ -963,6 +989,8 @@ class NextDNSClient:
         """
         Remove a service from Parental Control.
 
+        Uses DELETE to remove the service entirely.
+
         Args:
             service_id: The service ID to remove
 
@@ -985,7 +1013,8 @@ class NextDNSClient:
         """
         Activate a Parental Control category (start blocking).
 
-        This is a convenience method that adds the category with active=True.
+        Uses PATCH to set active=True. NextDNS parental control categories
+        are predefined and cannot be added/removed, only activated/deactivated.
 
         Args:
             category_id: The category ID to activate
@@ -993,13 +1022,23 @@ class NextDNSClient:
         Returns:
             True if successful, False otherwise
         """
-        return self.add_category(category_id, active=True)
+        result = self.request(
+            "PATCH",
+            f"/profiles/{self.profile_id}/parentalControl/categories/{category_id}",
+            {"active": True},
+        )
+        if result is not None:
+            logger.info(f"Parental control category activated: {category_id}")
+            return True
+        logger.error(f"Failed to activate parental control category: {category_id}")
+        return False
 
     def deactivate_category(self, category_id: str) -> bool:
         """
         Deactivate a Parental Control category (stop blocking).
 
-        This removes the category from Parental Control.
+        Uses PATCH to set active=False. NextDNS parental control categories
+        are predefined and cannot be added/removed, only activated/deactivated.
 
         Args:
             category_id: The category ID to deactivate
@@ -1007,13 +1046,23 @@ class NextDNSClient:
         Returns:
             True if successful, False otherwise
         """
-        return self.remove_category(category_id)
+        result = self.request(
+            "PATCH",
+            f"/profiles/{self.profile_id}/parentalControl/categories/{category_id}",
+            {"active": False},
+        )
+        if result is not None:
+            logger.info(f"Parental control category deactivated: {category_id}")
+            return True
+        logger.error(f"Failed to deactivate parental control category: {category_id}")
+        return False
 
     def activate_service(self, service_id: str) -> bool:
         """
         Activate a Parental Control service (start blocking).
 
-        This is a convenience method that adds the service with active=True.
+        If the service doesn't exist, adds it with POST.
+        If it exists but is inactive, updates it with PATCH.
 
         Args:
             service_id: The service ID to activate
@@ -1021,13 +1070,37 @@ class NextDNSClient:
         Returns:
             True if successful, False otherwise
         """
-        return self.add_service(service_id, active=True)
+        exists = self.service_exists(service_id)
+        if exists is None:
+            logger.error(f"Failed to check if service exists: {service_id}")
+            return False
+
+        if exists:
+            # Service exists, use PATCH to activate
+            result = self.request(
+                "PATCH",
+                f"/profiles/{self.profile_id}/parentalControl/services/{service_id}",
+                {"active": True},
+            )
+        else:
+            # Service doesn't exist, add it with POST
+            result = self.request(
+                "POST",
+                f"/profiles/{self.profile_id}/parentalControl/services",
+                {"id": service_id, "active": True},
+            )
+
+        if result is not None:
+            logger.info(f"Parental control service activated: {service_id}")
+            return True
+        logger.error(f"Failed to activate parental control service: {service_id}")
+        return False
 
     def deactivate_service(self, service_id: str) -> bool:
         """
         Deactivate a Parental Control service (stop blocking).
 
-        This removes the service from Parental Control.
+        Uses DELETE to remove the service from parental control.
 
         Args:
             service_id: The service ID to deactivate
@@ -1035,4 +1108,12 @@ class NextDNSClient:
         Returns:
             True if successful, False otherwise
         """
-        return self.remove_service(service_id)
+        result = self.request(
+            "DELETE",
+            f"/profiles/{self.profile_id}/parentalControl/services/{service_id}",
+        )
+        if result is not None:
+            logger.info(f"Parental control service deactivated: {service_id}")
+            return True
+        logger.error(f"Failed to deactivate parental control service: {service_id}")
+        return False
