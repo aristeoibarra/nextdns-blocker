@@ -24,14 +24,14 @@ nextdns-blocker [OPTIONS] COMMAND [ARGS]
 | Command | Description |
 |---------|-------------|
 | [`init`](/commands/init/) | Initialize configuration with interactive wizard |
-| [`validate`](/commands/validate/) | Validate configuration files before deployment |
+| [`config validate`](/commands/validate/) | Validate configuration files before deployment |
 | [`completion`](/commands/completion/) | Generate shell completion script |
 
 ## Main Commands
 
 | Command | Description |
 |---------|-------------|
-| [`sync`](/commands/sync/) | Synchronize domain states based on schedules |
+| [`config sync`](/commands/sync/) | Synchronize domain states based on schedules |
 | [`status`](/commands/status/) | Show current blocking status |
 | [`pause`](/commands/pause-resume/) | Temporarily pause all blocking |
 | [`resume`](/commands/pause-resume/) | Resume blocking after pause |
@@ -60,7 +60,7 @@ Manage configuration files.
 | [`config edit`](/commands/config/) | Open config in editor |
 | [`config validate`](/commands/config/) | Validate configuration syntax |
 | [`config set`](/commands/config/) | Set configuration values |
-| [`config sync`](/commands/config/) | Sync domains (alias for root sync) |
+| [`config sync`](/commands/config/) | Synchronize domain states based on schedules |
 
 ### watchdog
 
@@ -167,7 +167,7 @@ nextdns-blocker panic 60
 nextdns-blocker config edit
 
 # Force sync now
-nextdns-blocker sync
+nextdns-blocker config sync
 
 # Check watchdog
 nextdns-blocker watchdog status
@@ -177,16 +177,13 @@ nextdns-blocker watchdog status
 
 ```bash
 # Validate config
-nextdns-blocker validate
-
-# Or use the config group
 nextdns-blocker config validate
 
 # Preview changes
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 
 # Verbose output
-nextdns-blocker sync -v
+nextdns-blocker config sync -v
 
 # Run health checks
 nextdns-blocker health

@@ -13,7 +13,7 @@ The `config` command group provides subcommands for viewing, editing, and valida
 | `edit` | Open config in your editor |
 | `validate` | Validate configuration syntax |
 | `set` | Set configuration values |
-| `sync` | Sync domains (alias for root sync) |
+| `sync` | Synchronize domain states based on schedules |
 
 ## config show
 
@@ -90,16 +90,12 @@ export EDITOR=vim
 Changes take effect on the next sync (within 2 minutes) or immediately if you run:
 
 ```bash
-nextdns-blocker sync
+nextdns-blocker config sync
 ```
 
 ## config validate
 
 Validate the configuration file syntax and structure.
-
-:::tip
-This is also available as a standalone command: [`nextdns-blocker validate`](/commands/validate/)
-:::
 
 ### Usage
 
@@ -198,7 +194,7 @@ See [Timezone Configuration](/configuration/timezone/) for more details.
 
 ## config sync
 
-Alias for `nextdns-blocker sync`. Provided for command grouping convenience.
+The primary command for synchronizing domain states based on configured schedules.
 
 ### Usage
 
@@ -206,9 +202,28 @@ Alias for `nextdns-blocker sync`. Provided for command grouping convenience.
 nextdns-blocker config sync [OPTIONS]
 ```
 
-Accepts the same options as `sync`:
-- `--dry-run`
-- `-v, --verbose`
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--dry-run` | Preview changes without applying them |
+| `-v, --verbose` | Show detailed output |
+| `--help` | Show help message |
+
+### Examples
+
+```bash
+# Basic sync
+nextdns-blocker config sync
+
+# Preview changes
+nextdns-blocker config sync --dry-run
+
+# Verbose output
+nextdns-blocker config sync -v
+```
+
+See [sync command reference](/commands/sync/) for complete documentation.
 
 ## Configuration File Locations
 
@@ -282,7 +297,7 @@ Or set the `$EDITOR` environment variable in your shell profile.
 Force a sync:
 
 ```bash
-nextdns-blocker sync
+nextdns-blocker config sync
 ```
 
 Or check for validation errors:

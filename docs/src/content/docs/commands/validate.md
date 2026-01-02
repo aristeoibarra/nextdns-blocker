@@ -5,16 +5,16 @@ sidebar:
   order: 2
 ---
 
-The `validate` command checks your configuration files for errors before deployment.
-
-:::note
-This command is also available as `nextdns-blocker config validate`.
+:::caution[Command Moved]
+The root `validate` command has been removed. Use `nextdns-blocker config validate` instead.
 :::
+
+The `config validate` command checks your configuration files for errors before deployment.
 
 ## Usage
 
 ```bash
-nextdns-blocker validate [OPTIONS]
+nextdns-blocker config validate [OPTIONS]
 ```
 
 ## Options
@@ -42,7 +42,7 @@ nextdns-blocker validate [OPTIONS]
 ### Successful Validation
 
 ```bash
-$ nextdns-blocker validate
+$ nextdns-blocker config validate
 
   ✓ config.json: valid JSON syntax
   ✓ domains configured: 5 domains
@@ -58,7 +58,7 @@ $ nextdns-blocker validate
 ### Validation Errors
 
 ```bash
-$ nextdns-blocker validate
+$ nextdns-blocker config validate
 
   ✓ config.json: valid JSON syntax
   ✓ domains configured: 5 domains
@@ -76,7 +76,7 @@ $ nextdns-blocker validate
 For scripting and CI/CD pipelines, use `--json` for machine-readable output:
 
 ```bash
-nextdns-blocker validate --json
+nextdns-blocker config validate --json
 ```
 
 ### JSON Response Structure
@@ -180,7 +180,7 @@ blocklist[3]: Invalid unblock_delay 'invalid'
 ```yaml
 - name: Validate config
   run: |
-    nextdns-blocker validate --json > validation.json
+    nextdns-blocker config validate --json > validation.json
     if [ $? -ne 0 ]; then
       echo "Configuration validation failed"
       cat validation.json
@@ -195,7 +195,7 @@ blocklist[3]: Invalid unblock_delay 'invalid'
 # .git/hooks/pre-commit
 
 if [ -f "config.json" ]; then
-  nextdns-blocker validate --config-dir . || exit 1
+  nextdns-blocker config validate --config-dir . || exit 1
 fi
 ```
 
@@ -210,14 +210,14 @@ Always validate before deploying configuration changes:
 nextdns-blocker config edit
 
 # Validate before sync
-nextdns-blocker validate && nextdns-blocker sync
+nextdns-blocker config validate && nextdns-blocker config sync
 ```
 
 ### Automated Testing
 
 ```bash
 # Run in CI pipeline
-nextdns-blocker validate --json | jq '.valid'
+nextdns-blocker config validate --json | jq '.valid'
 ```
 
 ### Debugging Issues
@@ -226,7 +226,7 @@ When sync isn't working as expected:
 
 ```bash
 # Check config first
-nextdns-blocker validate
+nextdns-blocker config validate
 
 # Then check health
 nextdns-blocker health
@@ -234,6 +234,6 @@ nextdns-blocker health
 
 ## Related
 
-- [config validate](/commands/config/) - Alias for this command
+- [config](/commands/config/) - Parent command group
 - [config.json Reference](/configuration/config-json/) - Configuration file format
 - [Schedules](/configuration/schedules/) - Schedule format documentation

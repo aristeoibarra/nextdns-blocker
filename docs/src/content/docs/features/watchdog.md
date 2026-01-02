@@ -9,7 +9,7 @@ The watchdog ensures your blocking rules are enforced automatically, even if som
 
 The watchdog is a background process that:
 
-1. **Runs sync every 2 minutes** - Enforces your schedules
+1. **Runs `config sync` every 2 minutes** - Enforces your schedules
 2. **Self-heals** - Restores itself if deleted
 3. **Uses native schedulers** - launchd, cron, Task Scheduler
 4. **Logs activity** - Track what's happening
@@ -31,7 +31,7 @@ The watchdog is a background process that:
                     ▼                    ▼
          ┌─────────────────┐   ┌─────────────────┐
          │ nextdns-blocker │   │  Check if sync  │
-         │      sync       │   │   job exists    │
+         │   config sync   │   │   job exists    │
          └─────────────────┘   └─────────────────┘
                                         │
                                         ▼
@@ -43,7 +43,7 @@ The watchdog is a background process that:
 
 ### Two Jobs
 
-1. **Sync Job**: Runs `nextdns-blocker sync` every 2 minutes
+1. **Sync Job**: Runs `nextdns-blocker config sync` every 2 minutes
 2. **Watchdog Job**: Checks sync job exists every 5 minutes, restores if missing
 
 ## Installing Watchdog
@@ -126,7 +126,7 @@ crontab -l
 
 **Expected entries**:
 ```
-*/2 * * * * /path/to/nextdns-blocker sync >> ~/.local/share/nextdns-blocker/logs/cron.log 2>&1
+*/2 * * * * /path/to/nextdns-blocker config sync >> ~/.local/share/nextdns-blocker/logs/cron.log 2>&1
 */5 * * * * /path/to/nextdns-blocker watchdog check >> ~/.local/share/nextdns-blocker/logs/wd.log 2>&1
 ```
 
@@ -272,7 +272,7 @@ Prevents circumvention:
 
 2. **Test manually**:
    ```bash
-   nextdns-blocker sync --verbose
+   nextdns-blocker config sync --verbose
    ```
 
 3. **Check executable path**:

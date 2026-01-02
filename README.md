@@ -66,7 +66,7 @@ For complete documentation, visit: **[nextdns-blocker.pages.dev](https://nextdns
 ## Basic Commands
 
 ```bash
-nextdns-blocker sync              # Sync based on schedules
+nextdns-blocker config sync       # Sync based on schedules
 nextdns-blocker status            # Check current blocking status
 nextdns-blocker pause [minutes]   # Pause blocking temporarily
 nextdns-blocker resume            # Resume blocking

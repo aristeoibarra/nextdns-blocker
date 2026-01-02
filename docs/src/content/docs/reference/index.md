@@ -60,7 +60,7 @@ nextdns-blocker <command> --help
 
 | Command | Description |
 |---------|-------------|
-| `sync` | Synchronize domain states |
+| `config sync` | Synchronize domain states |
 | `status` | Show current status |
 | `pause [MIN]` | Pause blocking |
 | `resume` | Resume blocking |

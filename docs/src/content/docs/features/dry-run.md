@@ -8,14 +8,14 @@ Dry run mode lets you see what sync would do without making any actual changes t
 ## Usage
 
 ```bash
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 ```
 
 Or combined with verbose:
 
 ```bash
-nextdns-blocker sync --dry-run --verbose
-nextdns-blocker sync --dry-run -v
+nextdns-blocker config sync --dry-run --verbose
+nextdns-blocker config sync --dry-run -v
 ```
 
 ## Output
@@ -23,7 +23,7 @@ nextdns-blocker sync --dry-run -v
 ### Basic Dry Run
 
 ```bash
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 ```
 
 Output:
@@ -47,7 +47,7 @@ Summary: 1 would block, 1 would unblock, 1 unchanged
 ### Verbose Dry Run
 
 ```bash
-nextdns-blocker sync --dry-run --verbose
+nextdns-blocker config sync --dry-run --verbose
 ```
 
 Output:
@@ -121,7 +121,7 @@ Before relying on schedules, verify they work as expected:
 
 ```bash
 # Check what would happen right now
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 
 # Expected output shows:
 # - Which domains are within schedule
@@ -138,10 +138,10 @@ Preview changes before they apply:
 nextdns-blocker config edit
 
 # Preview what would change
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 
 # If satisfied, run real sync
-nextdns-blocker sync
+nextdns-blocker config sync
 ```
 
 ### Debugging Issues
@@ -149,7 +149,7 @@ nextdns-blocker sync
 When domains aren't blocking/unblocking as expected:
 
 ```bash
-nextdns-blocker sync --dry-run --verbose
+nextdns-blocker config sync --dry-run --verbose
 ```
 
 Check:
@@ -164,7 +164,7 @@ After changing timezone:
 
 ```bash
 nextdns-blocker config set timezone America/Los_Angeles
-nextdns-blocker sync --dry-run -v
+nextdns-blocker config sync --dry-run -v
 ```
 
 Verify times are evaluated in new timezone.
@@ -174,7 +174,7 @@ Verify times are evaluated in new timezone.
 Before modifying protected domains or critical schedules:
 
 ```bash
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 ```
 
 Ensure nothing unexpected will happen.
@@ -242,22 +242,22 @@ Processing pending actions...
 
 Before your first sync:
 ```bash
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 ```
 
 ### After Any Config Change
 
 ```bash
 nextdns-blocker config edit
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 # If good:
-nextdns-blocker sync
+nextdns-blocker config sync
 ```
 
 ### When Debugging
 
 ```bash
-nextdns-blocker sync --dry-run --verbose 2>&1 | less
+nextdns-blocker config sync --dry-run --verbose 2>&1 | less
 ```
 
 Review output carefully for issues.
@@ -274,7 +274,7 @@ Test at schedule boundaries:
 ### Domain Should Be Blocked But Isn't
 
 ```bash
-nextdns-blocker sync --dry-run -v | grep -A10 "domain.com"
+nextdns-blocker config sync --dry-run -v | grep -A10 "domain.com"
 ```
 
 Check:
@@ -284,7 +284,7 @@ Check:
 ### Schedule Seems Wrong
 
 ```bash
-nextdns-blocker sync --dry-run -v
+nextdns-blocker config sync --dry-run -v
 ```
 
 Verify:
@@ -296,7 +296,7 @@ Verify:
 ### Pending Action Not Executing
 
 ```bash
-nextdns-blocker sync --dry-run -v | grep -A5 "pending"
+nextdns-blocker config sync --dry-run -v | grep -A5 "pending"
 ```
 
 Check:

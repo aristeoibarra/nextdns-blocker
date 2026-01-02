@@ -87,7 +87,7 @@ Preview without changes:
 
 | Feature | Purpose | Command |
 |---------|---------|---------|
-| Schedules | Automatic access control | `sync` |
+| Schedules | Automatic access control | `config sync` |
 | Delays | Impulse protection | `unblock` |
 | Watchdog | Auto-sync | `watchdog install` |
 | Panic Mode | Emergency lockdown | `panic 60` |

@@ -100,7 +100,7 @@ nextdns-blocker unblock reddit.com
 ### What Still Works
 
 - `status` - Check current state
-- `sync` - Runs but only blocks
+- `config sync` - Runs but only blocks
 - `config show` - View configuration
 - `watchdog status` - Check automation
 - `panic extend` - Add more time

@@ -183,7 +183,7 @@ nextdns-blocker watchdog install
 There might be a sync delay. Run:
 
 ```bash
-nextdns-blocker sync --verbose
+nextdns-blocker config sync --verbose
 ```
 
 Check for API errors in the output.

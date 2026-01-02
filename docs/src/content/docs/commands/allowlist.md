@@ -297,7 +297,7 @@ Wait for panic to expire.
 Check for API errors:
 
 ```bash
-nextdns-blocker sync --verbose
+nextdns-blocker config sync --verbose
 ```
 
 Verify credentials:

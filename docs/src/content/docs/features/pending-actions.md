@@ -269,7 +269,7 @@ nextdns-blocker pending cancel pnd_<TAB>
 
 4. **Force sync**:
    ```bash
-   nextdns-blocker sync --verbose
+   nextdns-blocker config sync --verbose
    ```
 
 ### Duplicate actions

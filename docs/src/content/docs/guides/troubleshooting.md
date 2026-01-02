@@ -20,7 +20,7 @@ nextdns-blocker config validate
 nextdns-blocker watchdog status
 
 # Preview sync behavior
-nextdns-blocker sync --dry-run --verbose
+nextdns-blocker config sync --dry-run --verbose
 ```
 
 ## Common Issues
@@ -35,7 +35,7 @@ nextdns-blocker sync --dry-run --verbose
 nextdns-blocker status | grep domain.com
 
 # Check schedule evaluation
-nextdns-blocker sync --dry-run -v | grep -A10 domain.com
+nextdns-blocker config sync --dry-run -v | grep -A10 domain.com
 ```
 
 **Common causes and fixes**:
@@ -78,7 +78,7 @@ nextdns-blocker sync --dry-run -v | grep -A10 domain.com
 
 **Diagnosis**:
 ```bash
-nextdns-blocker sync --dry-run -v | grep -A10 domain.com
+nextdns-blocker config sync --dry-run -v | grep -A10 domain.com
 ```
 
 **Common causes**:
@@ -101,7 +101,7 @@ nextdns-blocker sync --dry-run -v | grep -A10 domain.com
 
 4. **Sync not running**
    ```bash
-   nextdns-blocker sync --verbose
+   nextdns-blocker config sync --verbose
    ```
 
 ### Watchdog Not Working
@@ -160,7 +160,7 @@ nextdns-blocker watchdog install
 
 **Diagnosis**:
 ```bash
-nextdns-blocker sync --verbose
+nextdns-blocker config sync --verbose
 ```
 
 **Fixes**:
@@ -243,7 +243,7 @@ nextdns-blocker pending show <ID>
 
 4. **Force processing**
    ```bash
-   nextdns-blocker sync --verbose
+   nextdns-blocker config sync --verbose
    ```
 
 ### Wrong Timezone

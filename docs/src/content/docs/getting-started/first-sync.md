@@ -7,7 +7,7 @@ With your configuration in place, it's time to run your first sync and see NextD
 
 ## Understanding Sync
 
-The `sync` command:
+The `config sync` command:
 1. Reads your `config.json` blocklist
 2. Evaluates each domain against the current time and its schedule
 3. Adds/removes domains from your NextDNS denylist accordingly
@@ -18,7 +18,7 @@ The `sync` command:
 Before making actual changes, preview what would happen:
 
 ```bash
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 ```
 
 Output example:
@@ -46,7 +46,7 @@ Summary: 1 would block, 1 would unblock
 When you're ready to apply changes:
 
 ```bash
-nextdns-blocker sync
+nextdns-blocker config sync
 ```
 
 Output:
@@ -63,13 +63,13 @@ Sync complete: 1 blocked, 1 unblocked
 For more detailed output:
 
 ```bash
-nextdns-blocker sync --verbose
+nextdns-blocker config sync --verbose
 ```
 
 Or use the shorthand:
 
 ```bash
-nextdns-blocker sync -v
+nextdns-blocker config sync -v
 ```
 
 This shows:
@@ -130,7 +130,7 @@ System:
 Manual syncing works, but the watchdog automates this:
 
 ```bash
-# Install watchdog (runs sync every 2 minutes)
+# Install watchdog (runs config sync every 2 minutes)
 nextdns-blocker watchdog install
 
 # Check watchdog status
@@ -141,7 +141,7 @@ tail -f ~/.local/share/nextdns-blocker/logs/cron.log
 ```
 
 The watchdog:
-- Runs `sync` every 2 minutes
+- Runs `config sync` every 2 minutes
 - Restores itself if removed
 - Logs all activity
 - Can be temporarily disabled

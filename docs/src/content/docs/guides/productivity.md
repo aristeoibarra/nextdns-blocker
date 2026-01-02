@@ -242,7 +242,7 @@ nextdns-blocker config validate
 ### 5. Test with Dry Run
 
 ```bash
-nextdns-blocker sync --dry-run -v
+nextdns-blocker config sync --dry-run -v
 ```
 
 ### 6. Install Watchdog
@@ -303,7 +303,7 @@ nextdns-blocker allow important-work-site.com
 Adjust and test:
 ```bash
 nextdns-blocker config edit
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 ```
 
 ### "Too restrictive"

@@ -53,7 +53,7 @@ crontab -l
 
 Expected entries:
 ```
-*/2 * * * * /home/user/.local/bin/nextdns-blocker sync >> /home/user/.local/share/nextdns-blocker/logs/cron.log 2>&1
+*/2 * * * * /home/user/.local/bin/nextdns-blocker config sync >> /home/user/.local/share/nextdns-blocker/logs/cron.log 2>&1
 */5 * * * * /home/user/.local/bin/nextdns-blocker watchdog check >> /home/user/.local/share/nextdns-blocker/logs/wd.log 2>&1
 ```
 
@@ -267,7 +267,7 @@ grep CRON /var/log/syslog
 crontab -l
 
 # Test manual execution
-nextdns-blocker sync --verbose
+nextdns-blocker config sync --verbose
 ```
 
 ### Permission Denied

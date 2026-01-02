@@ -112,7 +112,7 @@ echo $?  # Returns: 5
 User pressed Ctrl+C during execution.
 
 ```bash
-nextdns-blocker sync  # Press Ctrl+C
+nextdns-blocker config sync  # Press Ctrl+C
 echo $?  # Returns: 130
 ```
 
@@ -123,7 +123,7 @@ echo $?  # Returns: 130
 ```bash
 #!/bin/bash
 
-nextdns-blocker sync
+nextdns-blocker config sync
 exit_code=$?
 
 case $exit_code in
@@ -149,10 +149,10 @@ esac
 
 ```bash
 # Only proceed if sync succeeds
-nextdns-blocker sync && echo "Sync complete"
+nextdns-blocker config sync && echo "Sync complete"
 
 # Handle failure
-nextdns-blocker sync || echo "Sync failed"
+nextdns-blocker config sync || echo "Sync failed"
 ```
 
 ### In CI/CD
@@ -160,7 +160,7 @@ nextdns-blocker sync || echo "Sync failed"
 ```yaml
 # GitHub Actions example
 - name: Sync domains
-  run: nextdns-blocker sync
+  run: nextdns-blocker config sync
   continue-on-error: false  # Fail job on non-zero exit
 ```
 
@@ -168,7 +168,7 @@ nextdns-blocker sync || echo "Sync failed"
 
 ```bash
 # Log exit code
-*/2 * * * * nextdns-blocker sync; echo "Exit: $?" >> /tmp/sync.log
+*/2 * * * * nextdns-blocker config sync; echo "Exit: $?" >> /tmp/sync.log
 ```
 
 ## Command-Specific Behavior

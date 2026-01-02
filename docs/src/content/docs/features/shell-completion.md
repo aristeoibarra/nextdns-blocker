@@ -78,7 +78,7 @@ nextdns-blocker pending <TAB>
 ### Options
 
 ```bash
-nextdns-blocker sync --<TAB>
+nextdns-blocker config sync --<TAB>
 # Shows: --dry-run, --verbose, --help
 
 nextdns-blocker --<TAB>

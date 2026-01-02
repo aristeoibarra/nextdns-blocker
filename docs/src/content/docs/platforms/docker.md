@@ -36,14 +36,11 @@ NEXTDNS_PROFILE_ID=your_profile_id
 # Optional
 API_TIMEOUT=10
 API_RETRIES=3
-
-# Container timezone
-TZ=America/New_York
-
-# Discord notifications (optional)
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-DISCORD_NOTIFICATIONS_ENABLED=true
 ```
+
+:::note
+Timezone is configured in `config.json` via `settings.timezone`, not via environment variables.
+:::
 
 ### config.json
 
@@ -75,8 +72,6 @@ services:
     volumes:
       - ./config.json:/app/config.json:ro
       - nextdns-data:/app/data
-    environment:
-      - TZ=${TZ:-UTC}
 
 volumes:
   nextdns-data:
@@ -127,7 +122,7 @@ docker compose ps
 docker compose exec nextdns-blocker nextdns-blocker status
 
 # Manual sync
-docker compose exec nextdns-blocker nextdns-blocker sync -v
+docker compose exec nextdns-blocker nextdns-blocker config sync -v
 
 # View config
 docker compose exec nextdns-blocker nextdns-blocker config show
@@ -169,7 +164,7 @@ RUN mkdir -p /app/data
 RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
 
 # Add cron job
-RUN echo "*/2 * * * * nextdns-blocker sync >> /app/data/cron.log 2>&1" | crontab -
+RUN echo "*/2 * * * * nextdns-blocker config sync >> /app/data/cron.log 2>&1" | crontab -
 
 # Start cron in foreground
 CMD ["cron", "-f"]
@@ -199,18 +194,19 @@ To modify config:
 
 ## Timezone
 
-Set timezone via environment variable:
+Timezone is configured in `config.json`, not via environment variables:
 
-```yaml
-environment:
-  - TZ=America/New_York
+```json
+{
+  "settings": {
+    "timezone": "America/New_York"
+  }
+}
 ```
 
-Or in `.env`:
-
-```bash
-TZ=America/New_York
-```
+:::caution
+The `TZ` and `TIMEZONE` environment variables are no longer supported. Always configure timezone in `config.json` via `settings.timezone`.
+:::
 
 ## Networking
 
@@ -311,7 +307,7 @@ docker compose exec nextdns-blocker ps aux | grep cron
 docker compose exec nextdns-blocker cat /app/data/cron.log
 
 # Run sync manually
-docker compose exec nextdns-blocker nextdns-blocker sync -v
+docker compose exec nextdns-blocker nextdns-blocker config sync -v
 ```
 
 ### Config Changes Not Applied
