@@ -48,6 +48,14 @@ DISCORD_WEBHOOK_PATTERN = re.compile(
     r"^https://discord\.com/api/webhooks/\d{17,20}/[a-zA-Z0-9_.-]{60,100}$"
 )
 
+# Telegram Bot Token pattern: 123456:ABC-DEF...
+TELEGRAM_BOT_TOKEN_PATTERN = re.compile(r"^\d+:[a-zA-Z0-9_-]{35,}$")
+
+# Slack Webhook pattern
+SLACK_WEBHOOK_PATTERN = re.compile(
+    r"^https://hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[a-zA-Z0-9]+$"
+)
+
 # =============================================================================
 # UNBLOCK DELAY SETTINGS
 # =============================================================================
@@ -161,6 +169,36 @@ def validate_discord_webhook(url: str) -> bool:
     if not url or not isinstance(url, str):
         return False
     return DISCORD_WEBHOOK_PATTERN.match(url.strip()) is not None
+
+
+def validate_telegram_bot_token(token: str) -> bool:
+    """
+    Validate Telegram Bot Token format.
+
+    Args:
+        token: Bot token string to validate
+
+    Returns:
+        True if valid format, False otherwise
+    """
+    if not token or not isinstance(token, str):
+        return False
+    return TELEGRAM_BOT_TOKEN_PATTERN.match(token.strip()) is not None
+
+
+def validate_slack_webhook(url: str) -> bool:
+    """
+    Validate Slack Webhook URL format.
+
+    Args:
+        url: Webhook URL string to validate
+
+    Returns:
+        True if valid format, False otherwise
+    """
+    if not url or not isinstance(url, str):
+        return False
+    return SLACK_WEBHOOK_PATTERN.match(url.strip()) is not None
 
 
 def validate_unblock_delay(delay: str) -> bool:
