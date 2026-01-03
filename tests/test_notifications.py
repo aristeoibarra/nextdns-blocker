@@ -307,7 +307,7 @@ class TestNotificationManager:
                     "ntfy": {
                         "enabled": True,
                         "topic": "mytopic",
-                    }
+                    },
                 },
             }
         }
@@ -318,7 +318,7 @@ class TestNotificationManager:
         # Note: If MacOS available it would be there too, but usually mocked out or unavailable in test env
         # Let's check we have at least 4 adapters
         assert len(nm._adapters) >= 4
-        
+
         types = [type(a) for a in nm._adapters]
         assert DiscordAdapter in types
         assert TelegramAdapter in types
@@ -502,10 +502,10 @@ class TestTelegramAdapter:
             responses.POST,
             "https://api.telegram.org/bot123:abc/sendMessage",
             json={"ok": True},
-            status=200
+            status=200,
         )
         batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
-        
+
         assert adapter.send(batch) is True
         assert len(responses.calls) == 1
         payload = json.loads(responses.calls[0].request.body)
@@ -515,11 +515,7 @@ class TestTelegramAdapter:
     @responses.activate
     def test_send_failure(self):
         adapter = TelegramAdapter("123:abc", "456")
-        responses.add(
-            responses.POST,
-            "https://api.telegram.org/bot123:abc/sendMessage",
-            status=500
-        )
+        responses.add(responses.POST, "https://api.telegram.org/bot123:abc/sendMessage", status=500)
         batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
         assert adapter.send(batch) is False
 
@@ -539,7 +535,7 @@ class TestSlackAdapter:
         adapter = SlackAdapter("http://hook")
         batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
         payload = adapter.format_batch(batch)
-        
+
         assert "blocks" in payload
         # Header + Blocked section
         assert len(payload["blocks"]) == 2
@@ -550,7 +546,7 @@ class TestSlackAdapter:
         url = "https://hooks.slack.com/services/123"
         adapter = SlackAdapter(url)
         responses.add(responses.POST, url, status=200)
-        
+
         batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
         assert adapter.send(batch) is True
         assert len(responses.calls) == 1
@@ -560,7 +556,7 @@ class TestSlackAdapter:
         url = "https://hooks.slack.com/services/123"
         adapter = SlackAdapter(url)
         responses.add(responses.POST, url, status=500)
-        
+
         batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
         assert adapter.send(batch) is False
 
@@ -581,7 +577,7 @@ class TestNtfyAdapter:
         batch = BatchedNotification(
             events=[
                 NotificationEvent(EventType.BLOCK, "test.com"),
-                NotificationEvent(EventType.UNBLOCK, "ok.com")
+                NotificationEvent(EventType.UNBLOCK, "ok.com"),
             ]
         )
         message = adapter.format_batch(batch)
@@ -592,7 +588,7 @@ class TestNtfyAdapter:
     def test_send_success(self):
         adapter = NtfyAdapter("topic", "https://ntfy.sh")
         responses.add(responses.POST, "https://ntfy.sh/topic", status=200)
-        
+
         batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
         assert adapter.send(batch) is True
         assert len(responses.calls) == 1
@@ -602,6 +598,6 @@ class TestNtfyAdapter:
     def test_send_failure(self):
         adapter = NtfyAdapter("topic")
         responses.add(responses.POST, "https://ntfy.sh/topic", status=500)
-        
+
         batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
         assert adapter.send(batch) is False

@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 NOTIF_TIMEOUT = 10  # Increased timeout for external APIs
 
 
-
 class EventType(Enum):
     """Types of notification events."""
 
@@ -267,7 +266,7 @@ class TelegramAdapter(NotificationAdapter):
         blocked = [e.domain for e in batch.events if e.event_type == EventType.BLOCK]
         unblocked = [e.domain for e in batch.events if e.event_type == EventType.UNBLOCK]
         errors = [e.domain for e in batch.events if e.event_type == EventType.ERROR]
-        
+
         lines: list[str] = []
         if blocked:
             lines.append(f"🛑 *Blocked ({len(blocked)}):*\n" + ", ".join(blocked[:5]))
@@ -275,7 +274,7 @@ class TelegramAdapter(NotificationAdapter):
             lines.append(f"✅ *Unblocked ({len(unblocked)}):*\n" + ", ".join(unblocked[:5]))
         if errors:
             lines.append(f"⚠️ *Errors ({len(errors)}):*\n" + ", ".join(errors[:5]))
-            
+
         return "\n\n".join(lines)
 
 
@@ -313,20 +312,24 @@ class SlackAdapter(NotificationAdapter):
     def format_batch(self, batch: BatchedNotification) -> dict[str, Any]:
         """Format batch for Slack Block Kit."""
         blocks: list[dict[str, Any]] = []
-        
+
         # Title block
-        blocks.append({
-            "type": "header",
-            "text": {"type": "plain_text", "text": "NextDNS Blocker Sync"}
-        })
+        blocks.append(
+            {"type": "header", "text": {"type": "plain_text", "text": "NextDNS Blocker Sync"}}
+        )
 
         blocked = [e.domain for e in batch.events if e.event_type == EventType.BLOCK]
         if blocked:
-            blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Blocked ({len(blocked)})*:\n" + ", ".join(blocked[:5])}
-            })
-            
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Blocked ({len(blocked)})*:\n" + ", ".join(blocked[:5]),
+                    },
+                }
+            )
+
         return {"blocks": blocks}
 
 
@@ -358,10 +361,7 @@ class NtfyAdapter(NotificationAdapter):
 
         try:
             response = requests.post(
-                url, 
-                data=message.encode("utf-8"),
-                headers=headers,
-                timeout=NOTIF_TIMEOUT
+                url, data=message.encode("utf-8"), headers=headers, timeout=NOTIF_TIMEOUT
             )
             response.raise_for_status()
             logger.debug(f"Ntfy notification sent with {len(batch.events)} events")
@@ -375,11 +375,13 @@ class NtfyAdapter(NotificationAdapter):
         # Simple text summary
         blocked = len([e for e in batch.events if e.event_type == EventType.BLOCK])
         unblocked = len([e for e in batch.events if e.event_type == EventType.UNBLOCK])
-        
+
         parts = []
-        if blocked: parts.append(f"Blocked: {blocked}")
-        if unblocked: parts.append(f"Unblocked: {unblocked}")
-        
+        if blocked:
+            parts.append(f"Blocked: {blocked}")
+        if unblocked:
+            parts.append(f"Unblocked: {unblocked}")
+
         return " | ".join(parts) if parts else ""
 
 
