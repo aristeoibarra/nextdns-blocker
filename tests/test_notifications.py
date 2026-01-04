@@ -13,6 +13,9 @@ from nextdns_blocker.notifications import (
     MacOSAdapter,
     NotificationEvent,
     NotificationManager,
+    NtfyAdapter,
+    SlackAdapter,
+    TelegramAdapter,
     get_notification_manager,
     send_notification,
 )
@@ -291,15 +294,36 @@ class TestNotificationManager:
                     "discord": {
                         "enabled": True,
                         "webhook_url": "https://discord.com/api/webhooks/123/abc",
-                    }
+                    },
+                    "telegram": {
+                        "enabled": True,
+                        "bot_token": "123:abc",
+                        "chat_id": "456",
+                    },
+                    "slack": {
+                        "enabled": True,
+                        "webhook_url": "https://hooks.slack.com/services/123",
+                    },
+                    "ntfy": {
+                        "enabled": True,
+                        "topic": "mytopic",
+                    },
                 },
             }
         }
 
         nm.configure(config)
 
-        assert len(nm._adapters) == 1
-        assert isinstance(nm._adapters[0], DiscordAdapter)
+        # Discord + Telegram + Slack + Ntfy
+        # Note: If MacOS available it would be there too, but usually mocked out or unavailable in test env
+        # Let's check we have at least 4 adapters
+        assert len(nm._adapters) >= 4
+
+        types = [type(a) for a in nm._adapters]
+        assert DiscordAdapter in types
+        assert TelegramAdapter in types
+        assert SlackAdapter in types
+        assert NtfyAdapter in types
 
     def test_configure_disabled(self):
         """Test configuring with notifications disabled."""
@@ -443,3 +467,137 @@ class TestGetNotificationManager:
         nm1 = get_notification_manager()
         nm2 = get_notification_manager()
         assert nm1 is nm2
+
+
+class TestTelegramAdapter:
+    """Tests for TelegramAdapter."""
+
+    def test_name(self):
+        adapter = TelegramAdapter("123:abc", "456")
+        assert adapter.name == "Telegram"
+
+    def test_is_configured(self):
+        assert TelegramAdapter("123:abc", "456").is_configured is True
+        assert TelegramAdapter("", "456").is_configured is False
+        assert TelegramAdapter("123:abc", "").is_configured is False
+
+    def test_format_batch(self):
+        adapter = TelegramAdapter("123:abc", "456")
+        batch = BatchedNotification(
+            events=[
+                NotificationEvent(EventType.BLOCK, "test.com"),
+                NotificationEvent(EventType.UNBLOCK, "ok.com"),
+            ]
+        )
+        message = adapter.format_batch(batch)
+        assert "🛑 *Blocked (1):*" in message
+        assert "test.com" in message
+        assert "✅ *Unblocked (1):*" in message
+        assert "ok.com" in message
+
+    @responses.activate
+    def test_send_success(self):
+        adapter = TelegramAdapter("123:abc", "456")
+        responses.add(
+            responses.POST,
+            "https://api.telegram.org/bot123:abc/sendMessage",
+            json={"ok": True},
+            status=200,
+        )
+        batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
+
+        assert adapter.send(batch) is True
+        assert len(responses.calls) == 1
+        payload = json.loads(responses.calls[0].request.body)
+        assert payload["chat_id"] == "456"
+        assert "test.com" in payload["text"]
+
+    @responses.activate
+    def test_send_failure(self):
+        adapter = TelegramAdapter("123:abc", "456")
+        responses.add(responses.POST, "https://api.telegram.org/bot123:abc/sendMessage", status=500)
+        batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
+        assert adapter.send(batch) is False
+
+
+class TestSlackAdapter:
+    """Tests for SlackAdapter."""
+
+    def test_name(self):
+        adapter = SlackAdapter("http://hook")
+        assert adapter.name == "Slack"
+
+    def test_is_configured(self):
+        assert SlackAdapter("http://hook").is_configured is True
+        assert SlackAdapter("").is_configured is False
+
+    def test_format_batch(self):
+        adapter = SlackAdapter("http://hook")
+        batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
+        payload = adapter.format_batch(batch)
+
+        assert "blocks" in payload
+        # Header + Blocked section
+        assert len(payload["blocks"]) == 2
+        assert "Blocked (1)" in payload["blocks"][1]["text"]["text"]
+
+    @responses.activate
+    def test_send_success(self):
+        url = "https://hooks.slack.com/services/123"
+        adapter = SlackAdapter(url)
+        responses.add(responses.POST, url, status=200)
+
+        batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
+        assert adapter.send(batch) is True
+        assert len(responses.calls) == 1
+
+    @responses.activate
+    def test_send_failure(self):
+        url = "https://hooks.slack.com/services/123"
+        adapter = SlackAdapter(url)
+        responses.add(responses.POST, url, status=500)
+
+        batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
+        assert adapter.send(batch) is False
+
+
+class TestNtfyAdapter:
+    """Tests for NtfyAdapter."""
+
+    def test_name(self):
+        adapter = NtfyAdapter("my-topic")
+        assert adapter.name == "Ntfy"
+
+    def test_is_configured(self):
+        assert NtfyAdapter("topic").is_configured is True
+        assert NtfyAdapter("").is_configured is False
+
+    def test_format_batch(self):
+        adapter = NtfyAdapter("topic")
+        batch = BatchedNotification(
+            events=[
+                NotificationEvent(EventType.BLOCK, "test.com"),
+                NotificationEvent(EventType.UNBLOCK, "ok.com"),
+            ]
+        )
+        message = adapter.format_batch(batch)
+        assert "Blocked: 1" in message
+        assert "Unblocked: 1" in message
+
+    @responses.activate
+    def test_send_success(self):
+        adapter = NtfyAdapter("topic", "https://ntfy.sh")
+        responses.add(responses.POST, "https://ntfy.sh/topic", status=200)
+
+        batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
+        assert adapter.send(batch) is True
+        assert len(responses.calls) == 1
+        assert responses.calls[0].request.headers["Title"] == "NextDNS Blocker Sync"
+
+    @responses.activate
+    def test_send_failure(self):
+        adapter = NtfyAdapter("topic")
+        responses.add(responses.POST, "https://ntfy.sh/topic", status=500)
+
+        batch = BatchedNotification(events=[NotificationEvent(EventType.BLOCK, "test.com")])
+        assert adapter.send(batch) is False
