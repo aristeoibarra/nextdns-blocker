@@ -59,7 +59,10 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code (local settings)
 .claude/
+CLAUDE.md
 
 # Documentation (Astro/Starlight)
 docs/node_modules/
