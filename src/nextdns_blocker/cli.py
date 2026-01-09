@@ -53,6 +53,7 @@ from .notifications import (
     send_notification,
 )
 from .platform_utils import get_executable_path, is_macos, is_windows
+from .protection_cli import register_protection
 from .scheduler import ScheduleEvaluator
 from .watchdog import (
     LAUNCHD_SYNC_LABEL,
@@ -863,6 +864,25 @@ def sync_impl(
     from .panic import is_panic_mode
 
     panic_active = is_panic_mode()
+
+    # Check auto-panic schedule
+    import json as json_mod
+
+    from .protection import is_auto_panic_time
+
+    try:
+        config_for_autopanic = load_config(config_dir)
+        config_path = Path(config_for_autopanic["script_dir"]) / "config.json"
+        with open(config_path, encoding="utf-8") as f:
+            full_config = json_mod.load(f)
+
+        if is_auto_panic_time(full_config) and not panic_active:
+            # Auto-panic is active but panic mode isn't - treat as panic
+            panic_active = True
+            if verbose:
+                console.print("  [red]Auto-panic active (scheduled)[/red]")
+    except (OSError, json_mod.JSONDecodeError, ConfigurationError):
+        pass  # If we can't read config, continue without auto-panic
 
     try:
         config = load_config(config_dir)
@@ -2094,6 +2114,9 @@ register_config(main)
 
 # Register nextdns command group
 register_nextdns(main)
+
+# Register protection command group
+register_protection(main)
 
 
 if __name__ == "__main__":
