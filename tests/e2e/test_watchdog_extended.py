@@ -646,16 +646,37 @@ class TestWatchdogCLI:
     @patch("nextdns_blocker.watchdog.is_disabled", return_value=False)
     @patch("nextdns_blocker.watchdog.is_macos", return_value=False)
     @patch("nextdns_blocker.watchdog.is_windows", return_value=False)
+    @patch("nextdns_blocker.watchdog.has_systemd", return_value=False)
     @patch("nextdns_blocker.watchdog._check_cron_jobs")
     def test_cmd_check_uses_cron_on_linux(
         self,
         mock_check: MagicMock,
+        mock_has_systemd: MagicMock,
         mock_is_windows: MagicMock,
         mock_is_macos: MagicMock,
         mock_disabled: MagicMock,
         runner: CliRunner,
     ) -> None:
-        """Test check command uses cron on Linux."""
+        """Test check command uses cron on Linux without systemd."""
+        runner.invoke(watchdog_cli, ["check"])
+
+        mock_check.assert_called_once()
+
+    @patch("nextdns_blocker.watchdog.is_disabled", return_value=False)
+    @patch("nextdns_blocker.watchdog.is_macos", return_value=False)
+    @patch("nextdns_blocker.watchdog.is_windows", return_value=False)
+    @patch("nextdns_blocker.watchdog.has_systemd", return_value=True)
+    @patch("nextdns_blocker.watchdog._check_systemd_timers")
+    def test_cmd_check_uses_systemd_on_linux(
+        self,
+        mock_check: MagicMock,
+        mock_has_systemd: MagicMock,
+        mock_is_windows: MagicMock,
+        mock_is_macos: MagicMock,
+        mock_disabled: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        """Test check command uses systemd on Linux with systemd."""
         runner.invoke(watchdog_cli, ["check"])
 
         mock_check.assert_called_once()
