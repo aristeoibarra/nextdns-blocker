@@ -9,7 +9,9 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Optional
+
+# Type checking imports
+from typing import TYPE_CHECKING, Any, Optional
 
 import click
 from rich.console import Console
@@ -17,6 +19,9 @@ from rich.console import Console
 from .common import audit_log
 from .config import get_config_dir
 from .exceptions import ConfigurationError
+
+if TYPE_CHECKING:
+    from .client import NextDNSClient
 
 logger = logging.getLogger(__name__)
 
@@ -311,6 +316,167 @@ def _get_unblock_display(domain_config: dict[str, Any]) -> str:
     return "0"
 
 
+# =============================================================================
+# DIFF/PULL HELPER FUNCTIONS
+# =============================================================================
+
+
+def _get_client(config_dir: Optional[Path] = None) -> "NextDNSClient":
+    """Create a NextDNS client from config."""
+    from .client import NextDNSClient
+    from .config import load_config
+
+    config = load_config(config_dir)
+    return NextDNSClient(
+        config["api_key"],
+        config["profile_id"],
+        config["timeout"],
+        config["retries"],
+    )
+
+
+def _get_local_domains(config_path: Path) -> tuple[set[str], set[str]]:
+    """
+    Extract domain sets from local config.json.
+
+    Expands categories into individual domains.
+
+    Returns:
+        Tuple of (blocklist_domains, allowlist_domains)
+    """
+    config = load_config_file(config_path)
+
+    # Extract blocklist domains
+    blocklist_domains: set[str] = set()
+    for entry in config.get("blocklist", []):
+        domain = entry.get("domain", "")
+        if domain:
+            blocklist_domains.add(domain)
+
+    # Expand categories into blocklist
+    for category in config.get("categories", []):
+        for domain in category.get("domains", []):
+            if domain:
+                blocklist_domains.add(domain)
+
+    # Extract allowlist domains
+    allowlist_domains: set[str] = set()
+    for entry in config.get("allowlist", []):
+        domain = entry.get("domain", "")
+        if domain:
+            allowlist_domains.add(domain)
+
+    return blocklist_domains, allowlist_domains
+
+
+def _get_remote_domains(client: "NextDNSClient") -> tuple[set[str], set[str]]:
+    """
+    Fetch domain sets from NextDNS API.
+
+    Returns:
+        Tuple of (denylist_domains, allowlist_domains)
+
+    Raises:
+        RuntimeError: If API request fails
+    """
+    # Fetch denylist (bypass cache for fresh data)
+    denylist = client.get_denylist(use_cache=False)
+    if denylist is None:
+        raise RuntimeError("Failed to fetch denylist from NextDNS API")
+
+    denylist_domains = {
+        entry["id"] for entry in denylist if entry.get("active", True) and entry.get("id")
+    }
+
+    # Fetch allowlist
+    allowlist = client.get_allowlist(use_cache=False)
+    if allowlist is None:
+        raise RuntimeError("Failed to fetch allowlist from NextDNS API")
+
+    allowlist_domains = {
+        entry["id"] for entry in allowlist if entry.get("active", True) and entry.get("id")
+    }
+
+    return denylist_domains, allowlist_domains
+
+
+def _compute_diff(local: set[str], remote: set[str]) -> tuple[set[str], set[str], set[str]]:
+    """
+    Compute diff between local and remote domain sets.
+
+    Returns:
+        Tuple of (local_only, remote_only, in_sync)
+    """
+    local_only = local - remote
+    remote_only = remote - local
+    in_sync = local & remote
+    return local_only, remote_only, in_sync
+
+
+def _create_config_backup(config_path: Path) -> Optional[Path]:
+    """
+    Create a timestamped backup of config.json.
+
+    Keeps up to 3 most recent backups.
+
+    Returns:
+        Path to backup file, or None if backup failed
+    """
+    from datetime import datetime
+
+    if not config_path.exists():
+        return None
+
+    # Create backup filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = config_path.parent / f".config.json.backup.{timestamp}"
+
+    try:
+        shutil.copy2(config_path, backup_path)
+
+        # Clean up old backups (keep only 3 most recent)
+        backup_pattern = ".config.json.backup.*"
+        backups = sorted(config_path.parent.glob(backup_pattern), reverse=True)
+        for old_backup in backups[3:]:
+            old_backup.unlink()
+
+        return backup_path
+    except OSError as e:
+        logger.warning(f"Failed to create backup: {e}")
+        return None
+
+
+def _check_protected_removal(
+    config: dict[str, Any],
+    new_domains: set[str],
+    list_type: str,
+) -> list[str]:
+    """
+    Check if operation would remove protected domains.
+
+    Protected means: locked=True or unblock_delay="never"
+
+    Args:
+        config: Current config dictionary
+        new_domains: Set of domains that will remain
+        list_type: "blocklist" or "allowlist"
+
+    Returns:
+        List of protected domains that would be removed
+    """
+    from .protection import is_locked
+
+    current_list = config.get(list_type, [])
+    protected_removals = []
+
+    for entry in current_list:
+        domain = entry.get("domain", "")
+        if is_locked(entry) and domain not in new_domains:
+            protected_removals.append(domain)
+
+    return protected_removals
+
+
 @config_cli.command("show")
 @click.option(
     "--config-dir",
@@ -585,6 +751,381 @@ def cmd_sync(
     from .cli import sync_impl
 
     sync_impl(dry_run=dry_run, verbose=verbose, config_dir=config_dir)
+
+
+@config_cli.command("diff")
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Config directory (default: auto-detect)",
+)
+@click.option("--json", "output_json", is_flag=True, help="Output in JSON format")
+def cmd_diff(config_dir: Optional[Path], output_json: bool) -> None:
+    """Show differences between local config and remote NextDNS.
+
+    Compares domains in local config.json with the current state
+    of your NextDNS denylist and allowlist.
+
+    Legend:
+      + domain  (remote only - exists in NextDNS but not in local config)
+      - domain  (local only - exists in local config but not in NextDNS)
+      = domain  (in sync - exists in both)
+    """
+    config_path = get_config_file_path(config_dir)
+
+    if not config_path.exists():
+        console.print(f"\n  [red]Error: Config file not found: {config_path}[/red]\n")
+        sys.exit(1)
+
+    try:
+        # Get local domains
+        local_blocklist, local_allowlist = _get_local_domains(config_path)
+
+        # Get remote domains
+        client = _get_client(config_dir)
+        remote_blocklist, remote_allowlist = _get_remote_domains(client)
+
+        # Compute diffs
+        bl_local_only, bl_remote_only, bl_in_sync = _compute_diff(local_blocklist, remote_blocklist)
+        al_local_only, al_remote_only, al_in_sync = _compute_diff(local_allowlist, remote_allowlist)
+
+        # JSON output
+        if output_json:
+            result = {
+                "blocklist": {
+                    "local_only": sorted(bl_local_only),
+                    "remote_only": sorted(bl_remote_only),
+                    "in_sync": sorted(bl_in_sync),
+                },
+                "allowlist": {
+                    "local_only": sorted(al_local_only),
+                    "remote_only": sorted(al_remote_only),
+                    "in_sync": sorted(al_in_sync),
+                },
+                "summary": {
+                    "blocklist": {
+                        "local": len(bl_local_only),
+                        "remote": len(bl_remote_only),
+                        "sync": len(bl_in_sync),
+                    },
+                    "allowlist": {
+                        "local": len(al_local_only),
+                        "remote": len(al_remote_only),
+                        "sync": len(al_in_sync),
+                    },
+                },
+            }
+            print(json.dumps(result, indent=2))
+            return
+
+        # Rich output
+        console.print()
+        console.print("  [bold]NextDNS Config Diff[/bold]")
+        console.print("  [dim]━━━━━━━━━━━━━━━━━━[/dim]")
+
+        # Blocklist diff
+        console.print()
+        console.print("  [bold]Denylist:[/bold]")
+        if not bl_local_only and not bl_remote_only and not bl_in_sync:
+            console.print("    [dim]Empty on both sides[/dim]")
+        else:
+            for domain in sorted(bl_remote_only):
+                console.print(f"    [green]+[/green] {domain}  [dim](remote only)[/dim]")
+            for domain in sorted(bl_local_only):
+                console.print(f"    [red]-[/red] {domain}  [dim](local only)[/dim]")
+            for domain in sorted(bl_in_sync)[:5]:
+                console.print(f"    [blue]=[/blue] {domain}  [dim](in sync)[/dim]")
+            if len(bl_in_sync) > 5:
+                console.print(f"    [dim]... and {len(bl_in_sync) - 5} more in sync[/dim]")
+
+        # Allowlist diff
+        console.print()
+        console.print("  [bold]Allowlist:[/bold]")
+        if not al_local_only and not al_remote_only and not al_in_sync:
+            console.print("    [dim]Empty on both sides[/dim]")
+        else:
+            for domain in sorted(al_remote_only):
+                console.print(f"    [green]+[/green] {domain}  [dim](remote only)[/dim]")
+            for domain in sorted(al_local_only):
+                console.print(f"    [red]-[/red] {domain}  [dim](local only)[/dim]")
+            for domain in sorted(al_in_sync)[:5]:
+                console.print(f"    [blue]=[/blue] {domain}  [dim](in sync)[/dim]")
+            if len(al_in_sync) > 5:
+                console.print(f"    [dim]... and {len(al_in_sync) - 5} more in sync[/dim]")
+
+        # Summary
+        console.print()
+        console.print("  [bold]Summary:[/bold]")
+        console.print(
+            f"    Denylist:  [red]{len(bl_local_only)} local[/red], "
+            f"[green]{len(bl_remote_only)} remote[/green], "
+            f"[blue]{len(bl_in_sync)} sync[/blue]"
+        )
+        console.print(
+            f"    Allowlist: [red]{len(al_local_only)} local[/red], "
+            f"[green]{len(al_remote_only)} remote[/green], "
+            f"[blue]{len(al_in_sync)} sync[/blue]"
+        )
+        console.print()
+
+    except RuntimeError as e:
+        console.print(f"\n  [red]Error: {e}[/red]\n")
+        sys.exit(1)
+    except ConfigurationError as e:
+        console.print(f"\n  [red]Config error: {e}[/red]\n")
+        sys.exit(1)
+
+
+@config_cli.command("pull")
+@click.option("--dry-run", is_flag=True, help="Preview changes without applying")
+@click.option("--merge", is_flag=True, help="Merge with existing, preserving metadata")
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Config directory (default: auto-detect)",
+)
+@click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
+def cmd_pull(
+    dry_run: bool,
+    merge: bool,
+    config_dir: Optional[Path],
+    yes: bool,
+) -> None:
+    """Fetch domains from NextDNS and update local config.
+
+    By default, overwrites blocklist/allowlist with remote state.
+    Use --merge to add new domains without removing existing ones.
+
+    Examples:
+        ndb config pull --dry-run      # Preview changes
+        ndb config pull --merge        # Add new domains, keep existing
+        ndb config pull -y             # Skip confirmation
+    """
+    from .cli import require_pin_verification
+    from .panic import is_panic_mode
+
+    config_path = get_config_file_path(config_dir)
+
+    if not config_path.exists():
+        console.print(f"\n  [red]Error: Config file not found: {config_path}[/red]\n")
+        sys.exit(1)
+
+    # Block during panic mode
+    if is_panic_mode():
+        console.print("\n  [red]Error: Cannot modify config during panic mode[/red]\n")
+        sys.exit(1)
+
+    # Require PIN for non-dry-run operations
+    if not dry_run:
+        require_pin_verification("config pull")
+
+    try:
+        # Load current config
+        config = load_config_file(config_path)
+
+        # Get remote domains
+        client = _get_client(config_dir)
+        remote_blocklist, remote_allowlist = _get_remote_domains(client)
+
+        # Check for protected domain removal (only in overwrite mode)
+        if not merge and not dry_run:
+            protected_blocklist = _check_protected_removal(config, remote_blocklist, "blocklist")
+
+            if protected_blocklist:
+                console.print("\n  [red]Error: Pull would remove protected domains[/red]")
+                console.print("\n  Protected blocklist domains:")
+                for domain in protected_blocklist:
+                    console.print(f"    [blue]{domain}[/blue] (locked)")
+                console.print(
+                    "\n  [yellow]Tip:[/yellow] Use --merge to add remote domains "
+                    "without removing local ones.\n"
+                )
+                sys.exit(1)
+
+        if merge:
+            # Merge mode: add new domains, preserve existing metadata
+            changes = _pull_merge(config_path, config, remote_blocklist, remote_allowlist, dry_run)
+        else:
+            # Overwrite mode: replace blocklist/allowlist
+            changes = _pull_overwrite(
+                config_path, config, remote_blocklist, remote_allowlist, dry_run, yes
+            )
+
+        # Show results
+        if dry_run:
+            console.print("\n  [yellow]Dry run - no changes applied[/yellow]")
+
+        console.print()
+        console.print("  [bold]Pull Summary:[/bold]")
+
+        if merge:
+            console.print(f"    Blocklist: [green]+{changes['blocklist_added']} added[/green]")
+            console.print(f"    Allowlist: [green]+{changes['allowlist_added']} added[/green]")
+            if changes.get("blocklist_local_only"):
+                console.print(
+                    f"\n  [yellow]Warning:[/yellow] {len(changes['blocklist_local_only'])} "
+                    "blocklist domains exist locally but not in remote"
+                )
+        else:
+            console.print(
+                f"    Blocklist: {changes['blocklist_count']} domains "
+                f"(was {changes['blocklist_previous']})"
+            )
+            console.print(
+                f"    Allowlist: {changes['allowlist_count']} domains "
+                f"(was {changes['allowlist_previous']})"
+            )
+
+        if not dry_run and changes.get("backup_path"):
+            console.print(f"\n  [dim]Backup: {changes['backup_path']}[/dim]")
+
+        console.print()
+
+        if not dry_run:
+            console.print(
+                "  [green]✓[/green] Config updated\n"
+                "  [yellow]![/yellow] Run 'ndb config sync' to apply changes to NextDNS\n"
+            )
+
+    except RuntimeError as e:
+        console.print(f"\n  [red]Error: {e}[/red]\n")
+        sys.exit(1)
+    except ConfigurationError as e:
+        console.print(f"\n  [red]Config error: {e}[/red]\n")
+        sys.exit(1)
+
+
+def _pull_overwrite(
+    config_path: Path,
+    config: dict[str, Any],
+    remote_blocklist: set[str],
+    remote_allowlist: set[str],
+    dry_run: bool,
+    skip_confirm: bool,
+) -> dict[str, Any]:
+    """
+    Replace local blocklist/allowlist with remote domains.
+
+    Preserves all other config sections (settings, categories, nextdns, etc.)
+    """
+    blocklist_previous = len(config.get("blocklist", []))
+    allowlist_previous = len(config.get("allowlist", []))
+
+    # Convert remote domains to local format
+    new_blocklist = [{"domain": d} for d in sorted(remote_blocklist)]
+    new_allowlist = [{"domain": d} for d in sorted(remote_allowlist)]
+
+    changes: dict[str, Any] = {
+        "blocklist_count": len(new_blocklist),
+        "blocklist_previous": blocklist_previous,
+        "allowlist_count": len(new_allowlist),
+        "allowlist_previous": allowlist_previous,
+        "backup_path": None,
+    }
+
+    if dry_run:
+        return changes
+
+    # Confirm before overwriting
+    if not skip_confirm:
+        console.print(
+            f"\n  This will replace {blocklist_previous} blocklist and "
+            f"{allowlist_previous} allowlist entries."
+        )
+        console.print("  [yellow]Warning:[/yellow] Metadata (schedules, delays) will be lost.")
+        if not click.confirm("  Continue?", default=False):
+            console.print("\n  [dim]Aborted[/dim]\n")
+            sys.exit(0)
+
+    # Create backup
+    backup_path = _create_config_backup(config_path)
+    changes["backup_path"] = str(backup_path) if backup_path else None
+
+    # Update config
+    config["blocklist"] = new_blocklist
+    config["allowlist"] = new_allowlist
+
+    # Ensure version exists
+    if "version" not in config:
+        config["version"] = CONFIG_VERSION
+
+    save_config_file(config_path, config)
+    audit_log(
+        "CONFIG_PULL", f"overwrite: blocklist={len(new_blocklist)}, allowlist={len(new_allowlist)}"
+    )
+
+    return changes
+
+
+def _pull_merge(
+    config_path: Path,
+    config: dict[str, Any],
+    remote_blocklist: set[str],
+    remote_allowlist: set[str],
+    dry_run: bool,
+) -> dict[str, Any]:
+    """
+    Merge remote domains into local config, preserving metadata.
+
+    - Adds new domains from remote
+    - Preserves existing metadata (schedule, unblock_delay, locked)
+    - Does not remove any local domains
+    """
+    # Build lookup of existing domains
+    existing_blocklist = {
+        entry["domain"]: entry for entry in config.get("blocklist", []) if entry.get("domain")
+    }
+    existing_allowlist = {
+        entry["domain"]: entry for entry in config.get("allowlist", []) if entry.get("domain")
+    }
+
+    # Find new domains to add
+    new_blocklist_domains = remote_blocklist - set(existing_blocklist.keys())
+    new_allowlist_domains = remote_allowlist - set(existing_allowlist.keys())
+
+    # Find domains in local but not in remote (for warning)
+    local_only_blocklist = set(existing_blocklist.keys()) - remote_blocklist
+    local_only_allowlist = set(existing_allowlist.keys()) - remote_allowlist
+
+    changes: dict[str, Any] = {
+        "blocklist_added": len(new_blocklist_domains),
+        "allowlist_added": len(new_allowlist_domains),
+        "blocklist_local_only": sorted(local_only_blocklist),
+        "allowlist_local_only": sorted(local_only_allowlist),
+        "backup_path": None,
+    }
+
+    if dry_run:
+        return changes
+
+    # Create backup
+    backup_path = _create_config_backup(config_path)
+    changes["backup_path"] = str(backup_path) if backup_path else None
+
+    # Add new domains
+    updated_blocklist = list(existing_blocklist.values())
+    for domain in sorted(new_blocklist_domains):
+        updated_blocklist.append({"domain": domain})
+
+    updated_allowlist = list(existing_allowlist.values())
+    for domain in sorted(new_allowlist_domains):
+        updated_allowlist.append({"domain": domain})
+
+    # Update config
+    config["blocklist"] = updated_blocklist
+    config["allowlist"] = updated_allowlist
+
+    # Ensure version exists
+    if "version" not in config:
+        config["version"] = CONFIG_VERSION
+
+    save_config_file(config_path, config)
+    audit_log(
+        "CONFIG_PULL",
+        f"merge: +{len(new_blocklist_domains)} blocklist, +{len(new_allowlist_domains)} allowlist",
+    )
+
+    return changes
 
 
 # =============================================================================
