@@ -14,10 +14,23 @@ from .exceptions import ConfigurationError
 from .protection import (
     DEFAULT_UNLOCK_DELAY_HOURS,
     MIN_UNLOCK_DELAY_HOURS,
+    PIN_MAX_ATTEMPTS,
+    PIN_REMOVAL_DELAY_HOURS,
+    PIN_SESSION_DURATION_MINUTES,
     cancel_unlock_request,
     create_unlock_request,
+    get_failed_attempts_count,
+    get_lockout_remaining,
     get_pending_unlock_requests,
+    get_pin_removal_request,
+    get_pin_session_remaining,
     is_auto_panic_time,
+    is_pin_enabled,
+    is_pin_locked_out,
+    is_pin_session_valid,
+    remove_pin,
+    set_pin,
+    verify_pin,
 )
 
 console = Console(highlight=False)
@@ -60,6 +73,19 @@ def protection_status(config_dir: Optional[Path]) -> None:
 
         console.print("\n  [bold]Protection Status[/bold]")
         console.print("  [dim]━━━━━━━━━━━━━━━━━━━[/dim]\n")
+
+        # PIN status
+        if is_pin_enabled():
+            if is_pin_session_valid():
+                session_remaining = get_pin_session_remaining()
+                console.print(f"  PIN: [green]enabled[/green] (session: {session_remaining})")
+            elif is_pin_locked_out():
+                lockout_remaining = get_lockout_remaining()
+                console.print(f"  PIN: [red]LOCKED OUT[/red] ({lockout_remaining})")
+            else:
+                console.print("  PIN: [green]enabled[/green] [dim](no active session)[/dim]")
+        else:
+            console.print("  PIN: [dim]not enabled[/dim]")
 
         # Unlock delay
         delay = protection_config.get("unlock_delay_hours", DEFAULT_UNLOCK_DELAY_HOURS)
@@ -288,3 +314,199 @@ def list_requests() -> None:
 
     console.print(table)
     console.print()
+
+
+# =============================================================================
+# PIN COMMANDS
+# =============================================================================
+
+
+@protection.group(name="pin")
+def pin_group() -> None:
+    """Manage PIN protection for sensitive commands.
+
+    PIN protection adds an authentication layer to dangerous commands
+    like unblock, pause, and config edit. Once enabled, these commands
+    will require PIN verification before execution.
+    """
+    pass
+
+
+@pin_group.command(name="set")
+def pin_set() -> None:
+    """Set or change the protection PIN.
+
+    You will be prompted to enter and confirm your PIN.
+    The PIN must be at least 4 characters.
+
+    If PIN is already set, you must verify the current PIN first.
+    """
+    # Check if PIN already exists
+    if is_pin_enabled():
+        console.print("\n  [yellow]PIN protection is already enabled.[/yellow]")
+        console.print("  You must verify your current PIN to change it.\n")
+
+        current = click.prompt("  Current PIN", hide_input=True)
+        if not verify_pin(current):
+            if is_pin_locked_out():
+                remaining = get_lockout_remaining()
+                console.print(
+                    f"\n  [red]Too many failed attempts. Locked out for {remaining}[/red]\n"
+                )
+            else:
+                attempts_left = PIN_MAX_ATTEMPTS - get_failed_attempts_count()
+                console.print(
+                    f"\n  [red]Incorrect PIN. {attempts_left} attempts remaining.[/red]\n"
+                )
+            sys.exit(1)
+
+    # Get new PIN
+    console.print()
+    new_pin = click.prompt(
+        "  New PIN",
+        hide_input=True,
+        confirmation_prompt="  Confirm PIN",
+    )
+
+    try:
+        set_pin(new_pin)
+        console.print("\n  [green]PIN protection enabled[/green]")
+        console.print(f"  Session duration: {PIN_SESSION_DURATION_MINUTES} minutes")
+        console.print(f"  Max attempts before lockout: {PIN_MAX_ATTEMPTS}")
+        console.print("\n  [dim]Protected commands now require PIN verification.[/dim]\n")
+    except ValueError as e:
+        console.print(f"\n  [red]Error: {e}[/red]\n")
+        sys.exit(1)
+
+
+@pin_group.command(name="remove")
+def pin_remove() -> None:
+    """Remove PIN protection.
+
+    For safety, PIN removal has a 24-hour delay. This prevents
+    impulsive disabling during moments of weakness.
+
+    You can cancel the removal request during this period.
+    """
+    if not is_pin_enabled():
+        console.print("\n  [dim]PIN protection is not enabled.[/dim]\n")
+        return
+
+    # Check for existing removal request
+    existing = get_pin_removal_request()
+    if existing:
+        execute_at = datetime.fromisoformat(existing["execute_at"])
+        time_remaining = execute_at - datetime.now()
+        hours = int(time_remaining.total_seconds() // 3600)
+        mins = int((time_remaining.total_seconds() % 3600) // 60)
+
+        console.print("\n  [yellow]PIN removal already pending[/yellow]")
+        console.print(f"  Remaining: {hours}h {mins}m")
+        console.print(f"  Request ID: {existing['id']}")
+        console.print(f"\n  Use 'ndb protection cancel {existing['id']}' to cancel\n")
+        return
+
+    console.print("\n  [yellow]PIN Removal Request[/yellow]")
+    console.print(f"  This will disable PIN protection after {PIN_REMOVAL_DELAY_HOURS}h delay.")
+    console.print("  You can cancel this request anytime during the delay period.\n")
+
+    current = click.prompt("  Enter current PIN to confirm", hide_input=True)
+
+    if is_pin_locked_out():
+        lockout_remaining = get_lockout_remaining()
+        console.print(
+            f"\n  [red]Too many failed attempts. Locked out for {lockout_remaining}[/red]\n"
+        )
+        sys.exit(1)
+
+    if remove_pin(current):
+        request = get_pin_removal_request()
+        if request:
+            execute_at = datetime.fromisoformat(request["execute_at"])
+            console.print("\n  [yellow]PIN removal scheduled[/yellow]")
+            console.print(f"  Execute at: {execute_at.strftime('%Y-%m-%d %H:%M')}")
+            console.print(f"  Request ID: {request['id']}")
+            console.print("\n  [dim]Cancel with:[/dim]")
+            console.print(f"  [cyan]ndb protection cancel {request['id']}[/cyan]\n")
+    else:
+        attempts_left = PIN_MAX_ATTEMPTS - get_failed_attempts_count()
+        console.print(f"\n  [red]Incorrect PIN. {attempts_left} attempts remaining.[/red]\n")
+        sys.exit(1)
+
+
+@pin_group.command(name="status")
+def pin_status() -> None:
+    """Show PIN protection status."""
+    console.print("\n  [bold]PIN Protection Status[/bold]")
+    console.print("  [dim]━━━━━━━━━━━━━━━━━━━━━[/dim]\n")
+
+    if not is_pin_enabled():
+        console.print("  Status: [dim]not enabled[/dim]")
+        console.print("\n  [dim]Enable with: ndb protection pin set[/dim]\n")
+        return
+
+    console.print("  Status: [green]enabled[/green]")
+
+    # Session status
+    if is_pin_session_valid():
+        remaining = get_pin_session_remaining()
+        console.print(f"  Session: [green]active[/green] ({remaining} remaining)")
+    else:
+        console.print("  Session: [dim]expired[/dim]")
+
+    # Lockout status
+    if is_pin_locked_out():
+        remaining = get_lockout_remaining()
+        console.print(f"  Lockout: [red]LOCKED[/red] ({remaining} remaining)")
+    else:
+        attempts = get_failed_attempts_count()
+        if attempts > 0:
+            console.print(f"  Failed attempts: [yellow]{attempts}/{PIN_MAX_ATTEMPTS}[/yellow]")
+
+    # Pending removal
+    removal = get_pin_removal_request()
+    if removal:
+        execute_at = datetime.fromisoformat(removal["execute_at"])
+        time_remaining = execute_at - datetime.now()
+        hours = int(time_remaining.total_seconds() // 3600)
+        mins = int((time_remaining.total_seconds() % 3600) // 60)
+        console.print(f"\n  [yellow]Removal pending: {hours}h {mins}m[/yellow]")
+        console.print(f"  Cancel with: ndb protection cancel {removal['id']}")
+
+    console.print()
+
+
+@pin_group.command(name="verify")
+def pin_verify() -> None:
+    """Verify PIN and create a new session.
+
+    Use this to pre-authenticate before running multiple
+    protected commands.
+    """
+    if not is_pin_enabled():
+        console.print("\n  [dim]PIN protection is not enabled.[/dim]\n")
+        return
+
+    if is_pin_locked_out():
+        remaining = get_lockout_remaining()
+        console.print(f"\n  [red]Too many failed attempts. Locked out for {remaining}[/red]\n")
+        sys.exit(1)
+
+    if is_pin_session_valid():
+        remaining = get_pin_session_remaining()
+        console.print(f"\n  [green]Session already active ({remaining} remaining)[/green]\n")
+        return
+
+    pin = click.prompt("\n  Enter PIN", hide_input=True)
+
+    if verify_pin(pin):
+        remaining = get_pin_session_remaining()
+        console.print(f"\n  [green]PIN verified. Session active for {remaining}[/green]\n")
+    else:
+        if is_pin_locked_out():
+            remaining = get_lockout_remaining()
+            console.print(f"\n  [red]Too many failed attempts. Locked out for {remaining}[/red]\n")
+        else:
+            attempts_left = PIN_MAX_ATTEMPTS - get_failed_attempts_count()
+            console.print(f"\n  [red]Incorrect PIN. {attempts_left} attempts remaining.[/red]\n")
+        sys.exit(1)

@@ -171,7 +171,7 @@ def validate_no_locked_weakening(
         new_cat = new_categories.get(cat_id)
         if new_cat and not is_locked(new_cat):
             errors.append(
-                f"Cannot weaken protection for category '{cat_id}'. " f"It is marked as locked."
+                f"Cannot weaken protection for category '{cat_id}'. It is marked as locked."
             )
 
     # Check nextdns.services
@@ -184,7 +184,7 @@ def validate_no_locked_weakening(
         new_svc = new_services.get(svc_id)
         if new_svc and not is_locked(new_svc):
             errors.append(
-                f"Cannot weaken protection for service '{svc_id}'. " f"It is marked as locked."
+                f"Cannot weaken protection for service '{svc_id}'. It is marked as locked."
             )
 
     return errors
@@ -494,3 +494,408 @@ def _is_valid_time(time_str: str) -> bool:
         return 0 <= h <= 23 and 0 <= m <= 59
     except ValueError:
         return False
+
+
+# =============================================================================
+# PIN PROTECTION
+# =============================================================================
+
+# PIN configuration
+PIN_MIN_LENGTH = 4
+PIN_MAX_LENGTH = 32
+PIN_SESSION_DURATION_MINUTES = 30
+PIN_MAX_ATTEMPTS = 3
+PIN_LOCKOUT_MINUTES = 15
+PIN_HASH_ITERATIONS = 600_000  # OWASP recommendation for PBKDF2-SHA256
+
+# Delay for PIN removal (hours) - prevents impulsive disabling
+PIN_REMOVAL_DELAY_HOURS = 24
+
+
+def get_pin_hash_file() -> Path:
+    """Get the PIN hash file path."""
+    return get_log_dir() / ".pin_hash"
+
+
+def get_pin_session_file() -> Path:
+    """Get the PIN session file path."""
+    return get_log_dir() / ".pin_session"
+
+
+def get_pin_attempts_file() -> Path:
+    """Get the PIN failed attempts file path."""
+    return get_log_dir() / ".pin_attempts"
+
+
+def is_pin_enabled() -> bool:
+    """Check if PIN protection is enabled."""
+    pin_file = get_pin_hash_file()
+    content = read_secure_file(pin_file)
+    return content is not None and len(content) > 0
+
+
+def _hash_pin(pin: str, salt: Optional[bytes] = None) -> tuple[str, bytes]:
+    """
+    Hash a PIN using PBKDF2-SHA256.
+
+    Args:
+        pin: The PIN to hash
+        salt: Optional salt (generated if not provided)
+
+    Returns:
+        Tuple of (hash_hex, salt_bytes)
+    """
+    import hashlib
+    import secrets
+
+    if salt is None:
+        salt = secrets.token_bytes(32)
+
+    hash_bytes = hashlib.pbkdf2_hmac(
+        "sha256",
+        pin.encode("utf-8"),
+        salt,
+        PIN_HASH_ITERATIONS,
+    )
+
+    return hash_bytes.hex(), salt
+
+
+def set_pin(pin: str) -> bool:
+    """
+    Set or update the PIN.
+
+    Args:
+        pin: The new PIN (must be PIN_MIN_LENGTH to PIN_MAX_LENGTH chars)
+
+    Returns:
+        True if PIN was set successfully
+
+    Raises:
+        ValueError: If PIN doesn't meet requirements
+    """
+    if len(pin) < PIN_MIN_LENGTH:
+        raise ValueError(f"PIN must be at least {PIN_MIN_LENGTH} characters")
+    if len(pin) > PIN_MAX_LENGTH:
+        raise ValueError(f"PIN must be at most {PIN_MAX_LENGTH} characters")
+
+    hash_hex, salt = _hash_pin(pin)
+
+    # Store as: salt_hex:hash_hex
+    content = f"{salt.hex()}:{hash_hex}"
+    write_secure_file(get_pin_hash_file(), content)
+
+    # Clear any existing session and attempts
+    _clear_pin_session()
+    _clear_pin_attempts()
+
+    audit_log("PIN_SET", "PIN protection enabled")
+    return True
+
+
+def verify_pin(pin: str) -> bool:
+    """
+    Verify a PIN against the stored hash.
+
+    Args:
+        pin: The PIN to verify
+
+    Returns:
+        True if PIN is correct, False otherwise
+    """
+    if not is_pin_enabled():
+        return True  # No PIN = always valid
+
+    # Check if locked out
+    if is_pin_locked_out():
+        audit_log("PIN_LOCKED_OUT", "Verification attempted during lockout")
+        return False
+
+    content = read_secure_file(get_pin_hash_file())
+    if not content or ":" not in content:
+        return False
+
+    try:
+        salt_hex, stored_hash = content.split(":", 1)
+        salt = bytes.fromhex(salt_hex)
+        computed_hash, _ = _hash_pin(pin, salt)
+
+        if computed_hash == stored_hash:
+            _clear_pin_attempts()
+            create_pin_session()
+            audit_log("PIN_VERIFIED", "PIN verification successful")
+            return True
+        else:
+            _record_failed_attempt()
+            audit_log("PIN_FAILED", "Incorrect PIN entered")
+            return False
+    except (ValueError, TypeError) as e:
+        logger.warning(f"PIN verification error: {e}")
+        return False
+
+
+def remove_pin(current_pin: str, force: bool = False) -> bool:
+    """
+    Remove PIN protection.
+
+    Note: This creates a pending removal request with delay unless force=True.
+    force=True should only be used by the pending action executor.
+
+    Args:
+        current_pin: Current PIN for verification
+        force: If True, remove immediately (used by pending executor)
+
+    Returns:
+        True if removal initiated/completed successfully
+    """
+    if not is_pin_enabled():
+        return False
+
+    if not verify_pin(current_pin):
+        return False
+
+    if force:
+        # Immediate removal (called by pending action executor)
+        pin_file = get_pin_hash_file()
+        if pin_file.exists():
+            pin_file.unlink()
+        _clear_pin_session()
+        _clear_pin_attempts()
+        audit_log("PIN_REMOVED", "PIN protection disabled")
+        return True
+
+    # Create pending removal request
+    request = create_unlock_request(
+        item_type="pin",
+        item_id="protection",
+        delay_hours=PIN_REMOVAL_DELAY_HOURS,
+        reason="PIN removal requested",
+    )
+
+    audit_log("PIN_REMOVE_REQUESTED", f"Scheduled for {request['execute_at']}")
+    return True
+
+
+def get_pin_removal_request() -> Optional[dict[str, Any]]:
+    """Get pending PIN removal request if exists."""
+    pending = get_pending_unlock_requests()
+    for req in pending:
+        if req["item_type"] == "pin" and req["item_id"] == "protection":
+            return req
+    return None
+
+
+def cancel_pin_removal() -> bool:
+    """Cancel pending PIN removal request."""
+    request = get_pin_removal_request()
+    if request:
+        return cancel_unlock_request(request["id"])
+    return False
+
+
+# =============================================================================
+# PIN SESSION MANAGEMENT
+# =============================================================================
+
+
+def create_pin_session() -> datetime:
+    """
+    Create a new PIN session.
+
+    Returns:
+        Session expiration datetime
+    """
+    expires = datetime.now() + timedelta(minutes=PIN_SESSION_DURATION_MINUTES)
+    write_secure_file(get_pin_session_file(), expires.isoformat())
+    return expires
+
+
+def is_pin_session_valid() -> bool:
+    """Check if current PIN session is still valid."""
+    if not is_pin_enabled():
+        return True  # No PIN = always valid
+
+    content = read_secure_file(get_pin_session_file())
+    if not content:
+        return False
+
+    try:
+        expires = datetime.fromisoformat(content)
+        if datetime.now() < expires:
+            return True
+        # Expired, clean up
+        _clear_pin_session()
+        return False
+    except ValueError:
+        _clear_pin_session()
+        return False
+
+
+def _clear_pin_session() -> None:
+    """Clear the current PIN session."""
+    session_file = get_pin_session_file()
+    if session_file.exists():
+        session_file.unlink(missing_ok=True)
+
+
+def get_pin_session_remaining() -> Optional[str]:
+    """
+    Get remaining session time as human-readable string.
+
+    Returns:
+        Human-readable remaining time, or None if no valid session
+    """
+    if not is_pin_enabled():
+        return None
+
+    content = read_secure_file(get_pin_session_file())
+    if not content:
+        return None
+
+    try:
+        expires = datetime.fromisoformat(content)
+        remaining = expires - datetime.now()
+        if remaining.total_seconds() <= 0:
+            return None
+
+        mins = int(remaining.total_seconds() // 60)
+        secs = int(remaining.total_seconds() % 60)
+        return f"{mins}m {secs}s"
+    except ValueError:
+        return None
+
+
+# =============================================================================
+# PIN LOCKOUT (BRUTE FORCE PROTECTION)
+# =============================================================================
+
+
+def _record_failed_attempt() -> int:
+    """
+    Record a failed PIN attempt.
+
+    Returns:
+        Current number of failed attempts
+    """
+    content = read_secure_file(get_pin_attempts_file())
+    attempts = []
+
+    if content:
+        try:
+            attempts = json.loads(content)
+        except json.JSONDecodeError:
+            attempts = []
+
+    # Add new attempt
+    attempts.append(datetime.now().isoformat())
+
+    # Keep only attempts within lockout window
+    cutoff = datetime.now() - timedelta(minutes=PIN_LOCKOUT_MINUTES)
+    attempts = [a for a in attempts if datetime.fromisoformat(a) > cutoff]
+
+    write_secure_file(get_pin_attempts_file(), json.dumps(attempts))
+
+    return len(attempts)
+
+
+def _clear_pin_attempts() -> None:
+    """Clear failed PIN attempts."""
+    attempts_file = get_pin_attempts_file()
+    if attempts_file.exists():
+        attempts_file.unlink(missing_ok=True)
+
+
+def get_failed_attempts_count() -> int:
+    """Get current number of failed attempts in lockout window."""
+    content = read_secure_file(get_pin_attempts_file())
+    if not content:
+        return 0
+
+    try:
+        attempts = json.loads(content)
+        cutoff = datetime.now() - timedelta(minutes=PIN_LOCKOUT_MINUTES)
+        valid_attempts = [a for a in attempts if datetime.fromisoformat(a) > cutoff]
+        return len(valid_attempts)
+    except (json.JSONDecodeError, ValueError):
+        return 0
+
+
+def is_pin_locked_out() -> bool:
+    """Check if PIN entry is locked out due to too many failed attempts."""
+    return get_failed_attempts_count() >= PIN_MAX_ATTEMPTS
+
+
+def get_lockout_remaining() -> Optional[str]:
+    """
+    Get remaining lockout time.
+
+    Returns:
+        Human-readable remaining time, or None if not locked out
+    """
+    if not is_pin_locked_out():
+        return None
+
+    content = read_secure_file(get_pin_attempts_file())
+    if not content:
+        return None
+
+    try:
+        attempts = json.loads(content)
+        if not attempts:
+            return None
+
+        # Find oldest attempt in current window
+        oldest = min(datetime.fromisoformat(a) for a in attempts)
+        lockout_ends = oldest + timedelta(minutes=PIN_LOCKOUT_MINUTES)
+        remaining = lockout_ends - datetime.now()
+
+        if remaining.total_seconds() <= 0:
+            return None
+
+        mins = int(remaining.total_seconds() // 60)
+        secs = int(remaining.total_seconds() % 60)
+        return f"{mins}m {secs}s"
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+# =============================================================================
+# UNIFIED PROTECTION CHECK
+# =============================================================================
+
+
+def can_execute_dangerous_command(command_name: str) -> tuple[bool, str]:
+    """
+    Unified check for dangerous command execution.
+
+    This function checks all protection layers in order:
+    1. Panic mode (absolute block - commands are hidden)
+    2. PIN protection (requires verification)
+
+    Args:
+        command_name: Name of the command to check
+
+    Returns:
+        Tuple of (can_execute, reason)
+        Reasons: "ok", "panic_mode", "pin_required", "pin_locked_out"
+    """
+    from .panic import DANGEROUS_COMMANDS, DANGEROUS_SUBCOMMANDS, is_panic_mode
+
+    # 1. Panic mode has absolute priority
+    if is_panic_mode():
+        if command_name in DANGEROUS_COMMANDS:
+            return False, "panic_mode"
+        # Check subcommands
+        for _parent, subs in DANGEROUS_SUBCOMMANDS.items():
+            if command_name in subs:
+                return False, "panic_mode"
+
+    # 2. PIN protection
+    if is_pin_enabled():
+        if command_name in DANGEROUS_COMMANDS:
+            if is_pin_locked_out():
+                return False, "pin_locked_out"
+            if not is_pin_session_valid():
+                return False, "pin_required"
+
+    return True, "ok"

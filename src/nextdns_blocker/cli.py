@@ -116,6 +116,77 @@ def setup_logging(verbose: bool = False) -> None:
 logger = logging.getLogger(__name__)
 console = Console(highlight=False)
 
+
+# =============================================================================
+# PIN VERIFICATION HELPER
+# =============================================================================
+
+
+def require_pin_verification(command_name: str) -> bool:
+    """
+    Check if PIN verification is required and prompt if needed.
+
+    This function should be called at the start of dangerous commands.
+    It will prompt for PIN if enabled and no valid session exists.
+
+    Args:
+        command_name: Name of the command being executed
+
+    Returns:
+        True if command can proceed, False if blocked
+
+    Raises:
+        SystemExit: If PIN verification fails
+    """
+    from .protection import (
+        PIN_MAX_ATTEMPTS,
+        get_failed_attempts_count,
+        get_lockout_remaining,
+        is_pin_enabled,
+        is_pin_locked_out,
+        is_pin_session_valid,
+        verify_pin,
+    )
+
+    # No PIN protection = proceed
+    if not is_pin_enabled():
+        return True
+
+    # Valid session = proceed
+    if is_pin_session_valid():
+        return True
+
+    # Check lockout
+    if is_pin_locked_out():
+        remaining = get_lockout_remaining()
+        console.print(
+            f"\n  [red]PIN locked out due to failed attempts. Try again in {remaining}[/red]\n"
+        )
+        sys.exit(1)
+
+    # Prompt for PIN
+    console.print(f"\n  [yellow]PIN required for '{command_name}'[/yellow]")
+
+    import click
+
+    pin = click.prompt("  Enter PIN", hide_input=True, default="", show_default=False)
+
+    if not pin:
+        console.print("\n  [red]PIN verification cancelled[/red]\n")
+        sys.exit(1)
+
+    if verify_pin(pin):
+        return True
+    else:
+        if is_pin_locked_out():
+            remaining = get_lockout_remaining()
+            console.print(f"\n  [red]Too many failed attempts. Locked out for {remaining}[/red]\n")
+        else:
+            attempts_left = PIN_MAX_ATTEMPTS - get_failed_attempts_count()
+            console.print(f"\n  [red]Incorrect PIN. {attempts_left} attempts remaining.[/red]\n")
+        sys.exit(1)
+
+
 # =============================================================================
 # CONSTANTS
 # =============================================================================
@@ -287,6 +358,8 @@ def init(config_dir: Optional[Path], non_interactive: bool) -> None:
 @click.argument("minutes", default=DEFAULT_PAUSE_MINUTES, type=click.IntRange(min=1))
 def pause(minutes: int) -> None:
     """Pause blocking for MINUTES (default: 30)."""
+    require_pin_verification("pause")
+
     set_pause(minutes)
     pause_until = datetime.now() + timedelta(minutes=minutes)
     console.print(f"\n  [yellow]Blocking paused for {minutes} minutes[/yellow]")
@@ -312,6 +385,8 @@ def resume() -> None:
 @click.option("--force", is_flag=True, help="Skip delay and unblock immediately")
 def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
     """Manually unblock a DOMAIN."""
+    require_pin_verification("unblock")
+
     from .config import get_unblock_delay, parse_unblock_delay_seconds
     from .pending import create_pending_action, get_pending_for_domain
 
@@ -331,8 +406,7 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
         # Handle 'never' - cannot unblock
         if unblock_delay == "never":
             console.print(
-                f"\n  [blue]Error: '{domain}' cannot be unblocked "
-                f"(unblock_delay: never)[/blue]\n",
+                f"\n  [blue]Error: '{domain}' cannot be unblocked (unblock_delay: never)[/blue]\n",
                 highlight=False,
             )
             sys.exit(1)
@@ -507,7 +581,7 @@ def _handle_unblock(
 
         if dry_run:
             console.print(
-                f"  [yellow]Would schedule UNBLOCK: {domain} " f"(delay: {domain_delay})[/yellow]"
+                f"  [yellow]Would schedule UNBLOCK: {domain} (delay: {domain_delay})[/yellow]"
             )
         else:
             action = create_pending_action(domain, domain_delay, requested_by="sync")
@@ -1288,6 +1362,8 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
 )
 def allow(domain: str, config_dir: Optional[Path]) -> None:
     """Add DOMAIN to allowlist."""
+    require_pin_verification("allow")
+
     try:
         if not validate_domain(domain):
             console.print(
@@ -1331,6 +1407,8 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
 )
 def disallow(domain: str, config_dir: Optional[Path]) -> None:
     """Remove DOMAIN from allowlist."""
+    require_pin_verification("disallow")
+
     try:
         if not validate_domain(domain):
             console.print(
@@ -1941,7 +2019,7 @@ def validate_impl(output_json: bool, config_dir: Optional[Path]) -> None:
     else:
         add_check("config.json", False, "file not found")
         add_error(
-            f"Config file not found: {config_file}\n" "Run 'nextdns-blocker init' to create one."
+            f"Config file not found: {config_file}\nRun 'nextdns-blocker init' to create one."
         )
 
     if domains_data is None:
