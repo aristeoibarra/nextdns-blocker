@@ -61,6 +61,20 @@ def is_wsl() -> bool:
         return False
 
 
+def has_systemd() -> bool:
+    """Check if the system uses systemd as init system.
+
+    Systemd is detected by checking for /run/systemd/system directory,
+    which only exists when systemd is running as PID 1.
+
+    Returns:
+        True if systemd is available, False otherwise.
+    """
+    if not is_linux():
+        return False
+    return Path("/run/systemd/system").exists()
+
+
 def get_platform() -> PlatformName:
     """Get the current platform name.
 
@@ -95,19 +109,22 @@ def get_platform_display_name() -> str:
     return display_names.get(plat, "Unknown")
 
 
-def get_scheduler_type() -> Literal["launchd", "cron", "task_scheduler", "none"]:
+def get_scheduler_type() -> Literal["launchd", "cron", "systemd", "task_scheduler", "none"]:
     """Get the appropriate scheduler type for the current platform.
 
     Returns:
-        Scheduler type: "launchd" (macOS), "cron" (Linux/WSL),
-        "task_scheduler" (Windows), or "none" (unknown).
+        Scheduler type: "launchd" (macOS), "systemd" (Linux with systemd),
+        "cron" (Linux without systemd/WSL), "task_scheduler" (Windows),
+        or "none" (unknown).
     """
     if is_macos():
         return "launchd"
     elif is_windows():
         return "task_scheduler"
     elif is_linux():
-        # WSL uses cron since it's a full Linux environment
+        # Prefer systemd on modern Linux, fall back to cron
+        if has_systemd():
+            return "systemd"
         return "cron"
     return "none"
 

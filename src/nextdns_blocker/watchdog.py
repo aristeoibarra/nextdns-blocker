@@ -1,4 +1,4 @@
-"""Watchdog - Monitors and restores scheduled jobs (cron/launchd/Task Scheduler) if deleted."""
+"""Watchdog - Monitors and restores scheduled jobs (cron/systemd/launchd/Task Scheduler) if deleted."""
 
 import contextlib
 import logging
@@ -25,6 +25,7 @@ from .exceptions import APIError, ConfigurationError, DomainValidationError
 from .platform_utils import (
     get_executable_args,
     get_executable_path,
+    has_systemd,
     is_macos,
     is_windows,
 )
@@ -53,6 +54,12 @@ LAUNCHD_WATCHDOG_LABEL = "com.nextdns-blocker.watchdog"
 WINDOWS_TASK_SYNC_NAME = "NextDNS-Blocker-Sync"
 WINDOWS_TASK_WATCHDOG_NAME = "NextDNS-Blocker-Watchdog"
 
+# Systemd constants for Linux
+SYSTEMD_SYNC_SERVICE = "nextdns-blocker-sync"
+SYSTEMD_SYNC_TIMER = "nextdns-blocker-sync"
+SYSTEMD_WATCHDOG_SERVICE = "nextdns-blocker-watchdog"
+SYSTEMD_WATCHDOG_TIMER = "nextdns-blocker-watchdog"
+
 
 def get_launch_agents_dir() -> Path:
     """Get the LaunchAgents directory for the current user."""
@@ -67,6 +74,31 @@ def get_sync_plist_path() -> Path:
 def get_watchdog_plist_path() -> Path:
     """Get the path to the watchdog plist file."""
     return get_launch_agents_dir() / f"{LAUNCHD_WATCHDOG_LABEL}.plist"
+
+
+def get_systemd_user_dir() -> Path:
+    """Get the systemd user directory for the current user."""
+    return Path.home() / ".config" / "systemd" / "user"
+
+
+def get_systemd_sync_service_path() -> Path:
+    """Get the path to the sync service file."""
+    return get_systemd_user_dir() / f"{SYSTEMD_SYNC_SERVICE}.service"
+
+
+def get_systemd_sync_timer_path() -> Path:
+    """Get the path to the sync timer file."""
+    return get_systemd_user_dir() / f"{SYSTEMD_SYNC_TIMER}.timer"
+
+
+def get_systemd_watchdog_service_path() -> Path:
+    """Get the path to the watchdog service file."""
+    return get_systemd_user_dir() / f"{SYSTEMD_WATCHDOG_SERVICE}.service"
+
+
+def get_systemd_watchdog_timer_path() -> Path:
+    """Get the path to the watchdog timer file."""
+    return get_systemd_user_dir() / f"{SYSTEMD_WATCHDOG_TIMER}.timer"
 
 
 def get_disabled_file() -> Path:
@@ -972,13 +1004,394 @@ def _check_windows_tasks() -> None:
 
 
 # =============================================================================
+# SYSTEMD MANAGEMENT (Linux)
+# =============================================================================
+
+
+def get_systemd_service_content(exe_path: str, args: str, description: str) -> str:
+    """Generate systemd service file content.
+
+    Args:
+        exe_path: Path to the nextdns-blocker executable.
+        args: Command arguments (e.g., "config sync").
+        description: Service description.
+
+    Returns:
+        Systemd service file content as string.
+    """
+    return f"""[Unit]
+Description={description}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={exe_path} {args}
+StandardOutput=journal
+StandardError=journal
+"""
+
+
+def get_systemd_timer_content(description: str, interval_minutes: int, service_name: str) -> str:
+    """Generate systemd timer file content.
+
+    Args:
+        description: Timer description.
+        interval_minutes: Interval between runs in minutes.
+        service_name: Name of the service to trigger.
+
+    Returns:
+        Systemd timer file content as string.
+    """
+    return f"""[Unit]
+Description={description}
+Requires={service_name}.service
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec={interval_minutes}m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+"""
+
+
+def _run_systemctl(
+    args: list[str], timeout: int = SUBPROCESS_TIMEOUT
+) -> subprocess.CompletedProcess[str]:
+    """Run systemctl command with --user flag.
+
+    Args:
+        args: List of arguments to pass to systemctl.
+        timeout: Command timeout in seconds.
+
+    Returns:
+        CompletedProcess with stdout/stderr captured.
+    """
+    return subprocess.run(
+        ["systemctl", "--user"] + args,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def is_systemd_timer_active(timer_name: str) -> bool:
+    """Check if a systemd timer is active.
+
+    Args:
+        timer_name: Name of the timer (without .timer suffix).
+
+    Returns:
+        True if the timer is active, False otherwise.
+    """
+    try:
+        result = _run_systemctl(["is-active", f"{timer_name}.timer"])
+        return result.returncode == 0 and result.stdout.strip() == "active"
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        return False
+
+
+def is_systemd_timer_enabled(timer_name: str) -> bool:
+    """Check if a systemd timer is enabled.
+
+    Args:
+        timer_name: Name of the timer (without .timer suffix).
+
+    Returns:
+        True if the timer is enabled, False otherwise.
+    """
+    try:
+        result = _run_systemctl(["is-enabled", f"{timer_name}.timer"])
+        return result.returncode == 0 and result.stdout.strip() == "enabled"
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        return False
+
+
+def _write_systemd_file(path: Path, content: str) -> bool:
+    """Write a systemd unit file with correct permissions.
+
+    Args:
+        path: Path to write the file.
+        content: File content.
+
+    Returns:
+        True on success, False on failure.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        path.chmod(0o644)
+        return True
+    except OSError as e:
+        logger.warning(f"Failed to write systemd file {path}: {e}")
+        return False
+
+
+def _install_systemd_timers() -> None:
+    """Install systemd user timers (Linux)."""
+    systemd_dir = get_systemd_user_dir()
+    systemd_dir.mkdir(parents=True, exist_ok=True)
+
+    exe = get_executable_path()
+
+    # Create sync service and timer
+    sync_service_content = get_systemd_service_content(exe, "config sync", "NextDNS Blocker Sync")
+    sync_timer_content = get_systemd_timer_content(
+        "NextDNS Blocker Sync Timer", 2, SYSTEMD_SYNC_SERVICE
+    )
+
+    sync_service_path = get_systemd_sync_service_path()
+    sync_timer_path = get_systemd_sync_timer_path()
+
+    if not _write_systemd_file(sync_service_path, sync_service_content):
+        click.echo("  error: failed to write sync service file", err=True)
+        sys.exit(1)
+
+    if not _write_systemd_file(sync_timer_path, sync_timer_content):
+        _safe_unlink(sync_service_path)
+        click.echo("  error: failed to write sync timer file", err=True)
+        sys.exit(1)
+
+    # Create watchdog service and timer
+    watchdog_service_content = get_systemd_service_content(
+        exe, "watchdog check", "NextDNS Blocker Watchdog"
+    )
+    watchdog_timer_content = get_systemd_timer_content(
+        "NextDNS Blocker Watchdog Timer", 1, SYSTEMD_WATCHDOG_SERVICE
+    )
+
+    watchdog_service_path = get_systemd_watchdog_service_path()
+    watchdog_timer_path = get_systemd_watchdog_timer_path()
+
+    if not _write_systemd_file(watchdog_service_path, watchdog_service_content):
+        _safe_unlink(sync_service_path)
+        _safe_unlink(sync_timer_path)
+        click.echo("  error: failed to write watchdog service file", err=True)
+        sys.exit(1)
+
+    if not _write_systemd_file(watchdog_timer_path, watchdog_timer_content):
+        _safe_unlink(sync_service_path)
+        _safe_unlink(sync_timer_path)
+        _safe_unlink(watchdog_service_path)
+        click.echo("  error: failed to write watchdog timer file", err=True)
+        sys.exit(1)
+
+    # Reload systemd daemon
+    try:
+        result = _run_systemctl(["daemon-reload"])
+        if result.returncode != 0:
+            logger.warning(f"daemon-reload failed: {result.stderr}")
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+        logger.warning(f"Failed to reload systemd daemon: {e}")
+
+    # Enable and start timers
+    try:
+        # Enable timers
+        result_enable_sync = _run_systemctl(["enable", f"{SYSTEMD_SYNC_TIMER}.timer"])
+        result_enable_wd = _run_systemctl(["enable", f"{SYSTEMD_WATCHDOG_TIMER}.timer"])
+
+        if result_enable_sync.returncode != 0 or result_enable_wd.returncode != 0:
+            click.echo("  error: failed to enable timers", err=True)
+            # Cleanup
+            _safe_unlink(sync_service_path)
+            _safe_unlink(sync_timer_path)
+            _safe_unlink(watchdog_service_path)
+            _safe_unlink(watchdog_timer_path)
+            sys.exit(1)
+
+        # Start timers
+        result_start_sync = _run_systemctl(["start", f"{SYSTEMD_SYNC_TIMER}.timer"])
+        result_start_wd = _run_systemctl(["start", f"{SYSTEMD_WATCHDOG_TIMER}.timer"])
+
+        if result_start_sync.returncode != 0 or result_start_wd.returncode != 0:
+            click.echo("  error: failed to start timers", err=True)
+            sys.exit(1)
+
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+        click.echo(f"  error: systemctl command failed: {e}", err=True)
+        sys.exit(1)
+
+    audit_log("SYSTEMD_INSTALLED", "Manual install")
+    click.echo("\n  systemd timers installed")
+    click.echo("    sync       every 2 min")
+    click.echo("    watchdog   every 1 min\n")
+
+
+def _uninstall_systemd_timers() -> None:
+    """Uninstall systemd user timers (Linux)."""
+    success_sync = True
+    success_wd = True
+
+    try:
+        # Stop timers
+        _run_systemctl(["stop", f"{SYSTEMD_SYNC_TIMER}.timer"])
+        _run_systemctl(["stop", f"{SYSTEMD_WATCHDOG_TIMER}.timer"])
+
+        # Disable timers
+        result_disable_sync = _run_systemctl(["disable", f"{SYSTEMD_SYNC_TIMER}.timer"])
+        result_disable_wd = _run_systemctl(["disable", f"{SYSTEMD_WATCHDOG_TIMER}.timer"])
+
+        if result_disable_sync.returncode != 0:
+            success_sync = False
+        if result_disable_wd.returncode != 0:
+            success_wd = False
+
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+        logger.warning(f"Failed to stop/disable systemd timers: {e}")
+        success_sync = False
+        success_wd = False
+
+    # Remove files
+    _safe_unlink(get_systemd_sync_service_path())
+    _safe_unlink(get_systemd_sync_timer_path())
+    _safe_unlink(get_systemd_watchdog_service_path())
+    _safe_unlink(get_systemd_watchdog_timer_path())
+
+    # Reload daemon
+    with contextlib.suppress(OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        _run_systemctl(["daemon-reload"])
+
+    audit_log("SYSTEMD_UNINSTALLED", "Manual uninstall")
+
+    if success_sync and success_wd:
+        click.echo("\n  systemd timers removed\n")
+    elif not success_sync and not success_wd:
+        click.echo("\n  warning: failed to disable both timers (files removed)\n", err=True)
+    elif not success_sync:
+        click.echo("\n  watchdog removed, warning: failed to disable sync timer\n", err=True)
+    else:
+        click.echo("\n  sync removed, warning: failed to disable watchdog timer\n", err=True)
+
+
+def _status_systemd_timers() -> None:
+    """Display systemd timer status (Linux)."""
+    has_sync = is_systemd_timer_active(SYSTEMD_SYNC_TIMER)
+    has_wd = is_systemd_timer_active(SYSTEMD_WATCHDOG_TIMER)
+    disabled_remaining = get_disabled_remaining()
+
+    click.echo("\n  systemd")
+    click.echo("  -------")
+    click.echo(f"    sync       {'ok' if has_sync else 'missing'}")
+    click.echo(f"    watchdog   {'ok' if has_wd else 'missing'}")
+
+    if disabled_remaining:
+        click.echo(f"\n  watchdog: DISABLED ({disabled_remaining})")
+    else:
+        status = "active" if (has_sync and has_wd) else "compromised"
+        click.echo(f"\n  status: {status}")
+    click.echo()
+
+
+def _check_systemd_timers() -> None:
+    """Check and restore systemd timers if missing (Linux)."""
+    restored = False
+
+    # Check sync timer
+    if not is_systemd_timer_active(SYSTEMD_SYNC_TIMER):
+        audit_log("SYSTEMD_DELETED", "Sync timer missing")
+
+        # Check if files exist
+        sync_service_path = get_systemd_sync_service_path()
+        sync_timer_path = get_systemd_sync_timer_path()
+
+        if sync_service_path.exists() and sync_timer_path.exists():
+            # Try to start the timer
+            try:
+                _run_systemctl(["daemon-reload"])
+                result = _run_systemctl(["start", f"{SYSTEMD_SYNC_TIMER}.timer"])
+                if result.returncode == 0:
+                    click.echo("  sync systemd timer restored")
+                    restored = True
+                else:
+                    click.echo("  warning: failed to restore sync timer", err=True)
+            except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+                click.echo(f"  warning: failed to restore sync timer: {e}", err=True)
+        else:
+            # Recreate files
+            exe = get_executable_path()
+            sync_service_content = get_systemd_service_content(
+                exe, "config sync", "NextDNS Blocker Sync"
+            )
+            sync_timer_content = get_systemd_timer_content(
+                "NextDNS Blocker Sync Timer", 2, SYSTEMD_SYNC_SERVICE
+            )
+
+            if _write_systemd_file(sync_service_path, sync_service_content) and _write_systemd_file(
+                sync_timer_path, sync_timer_content
+            ):
+                try:
+                    _run_systemctl(["daemon-reload"])
+                    _run_systemctl(["enable", f"{SYSTEMD_SYNC_TIMER}.timer"])
+                    result = _run_systemctl(["start", f"{SYSTEMD_SYNC_TIMER}.timer"])
+                    if result.returncode == 0:
+                        click.echo("  sync systemd timer recreated")
+                        restored = True
+                    else:
+                        click.echo("  warning: failed to start sync timer", err=True)
+                except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+                    click.echo(f"  warning: failed to start sync timer: {e}", err=True)
+            else:
+                click.echo("  warning: failed to create sync timer files", err=True)
+
+    # Check watchdog timer
+    if not is_systemd_timer_active(SYSTEMD_WATCHDOG_TIMER):
+        audit_log("SYSTEMD_WD_DELETED", "Watchdog timer missing")
+
+        watchdog_service_path = get_systemd_watchdog_service_path()
+        watchdog_timer_path = get_systemd_watchdog_timer_path()
+
+        if watchdog_service_path.exists() and watchdog_timer_path.exists():
+            try:
+                _run_systemctl(["daemon-reload"])
+                result = _run_systemctl(["start", f"{SYSTEMD_WATCHDOG_TIMER}.timer"])
+                if result.returncode == 0:
+                    click.echo("  watchdog systemd timer restored")
+                    restored = True
+                else:
+                    click.echo("  warning: failed to restore watchdog timer", err=True)
+            except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+                click.echo(f"  warning: failed to restore watchdog timer: {e}", err=True)
+        else:
+            exe = get_executable_path()
+            watchdog_service_content = get_systemd_service_content(
+                exe, "watchdog check", "NextDNS Blocker Watchdog"
+            )
+            watchdog_timer_content = get_systemd_timer_content(
+                "NextDNS Blocker Watchdog Timer", 1, SYSTEMD_WATCHDOG_SERVICE
+            )
+
+            if _write_systemd_file(
+                watchdog_service_path, watchdog_service_content
+            ) and _write_systemd_file(watchdog_timer_path, watchdog_timer_content):
+                try:
+                    _run_systemctl(["daemon-reload"])
+                    _run_systemctl(["enable", f"{SYSTEMD_WATCHDOG_TIMER}.timer"])
+                    result = _run_systemctl(["start", f"{SYSTEMD_WATCHDOG_TIMER}.timer"])
+                    if result.returncode == 0:
+                        click.echo("  watchdog systemd timer recreated")
+                        restored = True
+                    else:
+                        click.echo("  warning: failed to start watchdog timer", err=True)
+                except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+                    click.echo(f"  warning: failed to start watchdog timer: {e}", err=True)
+            else:
+                click.echo("  warning: failed to create watchdog timer files", err=True)
+
+    # Run sync if timers were restored
+    if restored:
+        _run_sync_after_restore()
+
+
+# =============================================================================
 # CLICK CLI
 # =============================================================================
 
 
 @click.group()
 def watchdog_cli() -> None:
-    """Watchdog commands for scheduled job management (cron/launchd/Task Scheduler)."""
+    """Watchdog commands for scheduled job management (cron/systemd/launchd/Task Scheduler)."""
     pass
 
 
@@ -1074,6 +1487,8 @@ def cmd_check() -> None:
         _check_launchd_jobs()
     elif is_windows():
         _check_windows_tasks()
+    elif has_systemd():
+        _check_systemd_timers()
     else:
         _check_cron_jobs()
 
@@ -1085,6 +1500,8 @@ def cmd_install() -> None:
         _install_launchd_jobs()
     elif is_windows():
         _install_windows_tasks()
+    elif has_systemd():
+        _install_systemd_timers()
     else:
         _install_cron_jobs()
 
@@ -1096,6 +1513,8 @@ def cmd_uninstall() -> None:
         _uninstall_launchd_jobs()
     elif is_windows():
         _uninstall_windows_tasks()
+    elif has_systemd():
+        _uninstall_systemd_timers()
     else:
         _uninstall_cron_jobs()
 
@@ -1107,6 +1526,8 @@ def cmd_status() -> None:
         _status_launchd_jobs()
     elif is_windows():
         _status_windows_tasks()
+    elif has_systemd():
+        _status_systemd_timers()
     else:
         _status_cron_jobs()
 
