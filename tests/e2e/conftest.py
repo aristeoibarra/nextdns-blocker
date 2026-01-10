@@ -115,7 +115,7 @@ def setup_domains_file(e2e_config_dir: Path) -> Path:
             {
                 "domain": "gambling.com",
                 "description": "Always blocked gambling site",
-                "protected": True,
+                "unblock_delay": "never",
                 "schedule": None,
             },
         ]

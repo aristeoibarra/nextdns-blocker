@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0] - 2026-01-10
+
+### Breaking Changes
+- **Remove deprecated commands**: Root `sync` command removed (use `config sync`)
+- **Remove deprecated commands**: Root `validate` command removed (use `config validate`)
+- **Remove legacy field support**: `protected: true` field no longer supported (use `unblock_delay: never`)
+- **Remove TIMEZONE env var**: Environment variable no longer supported (use `settings.timezone` in config.json)
+- **Watchdog updated**: Now executes `config sync` instead of `sync`
+
+### Added
+- **Systemd timer support for Linux** (#183): Modern alternative to cron on systemd-based systems
+  - Add `has_systemd()` detection in platform_utils.py
+  - Update `get_scheduler_type()` to return 'systemd' on modern Linux
+  - Implement systemd user timers for sync and watchdog
+  - Add install/uninstall/status/check commands for systemd
+  - Automatic fallback to cron on systems without systemd
+- **Analytics manager** (#182): Usage statistics and pattern analysis
+  - `ndb stats`: Show 7-day summary with effectiveness score
+  - `ndb stats domains`: Top blocked domains with details
+  - `ndb stats hours`: Hourly activity patterns visualization
+  - `ndb stats actions`: Breakdown of all action types
+  - `ndb stats export`: Export analytics to CSV
+  - `--days` and `--domain` filter options
+- **Config pull/diff commands** (#184): Sync NextDNS state to local config
+  - `ndb config diff`: Compare local vs remote domains
+  - `ndb config pull`: Fetch domains from NextDNS API
+  - `--merge` mode to preserve local metadata (schedules, delays)
+  - Block removal of protected domains (`locked: true`)
+  - Automatic backups before modifying config
+  - JSON output format for diff command
+- **PIN/password protection**: Protect sensitive commands from impulsive use
+  - Protect dangerous commands: pause, unblock, allow, disallow, config edit
+  - Session management (30 min duration)
+  - Brute force protection (3 attempts, 15 min lockout)
+  - PIN removal requires 24h delay
+  - CLI commands: `protection pin set/remove/status/verify`
+- **Protection module**: Addiction safety features
+  - Locked categories/services that cannot be easily removed
+  - Unlock request system with configurable delay (default 48h)
+  - Auto-panic mode for scheduled protection periods
+  - CLI commands: `protection status/unlock-request/cancel/list`
+  - Integration with sync for auto-panic enforcement
+- **Telegram, Slack, and Ntfy notifications** (#185): Extended notification channels
+  - New notification providers beyond Discord
+  - Adjusted notification timeout handling
+  - Comprehensive tests and documentation
+- **Denylist and allowlist CLI commands**: Bulk list management
+  - `denylist list/export/import/add/remove`: Manage blocked domains
+  - `allowlist list/export/import/add/remove`: Manage whitelisted domains
+  - Bulk operations support multiple domains at once
+  - Import supports JSON, CSV, and plain text formats
+  - Dry-run mode for import preview
+  - Domain validation before operations
+
+### Fixed
+- **Cross-platform path comparison**: Use `as_posix()` for consistent path handling in tests
+- **Cron-specific test behavior**: Mock `has_systemd` for tests that specifically test cron functionality
+- **Parental control PATCH optimization**: Skip PATCH request when settings are already in sync
+
+### Documentation
+- Sync documentation with v6.5.4+ features
+- Update breaking changes documentation
+- Add security reference documentation
+- Add notifications feature documentation
+- Update Linux platform guide with systemd instructions
+
+### Tests
+- Add comprehensive tests for protection module (80%+ coverage)
+- Add 29 unit tests for analytics functionality
+- Add 28 tests for PIN functionality
+- Add tests for systemd timer functions
+- Add tests for new notification channels
+
 ## [6.5.4] - 2026-01-01
 
 ### Fixed
@@ -669,6 +742,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[7.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.4...v7.0.0
 [6.5.4]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.3...v6.5.4
 [6.5.3]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.2...v6.5.3
 [6.5.2]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.1...v6.5.2

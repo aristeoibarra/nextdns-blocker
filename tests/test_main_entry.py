@@ -71,7 +71,7 @@ def test_all_subcommands_available():
 
     expected_commands = [
         "init",
-        "sync",
+        "config",  # sync and validate are now under config
         "status",
         "pause",
         "resume",

@@ -216,7 +216,7 @@ nextdns-blocker --version
 
 # Test functionality
 nextdns-blocker status
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 ```
 
 ## Rolling Back

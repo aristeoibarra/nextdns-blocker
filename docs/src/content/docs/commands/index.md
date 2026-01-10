@@ -24,14 +24,14 @@ nextdns-blocker [OPTIONS] COMMAND [ARGS]
 | Command | Description |
 |---------|-------------|
 | [`init`](/commands/init/) | Initialize configuration with interactive wizard |
-| [`validate`](/commands/validate/) | Validate configuration files before deployment |
+| [`config validate`](/commands/validate/) | Validate configuration files before deployment |
 | [`completion`](/commands/completion/) | Generate shell completion script |
 
 ## Main Commands
 
 | Command | Description |
 |---------|-------------|
-| [`sync`](/commands/sync/) | Synchronize domain states based on schedules |
+| [`config sync`](/commands/sync/) | Synchronize domain states based on schedules |
 | [`status`](/commands/status/) | Show current blocking status |
 | [`pause`](/commands/pause-resume/) | Temporarily pause all blocking |
 | [`resume`](/commands/pause-resume/) | Resume blocking after pause |
@@ -60,7 +60,9 @@ Manage configuration files.
 | [`config edit`](/commands/config/) | Open config in editor |
 | [`config validate`](/commands/config/) | Validate configuration syntax |
 | [`config set`](/commands/config/) | Set configuration values |
-| [`config sync`](/commands/config/) | Sync domains (alias for root sync) |
+| [`config sync`](/commands/config/) | Synchronize domain states based on schedules |
+| [`config diff`](/commands/config/) | Show differences between local and remote |
+| [`config pull`](/commands/config/) | Fetch domains from NextDNS to local config |
 
 ### watchdog
 
@@ -122,12 +124,63 @@ Manage NextDNS Parental Control.
 | [`nextdns categories`](/commands/nextdns/) | Show valid category IDs |
 | [`nextdns services`](/commands/nextdns/) | Show valid service IDs |
 
-### Allowlist Commands
+### denylist
+
+Manage NextDNS denylist (blocked domains).
+
+| Subcommand | Description |
+|------------|-------------|
+| [`denylist list`](/commands/allowlist/) | List all denylist domains |
+| [`denylist add`](/commands/allowlist/) | Add domains to denylist |
+| [`denylist remove`](/commands/allowlist/) | Remove domains from denylist |
+| [`denylist export`](/commands/allowlist/) | Export to JSON or CSV |
+| [`denylist import`](/commands/allowlist/) | Import from file |
+
+### allowlist
+
+Manage NextDNS allowlist (whitelisted domains).
+
+| Subcommand | Description |
+|------------|-------------|
+| [`allowlist list`](/commands/allowlist/) | List all allowlist domains |
+| [`allowlist add`](/commands/allowlist/) | Add domains to allowlist |
+| [`allowlist remove`](/commands/allowlist/) | Remove domains from allowlist |
+| [`allowlist export`](/commands/allowlist/) | Export to JSON or CSV |
+| [`allowlist import`](/commands/allowlist/) | Import from file |
+
+### Legacy Allowlist Commands
 
 | Command | Description |
 |---------|-------------|
 | [`allow`](/commands/allowlist/) | Add domain to allowlist |
 | [`disallow`](/commands/allowlist/) | Remove domain from allowlist |
+
+### protection
+
+Manage addiction protection features.
+
+| Subcommand | Description |
+|------------|-------------|
+| [`protection status`](/reference/security/) | Show protection status and locked items |
+| [`protection unlock-request`](/reference/security/) | Request to unlock a protected item |
+| [`protection cancel`](/reference/security/) | Cancel a pending unlock request |
+| [`protection list`](/reference/security/) | List pending unlock requests |
+| [`protection pin set`](/reference/security/) | Set or change PIN |
+| [`protection pin status`](/reference/security/) | Show PIN status |
+| [`protection pin verify`](/reference/security/) | Verify PIN and start session |
+| [`protection pin remove`](/reference/security/) | Remove PIN (with 24h delay) |
+
+### stats
+
+View usage statistics and patterns.
+
+| Subcommand | Description |
+|------------|-------------|
+| [`stats`](/commands/stats/) | Show summary statistics |
+| [`stats domains`](/commands/stats/) | Show top blocked domains |
+| [`stats hours`](/commands/stats/) | Show hourly activity patterns |
+| [`stats actions`](/commands/stats/) | Show action breakdown |
+| [`stats export`](/commands/stats/) | Export to CSV |
 
 ## Quick Reference
 
@@ -167,7 +220,7 @@ nextdns-blocker panic 60
 nextdns-blocker config edit
 
 # Force sync now
-nextdns-blocker sync
+nextdns-blocker config sync
 
 # Check watchdog
 nextdns-blocker watchdog status
@@ -177,16 +230,13 @@ nextdns-blocker watchdog status
 
 ```bash
 # Validate config
-nextdns-blocker validate
-
-# Or use the config group
 nextdns-blocker config validate
 
 # Preview changes
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 
 # Verbose output
-nextdns-blocker sync -v
+nextdns-blocker config sync -v
 
 # Run health checks
 nextdns-blocker health

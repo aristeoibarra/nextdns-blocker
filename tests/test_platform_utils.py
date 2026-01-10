@@ -15,6 +15,7 @@ from nextdns_blocker.platform_utils import (
     get_platform,
     get_platform_display_name,
     get_scheduler_type,
+    has_systemd,
     is_linux,
     is_macos,
     is_windows,
@@ -193,6 +194,35 @@ class TestGetPlatformDisplayName:
                 assert get_platform_display_name() == "Linux (WSL)"
 
 
+class TestHasSystemd:
+    """Tests for has_systemd function."""
+
+    def test_has_systemd_true(self, tmp_path):
+        """Should return True when /run/systemd/system exists."""
+        systemd_dir = tmp_path / "run" / "systemd" / "system"
+        systemd_dir.mkdir(parents=True)
+
+        with patch("nextdns_blocker.platform_utils.sys.platform", "linux"):
+            with patch("nextdns_blocker.platform_utils.Path", return_value=systemd_dir):
+                # We need to patch the actual Path("/run/systemd/system").exists()
+                with patch.object(Path, "exists", return_value=True):
+                    assert has_systemd() is True
+
+    def test_has_systemd_false_no_dir(self):
+        """Should return False when /run/systemd/system does not exist."""
+        with patch("nextdns_blocker.platform_utils.sys.platform", "linux"):
+            with patch.object(Path, "exists", return_value=False):
+                assert has_systemd() is False
+
+    def test_has_systemd_false_not_linux(self):
+        """Should return False on non-Linux platforms."""
+        with patch("nextdns_blocker.platform_utils.sys.platform", "darwin"):
+            assert has_systemd() is False
+
+        with patch("nextdns_blocker.platform_utils.sys.platform", "win32"):
+            assert has_systemd() is False
+
+
 class TestGetSchedulerType:
     """Tests for get_scheduler_type function."""
 
@@ -206,18 +236,26 @@ class TestGetSchedulerType:
         with patch("nextdns_blocker.platform_utils.sys.platform", "win32"):
             assert get_scheduler_type() == "task_scheduler"
 
-    def test_scheduler_type_linux(self):
-        """Should return 'cron' on Linux."""
+    def test_scheduler_type_linux_with_systemd(self):
+        """Should return 'systemd' on Linux with systemd."""
         with patch("nextdns_blocker.platform_utils.sys.platform", "linux"):
-            assert get_scheduler_type() == "cron"
+            with patch("nextdns_blocker.platform_utils.has_systemd", return_value=True):
+                assert get_scheduler_type() == "systemd"
+
+    def test_scheduler_type_linux_without_systemd(self):
+        """Should return 'cron' on Linux without systemd."""
+        with patch("nextdns_blocker.platform_utils.sys.platform", "linux"):
+            with patch("nextdns_blocker.platform_utils.has_systemd", return_value=False):
+                assert get_scheduler_type() == "cron"
 
     def test_scheduler_type_wsl(self):
-        """Should return 'cron' on WSL (uses Linux cron)."""
+        """Should return 'cron' on WSL (typically no systemd)."""
         with patch("nextdns_blocker.platform_utils.sys.platform", "linux"):
             with patch(
                 "nextdns_blocker.platform_utils.platform.release", return_value="5.15.0-microsoft"
             ):
-                assert get_scheduler_type() == "cron"
+                with patch("nextdns_blocker.platform_utils.has_systemd", return_value=False):
+                    assert get_scheduler_type() == "cron"
 
     def test_scheduler_type_unknown(self):
         """Should return 'none' on unknown platform."""

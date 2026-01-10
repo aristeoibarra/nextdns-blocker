@@ -10,6 +10,9 @@ Get instant notifications when domains are blocked, unblocked, or when special m
 | Channel | Description |
 |---------|-------------|
 | **Discord** | Webhook notifications with rich embeds |
+| **Telegram** | Bot notifications via Telegram API |
+| **Slack** | Webhook notifications with Block Kit |
+| **Ntfy** | Simple push notifications via ntfy.sh |
 | **macOS** | Native system notifications via osascript |
 
 ## Configuration
@@ -24,6 +27,19 @@ Notifications are configured in `config.json` under the `notifications` section:
       "discord": {
         "enabled": true,
         "webhook_url": "https://discord.com/api/webhooks/1234567890/abcdefghijklmnop"
+      },
+      "telegram": {
+        "enabled": true,
+        "bot_token": "123456:ABC-DEF...",
+        "chat_id": "123456789"
+      },
+      "slack": {
+        "enabled": true,
+        "webhook_url": "https://hooks.slack.com/services/..."
+      },
+      "ntfy": {
+        "enabled": true,
+        "topic": "my-nextdns-alerts"
       },
       "macos": {
         "enabled": true,
@@ -65,6 +81,66 @@ Notifications are configured in `config.json` under the `notifications` section:
 4. Name it (e.g., "NextDNS Blocker")
 5. Select the channel for notifications
 6. Click **Copy Webhook URL**
+
+### Telegram Channel
+
+```json
+{
+  "telegram": {
+    "enabled": true,
+    "bot_token": "123456:ABC-DEF...",
+    "chat_id": "123456789"
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean | Yes | Enable Telegram notifications |
+| `bot_token` | string | Yes | Telegram Bot API Token |
+| `chat_id` | string | Yes | Target Chat ID (user or group) |
+
+**Setup:**
+1. Chat with [@BotFather](https://t.me/BotFather) to create a bot and get `bot_token`
+2. Chat with [@userinfobot](https://t.me/userinfobot) to get your `chat_id`
+
+### Slack Channel
+
+```json
+{
+  "slack": {
+    "enabled": true,
+    "webhook_url": "https://hooks.slack.com/services/..."
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean | Yes | Enable Slack notifications |
+| `webhook_url` | string | Yes | Slack Incoming Webhook URL |
+
+**Setup:**
+1. Create an [Incoming Webhook](https://api.slack.com/messaging/webhooks) in your Slack workspace
+2. Copy the Webhook URL
+
+### Ntfy Channel
+
+```json
+{
+  "ntfy": {
+    "enabled": true,
+    "topic": "my-nextdns-alerts",
+    "server": "https://ntfy.sh"
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | No | Enable Ntfy notifications |
+| `topic` | string | Required | Topic name to subscribe to |
+| `server` | string | `https://ntfy.sh` | Optional self-hosted server URL |
 
 ### macOS Channel
 

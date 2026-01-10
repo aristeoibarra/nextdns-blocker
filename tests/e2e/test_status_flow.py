@@ -55,7 +55,8 @@ class TestStatusBasic:
                     "domain": "youtube.com",
                     "schedule": None,
                 }
-            ]
+            ],
+            "settings": {"timezone": TEST_TIMEZONE},
         }
         (config_dir / "config.json").write_text(json.dumps(domains_data))
 
@@ -311,7 +312,7 @@ class TestStatusScheduler:
         add_denylist_mock(responses, domains=[])
         add_allowlist_mock(responses, domains=[])
 
-        existing_cron = "*/2 * * * * /usr/local/bin/nextdns-blocker sync\n* * * * * /usr/local/bin/nextdns-blocker watchdog check"
+        existing_cron = "*/2 * * * * /usr/local/bin/nextdns-blocker config sync\n* * * * * /usr/local/bin/nextdns-blocker watchdog check"
 
         with patch("nextdns_blocker.cli.is_macos", return_value=False):
             with patch("nextdns_blocker.cli.is_windows", return_value=False):
@@ -387,7 +388,7 @@ class TestStatusProtectedDomains:
             "blocklist": [
                 {
                     "domain": "gambling.com",
-                    "protected": True,
+                    "unblock_delay": "never",
                     "schedule": None,
                 }
             ]

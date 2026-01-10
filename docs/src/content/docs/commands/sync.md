@@ -3,12 +3,16 @@ title: sync
 description: Synchronize domain states based on configured schedules
 ---
 
-The `sync` command is the core of NextDNS Blocker. It evaluates each domain against its schedule and updates the NextDNS denylist accordingly.
+:::caution[Command Moved]
+The root `sync` command has been removed. Use `nextdns-blocker config sync` instead.
+:::
+
+The `config sync` command is the core of NextDNS Blocker. It evaluates each domain against its schedule and updates the NextDNS denylist accordingly.
 
 ## Usage
 
 ```bash
-nextdns-blocker sync [OPTIONS]
+nextdns-blocker config sync [OPTIONS]
 ```
 
 ## Options
@@ -24,7 +28,7 @@ nextdns-blocker sync [OPTIONS]
 ### Basic Sync
 
 ```bash
-nextdns-blocker sync
+nextdns-blocker config sync
 ```
 
 Output:
@@ -40,7 +44,7 @@ Sync complete: 1 blocked, 1 unblocked
 Preview what would happen without making changes:
 
 ```bash
-nextdns-blocker sync --dry-run
+nextdns-blocker config sync --dry-run
 ```
 
 Output:
@@ -62,7 +66,7 @@ Summary: 1 would block, 0 would unblock
 Get detailed information about each step:
 
 ```bash
-nextdns-blocker sync --verbose
+nextdns-blocker config sync --verbose
 ```
 
 Output:
@@ -155,7 +159,7 @@ Syncs allowlist entries:
 
 ## Automatic Sync
 
-The watchdog runs sync automatically every 2 minutes:
+The watchdog runs `config sync` automatically every 2 minutes:
 
 ```bash
 # Install watchdog
@@ -211,7 +215,7 @@ Built-in rate limiting prevents API abuse:
 
 1. Check dry-run output:
    ```bash
-   nextdns-blocker sync --dry-run -v
+   nextdns-blocker config sync --dry-run -v
    ```
 
 2. Verify timezone:

@@ -197,9 +197,18 @@ class TestGetSchedulerType:
     @patch("nextdns_blocker.platform_utils.is_macos", return_value=False)
     @patch("nextdns_blocker.platform_utils.is_windows", return_value=False)
     @patch("nextdns_blocker.platform_utils.is_linux", return_value=True)
+    @patch("nextdns_blocker.platform_utils.has_systemd", return_value=False)
     def test_scheduler_cron(self, *mocks: Any) -> None:
-        """Test scheduler type is cron on Linux."""
+        """Test scheduler type is cron on Linux without systemd."""
         assert get_scheduler_type() == "cron"
+
+    @patch("nextdns_blocker.platform_utils.is_macos", return_value=False)
+    @patch("nextdns_blocker.platform_utils.is_windows", return_value=False)
+    @patch("nextdns_blocker.platform_utils.is_linux", return_value=True)
+    @patch("nextdns_blocker.platform_utils.has_systemd", return_value=True)
+    def test_scheduler_systemd(self, *mocks: Any) -> None:
+        """Test scheduler type is systemd on Linux with systemd."""
+        assert get_scheduler_type() == "systemd"
 
     @patch("nextdns_blocker.platform_utils.is_macos", return_value=False)
     @patch("nextdns_blocker.platform_utils.is_windows", return_value=False)

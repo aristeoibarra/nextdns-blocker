@@ -169,7 +169,7 @@ nextdns-blocker nextdns status
 
 ## Sync Behavior
 
-When you run `nextdns-blocker sync` (or the watchdog runs it automatically):
+When you run `nextdns-blocker config sync` (or the watchdog runs it automatically):
 
 1. **Categories** are activated/deactivated based on their schedule
 2. **Services** are activated/deactivated based on their schedule

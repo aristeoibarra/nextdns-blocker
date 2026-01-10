@@ -156,7 +156,7 @@ grep reddit.com ~/.local/share/nextdns-blocker/logs/*.log
 ### Enable Debug Logging
 
 ```bash
-nextdns-blocker sync --verbose
+nextdns-blocker config sync --verbose
 ```
 
 ## Log Rotation
@@ -276,7 +276,7 @@ Look for:
 
 ```bash
 # Enable verbose and capture
-nextdns-blocker sync --verbose 2>&1 | tee debug.log
+nextdns-blocker config sync --verbose 2>&1 | tee debug.log
 ```
 
 Share `debug.log` when reporting issues (redact API key).

@@ -312,12 +312,15 @@ class TestLoadConfigWithEnvFile:
 NEXTDNS_API_KEY=testapikey123
 NEXTDNS_PROFILE_ID=testprofile
 
-TIMEZONE=America/New_York
 API_TIMEOUT=30
 API_RETRIES=5
 """
         env_file = temp_dir / ".env"
         env_file.write_text(env_content)
+
+        # config.json with timezone setting
+        config_file = temp_dir / "config.json"
+        config_file.write_text('{"blocklist": [], "settings": {"timezone": "America/New_York"}}')
 
         # Clear existing env vars
         with patch.dict(os.environ, {}, clear=True):
@@ -330,14 +333,17 @@ API_RETRIES=5
             assert config["retries"] == 5
 
     def test_load_config_invalid_timezone_raises(self, temp_dir):
-        """Test that invalid timezone raises ConfigurationError."""
+        """Test that invalid timezone in config.json raises ConfigurationError."""
         env_content = """
 NEXTDNS_API_KEY=testkey12345
 NEXTDNS_PROFILE_ID=testprofile
-TIMEZONE=Invalid/Timezone
 """
         env_file = temp_dir / ".env"
         env_file.write_text(env_content)
+
+        # config.json with invalid timezone
+        config_file = temp_dir / "config.json"
+        config_file.write_text('{"blocklist": [], "settings": {"timezone": "Invalid/Timezone"}}')
 
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ConfigurationError) as exc_info:

@@ -27,9 +27,7 @@ def runner():
 def temp_config_dir(tmp_path):
     """Create a temporary config directory with .env file."""
     env_file = tmp_path / ".env"
-    env_file.write_text(
-        "NEXTDNS_API_KEY=test_key_12345\n" "NEXTDNS_PROFILE_ID=abc123\n" "TIMEZONE=UTC\n"
-    )
+    env_file.write_text("NEXTDNS_API_KEY=test_key_12345\nNEXTDNS_PROFILE_ID=abc123\nTIMEZONE=UTC\n")
     return tmp_path
 
 
@@ -253,7 +251,7 @@ class TestConfigEdit:
         """Test config edit fails when no config file exists."""
         # Create .env without DOMAINS_URL so it looks for local file
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test_key_12345\n" "NEXTDNS_PROFILE_ID=abc123\n")
+        env_file.write_text("NEXTDNS_API_KEY=test_key_12345\nNEXTDNS_PROFILE_ID=abc123\n")
 
         result = runner.invoke(main, ["config", "edit", "--config-dir", str(tmp_path)])
         assert result.exit_code == 1
@@ -264,7 +262,7 @@ class TestConfigEdit:
         """Test config edit opens editor."""
         # Create .env without DOMAINS_URL
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test_key_12345\n" "NEXTDNS_PROFILE_ID=abc123\n")
+        env_file.write_text("NEXTDNS_API_KEY=test_key_12345\nNEXTDNS_PROFILE_ID=abc123\n")
 
         config_file = tmp_path / NEW_CONFIG_FILE
         config_file.write_text(json.dumps(new_config_format))
@@ -282,37 +280,6 @@ class TestConfigEdit:
             mock_run.assert_called_once()
 
 
-class TestDeprecationWarnings:
-    """Test deprecation warnings for root commands."""
-
-    def test_root_validate_shows_deprecation(self, runner, temp_config_dir, new_config_format):
-        """Test root validate command shows deprecation warning."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
-        config_file.write_text(json.dumps(new_config_format))
-
-        result = runner.invoke(main, ["validate", "--config-dir", str(temp_config_dir)])
-        assert "Deprecated" in result.output
-        assert "config validate" in result.output
-
-    def test_root_validate_json_no_deprecation(self, runner, temp_config_dir, new_config_format):
-        """Test root validate --json does not show deprecation warning."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
-        config_file.write_text(json.dumps(new_config_format))
-
-        result = runner.invoke(main, ["validate", "--json", "--config-dir", str(temp_config_dir)])
-        # JSON output should not have deprecation warning mixed in
-        output = json.loads(result.output)
-        assert "valid" in output
-
-    def test_config_validate_no_deprecation(self, runner, temp_config_dir, new_config_format):
-        """Test config validate does not show deprecation warning."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
-        config_file.write_text(json.dumps(new_config_format))
-
-        result = runner.invoke(main, ["config", "validate", "--config-dir", str(temp_config_dir)])
-        assert "Deprecated" not in result.output
-
-
 class TestBlocklistSupport:
     """Test blocklist key support."""
 
@@ -324,3 +291,292 @@ class TestBlocklistSupport:
         result = runner.invoke(main, ["config", "validate", "--config-dir", str(temp_config_dir)])
         assert result.exit_code == 0
         assert "1 domains" in result.output or "Configuration OK" in result.output
+
+
+class TestConfigDiff:
+    """Test config diff command."""
+
+    def test_diff_help(self, runner):
+        """Test config diff --help shows usage."""
+        result = runner.invoke(main, ["config", "diff", "--help"])
+        assert result.exit_code == 0
+        assert "Show differences" in result.output
+
+    def test_diff_file_not_found(self, runner, temp_config_dir):
+        """Test config diff when no config file exists."""
+        result = runner.invoke(main, ["config", "diff", "--config-dir", str(temp_config_dir)])
+        assert result.exit_code == 1
+        assert "not found" in result.output
+
+    def test_diff_empty_local_and_remote(self, runner, temp_config_dir):
+        """Test diff when both local and remote are empty."""
+        config = {"blocklist": [], "allowlist": []}
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            mock_client.return_value.get_denylist.return_value = []
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(main, ["config", "diff", "--config-dir", str(temp_config_dir)])
+
+        assert result.exit_code == 0
+        assert "Empty on both sides" in result.output
+
+    def test_diff_shows_local_only(self, runner, temp_config_dir):
+        """Test diff shows domains that exist only locally."""
+        config = {
+            "blocklist": [{"domain": "local-only.com"}],
+            "allowlist": [],
+        }
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            mock_client.return_value.get_denylist.return_value = []
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(main, ["config", "diff", "--config-dir", str(temp_config_dir)])
+
+        assert result.exit_code == 0
+        assert "local-only.com" in result.output
+        assert "local only" in result.output
+
+    def test_diff_shows_remote_only(self, runner, temp_config_dir):
+        """Test diff shows domains that exist only remotely."""
+        config = {"blocklist": [], "allowlist": []}
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            mock_client.return_value.get_denylist.return_value = [
+                {"id": "remote-only.com", "active": True}
+            ]
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(main, ["config", "diff", "--config-dir", str(temp_config_dir)])
+
+        assert result.exit_code == 0
+        assert "remote-only.com" in result.output
+        assert "remote only" in result.output
+
+    def test_diff_shows_in_sync(self, runner, temp_config_dir):
+        """Test diff shows domains that are in sync."""
+        config = {
+            "blocklist": [{"domain": "synced.com"}],
+            "allowlist": [],
+        }
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            mock_client.return_value.get_denylist.return_value = [
+                {"id": "synced.com", "active": True}
+            ]
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(main, ["config", "diff", "--config-dir", str(temp_config_dir)])
+
+        assert result.exit_code == 0
+        assert "synced.com" in result.output
+        assert "in sync" in result.output
+
+    def test_diff_expands_categories(self, runner, temp_config_dir):
+        """Test diff includes domains from categories."""
+        config = {
+            "blocklist": [],
+            "categories": [{"id": "social", "domains": ["twitter.com", "facebook.com"]}],
+            "allowlist": [],
+        }
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            mock_client.return_value.get_denylist.return_value = []
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(main, ["config", "diff", "--config-dir", str(temp_config_dir)])
+
+        assert result.exit_code == 0
+        assert "twitter.com" in result.output
+        assert "facebook.com" in result.output
+
+    def test_diff_json_output(self, runner, temp_config_dir):
+        """Test diff --json output format."""
+        config = {
+            "blocklist": [{"domain": "local.com"}],
+            "allowlist": [],
+        }
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            mock_client.return_value.get_denylist.return_value = [
+                {"id": "remote.com", "active": True}
+            ]
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(
+                main, ["config", "diff", "--json", "--config-dir", str(temp_config_dir)]
+            )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert "blocklist" in output
+        assert "local.com" in output["blocklist"]["local_only"]
+        assert "remote.com" in output["blocklist"]["remote_only"]
+        assert "summary" in output
+
+    def test_diff_summary_counts(self, runner, temp_config_dir):
+        """Test diff shows summary counts."""
+        config = {
+            "blocklist": [{"domain": "a.com"}, {"domain": "b.com"}],
+            "allowlist": [{"domain": "c.com"}],
+        }
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            mock_client.return_value.get_denylist.return_value = [
+                {"id": "a.com", "active": True},
+                {"id": "d.com", "active": True},
+            ]
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(main, ["config", "diff", "--config-dir", str(temp_config_dir)])
+
+        assert result.exit_code == 0
+        assert "Summary" in result.output
+
+
+class TestConfigPull:
+    """Test config pull command."""
+
+    def test_pull_help(self, runner):
+        """Test config pull --help shows usage."""
+        result = runner.invoke(main, ["config", "pull", "--help"])
+        assert result.exit_code == 0
+        assert "Fetch domains from NextDNS" in result.output
+        assert "--dry-run" in result.output
+        assert "--merge" in result.output
+
+    def test_pull_file_not_found(self, runner, temp_config_dir):
+        """Test config pull when no config file exists."""
+        result = runner.invoke(main, ["config", "pull", "--config-dir", str(temp_config_dir)])
+        assert result.exit_code == 1
+        assert "not found" in result.output
+
+    def test_pull_dry_run_shows_preview(self, runner, temp_config_dir):
+        """Test pull --dry-run shows preview without changes."""
+        config = {"blocklist": [], "allowlist": []}
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            mock_client.return_value.get_denylist.return_value = [{"id": "new.com", "active": True}]
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(
+                main, ["config", "pull", "--dry-run", "--config-dir", str(temp_config_dir)]
+            )
+
+        assert result.exit_code == 0
+        assert "Dry run" in result.output
+        # Verify file was NOT modified
+        updated_config = json.loads(config_file.read_text())
+        assert updated_config["blocklist"] == []
+
+    def test_pull_merge_adds_new_domains(self, runner, temp_config_dir):
+        """Test pull --merge adds new domains without removing existing."""
+        config = {
+            "blocklist": [{"domain": "existing.com", "unblock_delay": "30m", "locked": True}],
+            "allowlist": [],
+        }
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            mock_client.return_value.get_denylist.return_value = [
+                {"id": "existing.com", "active": True},
+                {"id": "new.com", "active": True},
+            ]
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(
+                main, ["config", "pull", "--merge", "--config-dir", str(temp_config_dir)]
+            )
+
+        assert result.exit_code == 0
+        assert "+1 added" in result.output
+
+        # Verify file was updated correctly
+        updated_config = json.loads(config_file.read_text())
+        domains = [d["domain"] for d in updated_config["blocklist"]]
+        assert "existing.com" in domains
+        assert "new.com" in domains
+
+        # Verify metadata was preserved
+        existing = next(d for d in updated_config["blocklist"] if d["domain"] == "existing.com")
+        assert existing.get("unblock_delay") == "30m"
+        assert existing.get("locked") is True
+
+    def test_pull_merge_warns_local_only(self, runner, temp_config_dir):
+        """Test pull --merge warns about domains only in local."""
+        config = {
+            "blocklist": [{"domain": "local-only.com"}],
+            "allowlist": [],
+        }
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            mock_client.return_value.get_denylist.return_value = []
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(
+                main, ["config", "pull", "--merge", "--config-dir", str(temp_config_dir)]
+            )
+
+        assert result.exit_code == 0
+        assert "Warning" in result.output or "local" in result.output.lower()
+
+    def test_pull_blocks_protected_removal(self, runner, temp_config_dir):
+        """Test pull refuses to remove protected domains."""
+        config = {
+            "blocklist": [{"domain": "protected.com", "locked": True}],
+            "allowlist": [],
+        }
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            # Remote does NOT have the protected domain
+            mock_client.return_value.get_denylist.return_value = []
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(
+                main, ["config", "pull", "-y", "--config-dir", str(temp_config_dir)]
+            )
+
+        assert result.exit_code == 1
+        assert "protected" in result.output.lower()
+        assert "protected.com" in result.output
+
+    def test_pull_creates_backup(self, runner, temp_config_dir):
+        """Test pull creates backup before modifying."""
+        config = {"blocklist": [], "allowlist": []}
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(config))
+
+        with patch("nextdns_blocker.config_cli._get_client") as mock_client:
+            mock_client.return_value.get_denylist.return_value = [{"id": "new.com", "active": True}]
+            mock_client.return_value.get_allowlist.return_value = []
+
+            result = runner.invoke(
+                main, ["config", "pull", "--merge", "--config-dir", str(temp_config_dir)]
+            )
+
+        assert result.exit_code == 0
+        # Check backup file was created
+        backups = list(temp_config_dir.glob(".config.json.backup.*"))
+        assert len(backups) == 1

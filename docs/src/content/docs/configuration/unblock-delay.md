@@ -342,7 +342,7 @@ To make bypass harder:
 
 If action already executed:
 - Re-block via schedule (wait for next sync)
-- Or use `nextdns-blocker sync` to re-apply rules
+- Or use `nextdns-blocker config sync` to re-apply rules
 
 ### Need to change delay for domain
 

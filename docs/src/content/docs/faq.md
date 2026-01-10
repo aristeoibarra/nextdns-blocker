@@ -218,7 +218,7 @@ nextdns-blocker watchdog uninstall
 1. Check schedule: Is it outside available hours?
 2. Check timezone: Is it correct?
 3. Check watchdog: Is it running?
-4. Force sync: `nextdns-blocker sync`
+4. Force sync: `nextdns-blocker config sync`
 5. Flush DNS cache
 
 ### Commands not working

@@ -62,7 +62,7 @@ def protected_domain_config():
     return {
         "domain": "protected.example.com",
         "description": "Protected domain",
-        "protected": True,
+        "unblock_delay": "never",
         "schedule": None,
     }
 
@@ -79,9 +79,9 @@ def mixed_domains_config():
                 ]
             },
         },
-        {"domain": "protected1.com", "protected": True, "schedule": None},
-        {"domain": "another.com", "protected": False, "schedule": None},
-        {"domain": "protected2.com", "protected": True, "schedule": None},
+        {"domain": "protected1.com", "unblock_delay": "never", "schedule": None},
+        {"domain": "another.com", "schedule": None},
+        {"domain": "protected2.com", "unblock_delay": "never", "schedule": None},
     ]
 
 
@@ -122,7 +122,7 @@ def domains_json_content():
                     ]
                 },
             },
-            {"domain": "blocked.com", "protected": True, "schedule": None},
+            {"domain": "blocked.com", "unblock_delay": "never", "schedule": None},
         ]
     }
 

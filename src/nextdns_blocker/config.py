@@ -48,6 +48,14 @@ DISCORD_WEBHOOK_PATTERN = re.compile(
     r"^https://discord\.com/api/webhooks/\d{17,20}/[a-zA-Z0-9_.-]{60,100}$"
 )
 
+# Telegram Bot Token pattern: 123456:ABC-DEF...
+TELEGRAM_BOT_TOKEN_PATTERN = re.compile(r"^\d+:[a-zA-Z0-9_-]{35,}$")
+
+# Slack Webhook pattern
+SLACK_WEBHOOK_PATTERN = re.compile(
+    r"^https://hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[a-zA-Z0-9]+$"
+)
+
 # =============================================================================
 # UNBLOCK DELAY SETTINGS
 # =============================================================================
@@ -161,6 +169,36 @@ def validate_discord_webhook(url: str) -> bool:
     if not url or not isinstance(url, str):
         return False
     return DISCORD_WEBHOOK_PATTERN.match(url.strip()) is not None
+
+
+def validate_telegram_bot_token(token: str) -> bool:
+    """
+    Validate Telegram Bot Token format.
+
+    Args:
+        token: Bot token string to validate
+
+    Returns:
+        True if valid format, False otherwise
+    """
+    if not token or not isinstance(token, str):
+        return False
+    return TELEGRAM_BOT_TOKEN_PATTERN.match(token.strip()) is not None
+
+
+def validate_slack_webhook(url: str) -> bool:
+    """
+    Validate Slack Webhook URL format.
+
+    Args:
+        url: Webhook URL string to validate
+
+    Returns:
+        True if valid format, False otherwise
+    """
+    if not url or not isinstance(url, str):
+        return False
+    return SLACK_WEBHOOK_PATTERN.match(url.strip()) is not None
 
 
 def validate_unblock_delay(delay: str) -> bool:
@@ -1496,12 +1534,11 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
 
 def _load_timezone_setting(config_dir: Path) -> str:
     """
-    Load timezone setting from config.json or fall back to .env/default.
+    Load timezone setting from config.json or fall back to default.
 
     Priority:
     1. config.json settings.timezone
-    2. TIMEZONE environment variable (legacy)
-    3. DEFAULT_TIMEZONE constant
+    2. DEFAULT_TIMEZONE constant
 
     Args:
         config_dir: Directory containing config files
@@ -1509,7 +1546,6 @@ def _load_timezone_setting(config_dir: Path) -> str:
     Returns:
         Timezone string (e.g., 'America/New_York')
     """
-    # Try config.json first
     config_file = config_dir / "config.json"
     if config_file.exists():
         try:
@@ -1529,11 +1565,6 @@ def _load_timezone_setting(config_dir: Path) -> str:
             logger.debug(f"Could not parse timezone from config.json: {e}")
         except OSError as e:
             logger.debug(f"Could not read config.json for timezone: {e}")
-
-    # Fall back to environment variable (legacy support)
-    env_tz = os.getenv("TIMEZONE")
-    if env_tz:
-        return env_tz
 
     # Default
     return DEFAULT_TIMEZONE
@@ -1805,7 +1836,7 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
     # Build configuration dictionary
     config = _build_config_dict(config_dir)
 
-    # Load timezone from config.json (or legacy .env)
+    # Load timezone from config.json
     config["timezone"] = _load_timezone_setting(config_dir)
 
     # Validate all configuration
@@ -1822,19 +1853,13 @@ def get_protected_domains(domains: list[dict[str, Any]]) -> list[str]:
     """
     Extract domains that cannot be unblocked from config.
 
-    Includes domains with protected=true (legacy) or unblock_delay="never".
-
     Args:
         domains: List of domain configurations
 
     Returns:
-        List of protected domain names
+        List of domain names with unblock_delay="never"
     """
-    return [
-        d["domain"]
-        for d in domains
-        if d.get("protected", False) or d.get("unblock_delay") == "never"
-    ]
+    return [d["domain"] for d in domains if d.get("unblock_delay") == "never"]
 
 
 def get_unblock_delay(domains: list[dict[str, Any]], domain: str) -> Optional[str]:
@@ -1847,12 +1872,8 @@ def get_unblock_delay(domains: list[dict[str, Any]], domain: str) -> Optional[st
 
     Returns:
         unblock_delay value ('never', '24h', '4h', '30m', '0') or None if not set.
-        Returns 'never' for domains with protected=true (backward compatibility).
     """
     for d in domains:
         if d.get("domain") == domain:
-            # Backward compatibility: protected=true -> unblock_delay='never'
-            if d.get("protected", False):
-                return "never"
             return d.get("unblock_delay")
     return None

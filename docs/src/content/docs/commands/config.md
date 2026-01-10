@@ -13,7 +13,9 @@ The `config` command group provides subcommands for viewing, editing, and valida
 | `edit` | Open config in your editor |
 | `validate` | Validate configuration syntax |
 | `set` | Set configuration values |
-| `sync` | Sync domains (alias for root sync) |
+| `sync` | Synchronize domain states based on schedules |
+| `diff` | Show differences between local and remote NextDNS |
+| `pull` | Fetch domains from NextDNS and update local config |
 
 ## config show
 
@@ -90,16 +92,12 @@ export EDITOR=vim
 Changes take effect on the next sync (within 2 minutes) or immediately if you run:
 
 ```bash
-nextdns-blocker sync
+nextdns-blocker config sync
 ```
 
 ## config validate
 
 Validate the configuration file syntax and structure.
-
-:::tip
-This is also available as a standalone command: [`nextdns-blocker validate`](/commands/validate/)
-:::
 
 ### Usage
 
@@ -198,7 +196,7 @@ See [Timezone Configuration](/configuration/timezone/) for more details.
 
 ## config sync
 
-Alias for `nextdns-blocker sync`. Provided for command grouping convenience.
+The primary command for synchronizing domain states based on configured schedules.
 
 ### Usage
 
@@ -206,9 +204,199 @@ Alias for `nextdns-blocker sync`. Provided for command grouping convenience.
 nextdns-blocker config sync [OPTIONS]
 ```
 
-Accepts the same options as `sync`:
-- `--dry-run`
-- `-v, --verbose`
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--dry-run` | Preview changes without applying them |
+| `-v, --verbose` | Show detailed output |
+| `--help` | Show help message |
+
+### Examples
+
+```bash
+# Basic sync
+nextdns-blocker config sync
+
+# Preview changes
+nextdns-blocker config sync --dry-run
+
+# Verbose output
+nextdns-blocker config sync -v
+```
+
+See [sync command reference](/commands/sync/) for complete documentation.
+
+## config diff
+
+Show differences between your local `config.json` and the current state of your NextDNS denylist and allowlist.
+
+### Usage
+
+```bash
+nextdns-blocker config diff [OPTIONS]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output in JSON format |
+| `--config-dir PATH` | Config directory (default: auto-detect) |
+
+### Example
+
+```bash
+nextdns-blocker config diff
+```
+
+### Output
+
+```
+  NextDNS Config Diff
+  ━━━━━━━━━━━━━━━━━━
+
+  Denylist:
+    + twitter.com  (remote only)
+    - reddit.com  (local only)
+    = youtube.com  (in sync)
+    = instagram.com  (in sync)
+    ... and 3 more in sync
+
+  Allowlist:
+    + github.com  (remote only)
+    = aws.amazon.com  (in sync)
+
+  Summary:
+    Denylist:  1 local, 1 remote, 5 sync
+    Allowlist: 0 local, 1 remote, 1 sync
+```
+
+### Legend
+
+| Symbol | Meaning |
+|--------|---------|
+| `+` | Exists in NextDNS but not in local config |
+| `-` | Exists in local config but not in NextDNS |
+| `=` | Exists in both (in sync) |
+
+### JSON Output
+
+```bash
+nextdns-blocker config diff --json
+```
+
+```json
+{
+  "blocklist": {
+    "local_only": ["reddit.com"],
+    "remote_only": ["twitter.com"],
+    "in_sync": ["youtube.com", "instagram.com"]
+  },
+  "allowlist": {
+    "local_only": [],
+    "remote_only": ["github.com"],
+    "in_sync": ["aws.amazon.com"]
+  },
+  "summary": {
+    "blocklist": {"local": 1, "remote": 1, "sync": 2},
+    "allowlist": {"local": 0, "remote": 1, "sync": 1}
+  }
+}
+```
+
+## config pull
+
+Fetch domains from NextDNS and update your local `config.json`. Useful for syncing changes made directly in the NextDNS dashboard to your local configuration.
+
+### Usage
+
+```bash
+nextdns-blocker config pull [OPTIONS]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--dry-run` | Preview changes without applying |
+| `--merge` | Merge with existing, preserving metadata |
+| `-y, --yes` | Skip confirmation prompt |
+| `--config-dir PATH` | Config directory (default: auto-detect) |
+
+### Modes
+
+#### Overwrite Mode (Default)
+
+Replaces local blocklist/allowlist with remote state:
+
+```bash
+nextdns-blocker config pull
+```
+
+**Warning:** This removes all local metadata (schedules, unblock delays, locked status).
+
+#### Merge Mode
+
+Adds new domains from remote without removing existing ones:
+
+```bash
+nextdns-blocker config pull --merge
+```
+
+This preserves:
+- Existing domain metadata (schedules, delays)
+- Locked items
+- Local-only domains
+
+### Examples
+
+```bash
+# Preview what would change
+nextdns-blocker config pull --dry-run
+
+# Merge new domains, keep existing settings
+nextdns-blocker config pull --merge
+
+# Overwrite without confirmation
+nextdns-blocker config pull -y
+```
+
+### Output
+
+```
+  Pull Summary:
+    Blocklist: +5 added
+    Allowlist: +2 added
+
+  Warning: 3 blocklist domains exist locally but not in remote
+
+  Config updated
+  Run 'ndb config sync' to apply changes to NextDNS
+```
+
+### Protection
+
+Protected domains (with `locked: true` or `unblock_delay: "never"`) cannot be removed by pull:
+
+```
+  Error: Pull would remove protected domains
+
+  Protected blocklist domains:
+    porn (locked)
+
+  Tip: Use --merge to add remote domains without removing local ones.
+```
+
+### Backup
+
+A backup is automatically created before modifying config:
+
+```
+  Backup: /Users/you/.config/nextdns-blocker/.config.json.backup.20240115_143000
+```
+
+Only the 3 most recent backups are kept.
 
 ## Configuration File Locations
 
@@ -282,7 +470,7 @@ Or set the `$EDITOR` environment variable in your shell profile.
 Force a sync:
 
 ```bash
-nextdns-blocker sync
+nextdns-blocker config sync
 ```
 
 Or check for validation errors:

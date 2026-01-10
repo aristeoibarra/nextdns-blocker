@@ -95,7 +95,7 @@ class TestSyncBlocksDuringRestrictedHours:
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir), "-v"],
+                    ["config", "sync", "--config-dir", str(config_dir), "-v"],
                 )
 
         assert result.exit_code == 0, f"Sync failed: {result.output}"
@@ -161,7 +161,7 @@ class TestSyncBlocksDuringRestrictedHours:
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir), "-v"],
+                    ["config", "sync", "--config-dir", str(config_dir), "-v"],
                 )
 
         assert result.exit_code == 0, f"Sync failed: {result.output}"
@@ -194,7 +194,7 @@ class TestSyncProtectedDomains:
             "blocklist": [
                 {
                     "domain": "gambling.com",
-                    "protected": True,
+                    "unblock_delay": "never",
                     "schedule": None,  # No schedule means always blocked
                 }
             ]
@@ -210,7 +210,7 @@ class TestSyncProtectedDomains:
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir), "-v"],
+                    ["config", "sync", "--config-dir", str(config_dir), "-v"],
                 )
 
         assert result.exit_code == 0
@@ -275,7 +275,7 @@ class TestSyncDryRun:
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                 result = runner.invoke(
                     main,
-                    ["sync", "--dry-run", "--config-dir", str(config_dir)],
+                    ["config", "sync", "--dry-run", "--config-dir", str(config_dir)],
                 )
 
         assert result.exit_code == 0
@@ -346,7 +346,7 @@ class TestFullDayCycle:
                 with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                     result = runner.invoke(
                         main,
-                        ["sync", "--config-dir", str(config_dir)],
+                        ["config", "sync", "--config-dir", str(config_dir)],
                     )
 
             assert result.exit_code == 0
@@ -380,7 +380,7 @@ class TestFullDayCycle:
                 with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                     result = runner.invoke(
                         main,
-                        ["sync", "--config-dir", str(config_dir)],
+                        ["config", "sync", "--config-dir", str(config_dir)],
                     )
 
             assert result.exit_code == 0
@@ -414,7 +414,7 @@ class TestFullDayCycle:
                 with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                     result = runner.invoke(
                         main,
-                        ["sync", "--config-dir", str(config_dir)],
+                        ["config", "sync", "--config-dir", str(config_dir)],
                     )
 
             assert result.exit_code == 0
@@ -499,7 +499,7 @@ class TestSyncMultipleDomains:
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir)],
+                    ["config", "sync", "--config-dir", str(config_dir)],
                 )
 
         assert result.exit_code == 0
@@ -554,7 +554,7 @@ class TestSyncNoChanges:
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir), "-v"],
+                    ["config", "sync", "--config-dir", str(config_dir), "-v"],
                 )
 
         assert result.exit_code == 0

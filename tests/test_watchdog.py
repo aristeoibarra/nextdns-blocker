@@ -150,7 +150,7 @@ class TestCronHelpers:
 
     def test_has_sync_cron_present(self):
         """Should return True when sync cron is present."""
-        crontab = "*/2 * * * * cd /path && nextdns-blocker sync"
+        crontab = "*/2 * * * * cd /path && nextdns-blocker config sync"
         assert watchdog.has_sync_cron(crontab) is True
 
     def test_has_sync_cron_absent(self):
@@ -171,7 +171,7 @@ class TestCronHelpers:
     def test_filter_our_cron_jobs_removes_blocker(self):
         """Should remove nextdns-blocker jobs."""
         crontab = """0 * * * * other_job
-*/2 * * * * cd /path && nextdns-blocker sync
+*/2 * * * * cd /path && nextdns-blocker config sync
 30 * * * * another_job"""
         result = watchdog.filter_our_cron_jobs(crontab)
         assert len(result) == 2
@@ -272,13 +272,17 @@ class TestCmdCheck:
         assert "disabled" in result.output
 
     def test_cmd_check_all_present(self, runner):
-        """Should do nothing when all cron jobs present."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        """Should do nothing when all cron jobs present on Linux without systemd."""
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
 
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=crontab):
-                result = runner.invoke(watchdog.cmd_check)
-                assert result.exit_code == 0
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=crontab):
+                        result = runner.invoke(watchdog.cmd_check)
+                        assert result.exit_code == 0
 
 
 class TestCmdStatus:
@@ -292,38 +296,45 @@ class TestCmdStatus:
         return CliRunner()
 
     def test_cmd_status_all_ok(self, runner, mock_disabled_file):
-        """Should show OK status when all cron jobs present."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        """Should show OK status when all cron jobs present on Linux without systemd."""
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
 
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=crontab):
-                    result = runner.invoke(watchdog.cmd_status)
-                    assert result.exit_code == 0
-                    assert "ok" in result.output
-                    assert "active" in result.output
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=crontab):
+                        result = runner.invoke(watchdog.cmd_status)
+                        assert result.exit_code == 0
+                        assert "ok" in result.output
+                        assert "active" in result.output
 
     def test_cmd_status_missing_crons(self, runner, mock_disabled_file):
-        """Should show missing status when cron jobs absent."""
+        """Should show missing status when cron jobs absent on Linux without systemd."""
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=""):
-                    result = runner.invoke(watchdog.cmd_status)
-                    assert result.exit_code == 0
-                    assert "missing" in result.output
-                    assert "compromised" in result.output
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=""):
+                        result = runner.invoke(watchdog.cmd_status)
+                        assert result.exit_code == 0
+                        assert "missing" in result.output
+                        assert "compromised" in result.output
 
     def test_cmd_status_disabled(self, runner, mock_disabled_file):
         """Should show disabled status when watchdog disabled."""
         mock_disabled_file.write_text("permanent")
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
 
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=crontab):
-                    result = runner.invoke(watchdog.cmd_status)
-                    assert result.exit_code == 0
-                    assert "DISABLED" in result.output
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=crontab):
+                        result = runner.invoke(watchdog.cmd_status)
+                        assert result.exit_code == 0
+                        assert "DISABLED" in result.output
 
 
 class TestCmdDisable:
@@ -427,36 +438,39 @@ class TestCmdInstall:
         return CliRunner()
 
     def test_cmd_install_success(self, runner, mock_audit_log_file):
-        """Should install cron jobs successfully."""
+        """Should install cron jobs successfully on Linux without systemd."""
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=""):
-                    with patch.object(watchdog, "set_crontab", return_value=True):
-                        result = runner.invoke(watchdog.cmd_install)
-                        assert result.exit_code == 0
-                        assert "cron installed" in result.output
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=""):
+                        with patch.object(watchdog, "set_crontab", return_value=True):
+                            result = runner.invoke(watchdog.cmd_install)
+                            assert result.exit_code == 0
+                            assert "cron installed" in result.output
 
     def test_cmd_install_failure(self, runner):
-        """Should return error when cron install fails."""
+        """Should return error when cron install fails on Linux without systemd."""
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=""):
-                    with patch.object(watchdog, "set_crontab", return_value=False):
-                        result = runner.invoke(watchdog.cmd_install)
-                        assert result.exit_code == 1
-                        assert "failed" in result.output
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=""):
+                        with patch.object(watchdog, "set_crontab", return_value=False):
+                            result = runner.invoke(watchdog.cmd_install)
+                            assert result.exit_code == 1
+                            assert "failed" in result.output
 
     def test_cmd_install_preserves_existing(self, runner, mock_audit_log_file):
-        """Should preserve existing cron jobs."""
+        """Should preserve existing cron jobs on Linux without systemd."""
         existing_cron = "0 * * * * other_job\n"
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=existing_cron):
-                    with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
-                        runner.invoke(watchdog.cmd_install)
-                        # Verify existing job is preserved
-                        call_arg = mock_set.call_args[0][0]
-                        assert "other_job" in call_arg
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=existing_cron):
+                        with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
+                            runner.invoke(watchdog.cmd_install)
+                            # Verify existing job is preserved
+                            call_arg = mock_set.call_args[0][0]
+                            assert "other_job" in call_arg
 
 
 class TestCmdUninstall:
@@ -470,36 +484,41 @@ class TestCmdUninstall:
         return CliRunner()
 
     def test_cmd_uninstall_success(self, runner, mock_audit_log_file):
-        """Should uninstall cron jobs successfully."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        """Should uninstall cron jobs successfully on Linux without systemd."""
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=crontab):
-                    with patch.object(watchdog, "set_crontab", return_value=True):
-                        result = runner.invoke(watchdog.cmd_uninstall)
-                        assert result.exit_code == 0
-                        assert "removed" in result.output
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=crontab):
+                        with patch.object(watchdog, "set_crontab", return_value=True):
+                            result = runner.invoke(watchdog.cmd_uninstall)
+                            assert result.exit_code == 0
+                            assert "removed" in result.output
 
     def test_cmd_uninstall_failure(self, runner):
-        """Should return error when uninstall fails."""
+        """Should return error when uninstall fails on Linux without systemd."""
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=""):
-                    with patch.object(watchdog, "set_crontab", return_value=False):
-                        result = runner.invoke(watchdog.cmd_uninstall)
-                        assert result.exit_code == 1
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=""):
+                        with patch.object(watchdog, "set_crontab", return_value=False):
+                            result = runner.invoke(watchdog.cmd_uninstall)
+                            assert result.exit_code == 1
 
     def test_cmd_uninstall_preserves_other_jobs(self, runner, mock_audit_log_file):
-        """Should preserve non-blocker cron jobs."""
-        crontab = "0 * * * * other_job\n*/2 * * * * nextdns-blocker sync\n"
+        """Should preserve non-blocker cron jobs on Linux without systemd."""
+        crontab = "0 * * * * other_job\n*/2 * * * * nextdns-blocker config sync\n"
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=crontab):
-                    with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
-                        runner.invoke(watchdog.cmd_uninstall)
-                        call_arg = mock_set.call_args[0][0]
-                        assert "other_job" in call_arg
-                        assert "nextdns-blocker" not in call_arg
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=crontab):
+                        with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
+                            runner.invoke(watchdog.cmd_uninstall)
+                            call_arg = mock_set.call_args[0][0]
+                            assert "other_job" in call_arg
+                            assert "nextdns-blocker" not in call_arg
 
 
 class TestCmdCheckRestoration:
@@ -513,11 +532,11 @@ class TestCmdCheckRestoration:
         return CliRunner()
 
     def test_cmd_check_restores_missing_sync(self, runner, mock_disabled_file, mock_audit_log_file):
-        """Should restore missing sync cron."""
+        """Should restore missing sync cron on Linux without systemd."""
         # First call returns no sync, second returns with sync added
         crontab_states = [
             "* * * * * nextdns-blocker watchdog check\n",
-            "* * * * * nextdns-blocker watchdog check\n*/2 * * * * nextdns-blocker sync\n",
+            "* * * * * nextdns-blocker watchdog check\n*/2 * * * * nextdns-blocker config sync\n",
         ]
         call_count = [0]
 
@@ -528,20 +547,21 @@ class TestCmdCheckRestoration:
 
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
-                    with patch.object(watchdog, "set_crontab", return_value=True):
-                        with patch("subprocess.run"):
-                            result = runner.invoke(watchdog.cmd_check)
-                            assert result.exit_code == 0
-                            assert "sync cron restored" in result.output
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
+                        with patch.object(watchdog, "set_crontab", return_value=True):
+                            with patch("subprocess.run"):
+                                result = runner.invoke(watchdog.cmd_check)
+                                assert result.exit_code == 0
+                                assert "sync cron restored" in result.output
 
     def test_cmd_check_restores_missing_watchdog(
         self, runner, mock_disabled_file, mock_audit_log_file
     ):
-        """Should restore missing watchdog cron."""
+        """Should restore missing watchdog cron on Linux without systemd."""
         crontab_states = [
-            "*/2 * * * * nextdns-blocker sync\n",
-            "*/2 * * * * nextdns-blocker sync\n",
+            "*/2 * * * * nextdns-blocker config sync\n",
+            "*/2 * * * * nextdns-blocker config sync\n",
         ]
         call_count = [0]
 
@@ -552,12 +572,13 @@ class TestCmdCheckRestoration:
 
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
-                    with patch.object(watchdog, "set_crontab", return_value=True):
-                        with patch("subprocess.run"):
-                            result = runner.invoke(watchdog.cmd_check)
-                            assert result.exit_code == 0
-                            assert "watchdog cron restored" in result.output
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
+                        with patch.object(watchdog, "set_crontab", return_value=True):
+                            with patch("subprocess.run"):
+                                result = runner.invoke(watchdog.cmd_check)
+                                assert result.exit_code == 0
+                                assert "watchdog cron restored" in result.output
 
 
 class TestAuditLogWatchdog:
@@ -608,36 +629,42 @@ class TestMain:
         """Should run status command."""
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=""):
-                    result = runner.invoke(watchdog.main, ["status"])
-                    assert result.exit_code == 0
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=""):
+                        result = runner.invoke(watchdog.main, ["status"])
+                        assert result.exit_code == 0
 
     def test_main_check_command(self, runner, mock_disabled_file):
         """Should run check command."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=crontab):
-                    result = runner.invoke(watchdog.main, ["check"])
-                    assert result.exit_code == 0
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=crontab):
+                        result = runner.invoke(watchdog.main, ["check"])
+                        assert result.exit_code == 0
 
     def test_main_install_command(self, runner, mock_audit_log_file):
         """Should run install command."""
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=""):
-                    with patch.object(watchdog, "set_crontab", return_value=True):
-                        result = runner.invoke(watchdog.main, ["install"])
-                        assert result.exit_code == 0
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=""):
+                        with patch.object(watchdog, "set_crontab", return_value=True):
+                            result = runner.invoke(watchdog.main, ["install"])
+                            assert result.exit_code == 0
 
     def test_main_uninstall_command(self, runner, mock_audit_log_file):
         """Should run uninstall command."""
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=""):
-                    with patch.object(watchdog, "set_crontab", return_value=True):
-                        result = runner.invoke(watchdog.main, ["uninstall"])
-                        assert result.exit_code == 0
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=""):
+                        with patch.object(watchdog, "set_crontab", return_value=True):
+                            result = runner.invoke(watchdog.main, ["uninstall"])
+                            assert result.exit_code == 0
 
     def test_main_disable_command(self, runner, mock_disabled_file, mock_audit_log_file):
         """Should run disable command."""
@@ -861,14 +888,15 @@ class TestCmdInstallMultiplatform:
                             assert "launchd" in result.output
 
     def test_cmd_install_linux(self, runner, mock_audit_log_file):
-        """Should use cron on Linux."""
+        """Should use cron on Linux without systemd."""
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=""):
-                    with patch.object(watchdog, "set_crontab", return_value=True):
-                        result = runner.invoke(watchdog.cmd_install)
-                        assert result.exit_code == 0
-                        assert "cron" in result.output
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=""):
+                        with patch.object(watchdog, "set_crontab", return_value=True):
+                            result = runner.invoke(watchdog.cmd_install)
+                            assert result.exit_code == 0
+                            assert "cron" in result.output
 
 
 class TestCmdUninstallMultiplatform:
@@ -898,14 +926,15 @@ class TestCmdUninstallMultiplatform:
                         assert "launchd" in result.output
 
     def test_cmd_uninstall_linux(self, runner, mock_audit_log_file):
-        """Should use cron on Linux."""
+        """Should use cron on Linux without systemd."""
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=""):
-                    with patch.object(watchdog, "set_crontab", return_value=True):
-                        result = runner.invoke(watchdog.cmd_uninstall)
-                        assert result.exit_code == 0
-                        assert "Cron" in result.output
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=""):
+                        with patch.object(watchdog, "set_crontab", return_value=True):
+                            result = runner.invoke(watchdog.cmd_uninstall)
+                            assert result.exit_code == 0
+                            assert "Cron" in result.output
 
 
 class TestCmdStatusMultiplatform:
@@ -927,14 +956,17 @@ class TestCmdStatusMultiplatform:
                 assert "launchd" in result.output
 
     def test_cmd_status_linux(self, runner, mock_disabled_file):
-        """Should show cron status on Linux."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        """Should show cron status on Linux without systemd."""
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=crontab):
-                    result = runner.invoke(watchdog.cmd_status)
-                    assert result.exit_code == 0
-                    assert "cron" in result.output
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=crontab):
+                        result = runner.invoke(watchdog.cmd_status)
+                        assert result.exit_code == 0
+                        assert "cron" in result.output
 
 
 class TestCmdCheckMultiplatform:
@@ -955,13 +987,16 @@ class TestCmdCheckMultiplatform:
                 assert result.exit_code == 0
 
     def test_cmd_check_linux_all_present(self, runner, mock_disabled_file):
-        """Should do nothing when cron jobs are present."""
-        crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
+        """Should do nothing when cron jobs are present on Linux without systemd."""
+        crontab = (
+            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+        )
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
-                with patch.object(watchdog, "get_crontab", return_value=crontab):
-                    result = runner.invoke(watchdog.cmd_check)
-                    assert result.exit_code == 0
+                with patch.object(watchdog, "has_systemd", return_value=False):
+                    with patch.object(watchdog, "get_crontab", return_value=crontab):
+                        result = runner.invoke(watchdog.cmd_check)
+                        assert result.exit_code == 0
 
 
 class TestGetExecutablePath:
@@ -1150,7 +1185,7 @@ class TestCreateSyncPlist:
 
         parsed = plistlib.loads(sync_plist.read_bytes())
         assert parsed["Label"] == watchdog.LAUNCHD_SYNC_LABEL
-        assert parsed["ProgramArguments"] == ["/usr/bin/test", "sync"]
+        assert parsed["ProgramArguments"] == ["/usr/bin/test", "config", "sync"]
         assert parsed["StartInterval"] == 120
 
     def test_create_sync_plist_failure(self, temp_log_dir):
@@ -1288,3 +1323,295 @@ class TestUninstallLaunchdFeedback:
 
                         assert "warning" in result.output
                         assert "both" in result.output
+
+
+# =============================================================================
+# SYSTEMD TESTS
+# =============================================================================
+
+
+class TestSystemdContentGeneration:
+    """Tests for systemd service and timer content generation."""
+
+    def test_get_systemd_service_content(self):
+        """Should generate valid systemd service content."""
+        content = watchdog.get_systemd_service_content(
+            "/usr/bin/nextdns-blocker", "config sync", "NextDNS Blocker Sync"
+        )
+        assert "[Unit]" in content
+        assert "[Service]" in content
+        assert "Description=NextDNS Blocker Sync" in content
+        assert "ExecStart=/usr/bin/nextdns-blocker config sync" in content
+        assert "Type=oneshot" in content
+        assert "After=network-online.target" in content
+
+    def test_get_systemd_timer_content(self):
+        """Should generate valid systemd timer content."""
+        content = watchdog.get_systemd_timer_content(
+            "NextDNS Blocker Sync Timer", 2, "nextdns-blocker-sync"
+        )
+        assert "[Unit]" in content
+        assert "[Timer]" in content
+        assert "[Install]" in content
+        assert "Description=NextDNS Blocker Sync Timer" in content
+        assert "OnUnitActiveSec=2m" in content
+        assert "Persistent=true" in content
+        assert "WantedBy=timers.target" in content
+        assert "Requires=nextdns-blocker-sync.service" in content
+
+    def test_get_systemd_timer_content_different_interval(self):
+        """Should use custom interval in timer content."""
+        content = watchdog.get_systemd_timer_content("Test Timer", 5, "test-service")
+        assert "OnUnitActiveSec=5m" in content
+
+
+class TestSystemdTimerStatus:
+    """Tests for systemd timer status checking."""
+
+    def test_is_systemd_timer_active_true(self):
+        """Should return True when timer is active."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "active\n"
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = watchdog.is_systemd_timer_active("nextdns-blocker-sync")
+            assert result is True
+
+    def test_is_systemd_timer_active_false(self):
+        """Should return False when timer is inactive."""
+        mock_result = MagicMock()
+        mock_result.returncode = 3
+        mock_result.stdout = "inactive\n"
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = watchdog.is_systemd_timer_active("nextdns-blocker-sync")
+            assert result is False
+
+    def test_is_systemd_timer_active_error(self):
+        """Should return False on error."""
+        with patch("subprocess.run", side_effect=OSError("error")):
+            result = watchdog.is_systemd_timer_active("nextdns-blocker-sync")
+            assert result is False
+
+    def test_is_systemd_timer_enabled_true(self):
+        """Should return True when timer is enabled."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "enabled\n"
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = watchdog.is_systemd_timer_enabled("nextdns-blocker-sync")
+            assert result is True
+
+    def test_is_systemd_timer_enabled_false(self):
+        """Should return False when timer is disabled."""
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = "disabled\n"
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = watchdog.is_systemd_timer_enabled("nextdns-blocker-sync")
+            assert result is False
+
+
+class TestWriteSystemdFile:
+    """Tests for writing systemd unit files."""
+
+    def test_write_systemd_file_creates_file(self, temp_log_dir):
+        """Should create file with content."""
+        test_file = temp_log_dir / "test.service"
+        result = watchdog._write_systemd_file(test_file, "[Unit]\nDescription=Test")
+        assert result is True
+        assert test_file.exists()
+        assert test_file.read_text() == "[Unit]\nDescription=Test"
+
+    def test_write_systemd_file_creates_parent_dir(self, temp_log_dir):
+        """Should create parent directories."""
+        nested_file = temp_log_dir / "subdir" / "test.service"
+        result = watchdog._write_systemd_file(nested_file, "[Unit]\nDescription=Test")
+        assert result is True
+        assert nested_file.exists()
+
+    @skip_on_windows
+    def test_write_systemd_file_correct_permissions(self, temp_log_dir):
+        """Should set 0o644 permissions."""
+        test_file = temp_log_dir / "test.service"
+        watchdog._write_systemd_file(test_file, "[Unit]\nDescription=Test")
+        mode = test_file.stat().st_mode & 0o777
+        assert mode == 0o644
+
+
+class TestSystemdPaths:
+    """Tests for systemd path functions."""
+
+    def test_get_systemd_user_dir(self):
+        """Should return user systemd directory."""
+        path = watchdog.get_systemd_user_dir()
+        assert path.as_posix().endswith(".config/systemd/user")
+
+    def test_get_systemd_sync_service_path(self):
+        """Should return sync service path."""
+        path = watchdog.get_systemd_sync_service_path()
+        assert str(path).endswith("nextdns-blocker-sync.service")
+
+    def test_get_systemd_sync_timer_path(self):
+        """Should return sync timer path."""
+        path = watchdog.get_systemd_sync_timer_path()
+        assert str(path).endswith("nextdns-blocker-sync.timer")
+
+    def test_get_systemd_watchdog_service_path(self):
+        """Should return watchdog service path."""
+        path = watchdog.get_systemd_watchdog_service_path()
+        assert str(path).endswith("nextdns-blocker-watchdog.service")
+
+    def test_get_systemd_watchdog_timer_path(self):
+        """Should return watchdog timer path."""
+        path = watchdog.get_systemd_watchdog_timer_path()
+        assert str(path).endswith("nextdns-blocker-watchdog.timer")
+
+
+class TestSystemdCmdStatus:
+    """Tests for cmd_status with systemd."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+
+        return CliRunner()
+
+    def test_cmd_status_systemd_all_ok(self, runner, mock_disabled_file):
+        """Should show OK status when all systemd timers are active."""
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "has_systemd", return_value=True):
+                    with patch.object(watchdog, "is_systemd_timer_active", return_value=True):
+                        result = runner.invoke(watchdog.cmd_status)
+                        assert result.exit_code == 0
+                        assert "systemd" in result.output
+                        assert "ok" in result.output
+                        assert "active" in result.output
+
+    def test_cmd_status_systemd_missing_timers(self, runner, mock_disabled_file):
+        """Should show missing status when systemd timers are inactive."""
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "has_systemd", return_value=True):
+                    with patch.object(watchdog, "is_systemd_timer_active", return_value=False):
+                        result = runner.invoke(watchdog.cmd_status)
+                        assert result.exit_code == 0
+                        assert "systemd" in result.output
+                        assert "missing" in result.output
+                        assert "compromised" in result.output
+
+
+class TestSystemdCmdInstall:
+    """Tests for cmd_install with systemd."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+
+        return CliRunner()
+
+    def test_cmd_install_systemd_success(self, runner, mock_audit_log_file, temp_log_dir):
+        """Should install systemd timers successfully."""
+        systemd_dir = temp_log_dir / ".config" / "systemd" / "user"
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "has_systemd", return_value=True):
+                    with patch.object(watchdog, "get_systemd_user_dir", return_value=systemd_dir):
+                        with patch.object(
+                            watchdog,
+                            "get_systemd_sync_service_path",
+                            return_value=systemd_dir / "sync.service",
+                        ):
+                            with patch.object(
+                                watchdog,
+                                "get_systemd_sync_timer_path",
+                                return_value=systemd_dir / "sync.timer",
+                            ):
+                                with patch.object(
+                                    watchdog,
+                                    "get_systemd_watchdog_service_path",
+                                    return_value=systemd_dir / "wd.service",
+                                ):
+                                    with patch.object(
+                                        watchdog,
+                                        "get_systemd_watchdog_timer_path",
+                                        return_value=systemd_dir / "wd.timer",
+                                    ):
+                                        with patch.object(
+                                            watchdog,
+                                            "get_executable_path",
+                                            return_value="/usr/bin/ndb",
+                                        ):
+                                            with patch("subprocess.run", return_value=mock_result):
+                                                result = runner.invoke(watchdog.cmd_install)
+                                                assert result.exit_code == 0
+                                                assert "systemd" in result.output
+                                                assert "installed" in result.output
+
+
+class TestSystemdCmdUninstall:
+    """Tests for cmd_uninstall with systemd."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+
+        return CliRunner()
+
+    def test_cmd_uninstall_systemd_success(self, runner, mock_audit_log_file, temp_log_dir):
+        """Should uninstall systemd timers successfully."""
+        systemd_dir = temp_log_dir / ".config" / "systemd" / "user"
+        systemd_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create dummy files
+        (systemd_dir / "sync.service").write_text("")
+        (systemd_dir / "sync.timer").write_text("")
+        (systemd_dir / "wd.service").write_text("")
+        (systemd_dir / "wd.timer").write_text("")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch.object(watchdog, "is_macos", return_value=False):
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "has_systemd", return_value=True):
+                    with patch.object(
+                        watchdog,
+                        "get_systemd_sync_service_path",
+                        return_value=systemd_dir / "sync.service",
+                    ):
+                        with patch.object(
+                            watchdog,
+                            "get_systemd_sync_timer_path",
+                            return_value=systemd_dir / "sync.timer",
+                        ):
+                            with patch.object(
+                                watchdog,
+                                "get_systemd_watchdog_service_path",
+                                return_value=systemd_dir / "wd.service",
+                            ):
+                                with patch.object(
+                                    watchdog,
+                                    "get_systemd_watchdog_timer_path",
+                                    return_value=systemd_dir / "wd.timer",
+                                ):
+                                    with patch("subprocess.run", return_value=mock_result):
+                                        result = runner.invoke(watchdog.cmd_uninstall)
+                                        assert result.exit_code == 0
+                                        assert "systemd" in result.output
+                                        assert "removed" in result.output

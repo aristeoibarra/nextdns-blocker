@@ -29,23 +29,24 @@ class TestWatchdogInstallUninstall:
         runner: CliRunner,
         tmp_path: Path,
     ) -> None:
-        """Test watchdog install creates cron jobs on Linux."""
+        """Test watchdog install creates cron jobs on Linux without systemd."""
         log_dir = tmp_path / "logs"
         log_dir.mkdir(parents=True)
 
-        # Mock platform detection to Linux
+        # Mock platform detection to Linux without systemd
         with patch("nextdns_blocker.watchdog.is_macos", return_value=False):
             with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
-                with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
-                    with patch("nextdns_blocker.watchdog.get_crontab", return_value=""):
-                        with patch(
-                            "nextdns_blocker.watchdog.set_crontab", return_value=True
-                        ) as mock_set:
+                with patch("nextdns_blocker.watchdog.has_systemd", return_value=False):
+                    with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
+                        with patch("nextdns_blocker.watchdog.get_crontab", return_value=""):
                             with patch(
-                                "nextdns_blocker.watchdog.get_executable_path",
-                                return_value="/usr/local/bin/nextdns-blocker",
-                            ):
-                                result = runner.invoke(main, ["watchdog", "install"])
+                                "nextdns_blocker.watchdog.set_crontab", return_value=True
+                            ) as mock_set:
+                                with patch(
+                                    "nextdns_blocker.watchdog.get_executable_path",
+                                    return_value="/usr/local/bin/nextdns-blocker",
+                                ):
+                                    result = runner.invoke(main, ["watchdog", "install"])
 
         assert result.exit_code == 0
         # Verify crontab was updated
@@ -88,26 +89,29 @@ class TestWatchdogInstallUninstall:
         runner: CliRunner,
         tmp_path: Path,
     ) -> None:
-        """Test watchdog uninstall removes cron jobs on Linux."""
+        """Test watchdog uninstall removes cron jobs on Linux without systemd."""
         log_dir = tmp_path / "logs"
         log_dir.mkdir(parents=True)
 
-        existing_cron = "# existing jobs\n*/2 * * * * /usr/local/bin/nextdns-blocker sync >> /tmp/log 2>&1\n* * * * * /usr/local/bin/nextdns-blocker watchdog check >> /tmp/log 2>&1"
+        existing_cron = "# existing jobs\n*/2 * * * * /usr/local/bin/nextdns-blocker config sync >> /tmp/log 2>&1\n* * * * * /usr/local/bin/nextdns-blocker watchdog check >> /tmp/log 2>&1"
 
         with patch("nextdns_blocker.watchdog.is_macos", return_value=False):
             with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
-                with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
-                    with patch("nextdns_blocker.watchdog.get_crontab", return_value=existing_cron):
+                with patch("nextdns_blocker.watchdog.has_systemd", return_value=False):
+                    with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
                         with patch(
-                            "nextdns_blocker.watchdog.set_crontab", return_value=True
-                        ) as mock_set:
-                            result = runner.invoke(main, ["watchdog", "uninstall"])
+                            "nextdns_blocker.watchdog.get_crontab", return_value=existing_cron
+                        ):
+                            with patch(
+                                "nextdns_blocker.watchdog.set_crontab", return_value=True
+                            ) as mock_set:
+                                result = runner.invoke(main, ["watchdog", "uninstall"])
 
         assert result.exit_code == 0
         # Verify crontab was updated to remove our jobs
         if mock_set.called:
             new_cron = mock_set.call_args[0][0]
-            assert "nextdns-blocker sync" not in new_cron
+            assert "nextdns-blocker config sync" not in new_cron
             assert "nextdns-blocker watchdog" not in new_cron
 
 
@@ -123,13 +127,16 @@ class TestWatchdogStatus:
         log_dir = tmp_path / "logs"
         log_dir.mkdir(parents=True)
 
-        existing_cron = "*/2 * * * * /usr/local/bin/nextdns-blocker sync\n* * * * * /usr/local/bin/nextdns-blocker watchdog check"
+        existing_cron = "*/2 * * * * /usr/local/bin/nextdns-blocker config sync\n* * * * * /usr/local/bin/nextdns-blocker watchdog check"
 
         with patch("nextdns_blocker.watchdog.is_macos", return_value=False):
             with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
-                with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
-                    with patch("nextdns_blocker.watchdog.get_crontab", return_value=existing_cron):
-                        result = runner.invoke(main, ["watchdog", "status"])
+                with patch("nextdns_blocker.watchdog.has_systemd", return_value=False):
+                    with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
+                        with patch(
+                            "nextdns_blocker.watchdog.get_crontab", return_value=existing_cron
+                        ):
+                            result = runner.invoke(main, ["watchdog", "status"])
 
         assert result.exit_code == 0
         # Should show status information
@@ -147,9 +154,10 @@ class TestWatchdogStatus:
         # Empty crontab
         with patch("nextdns_blocker.watchdog.is_macos", return_value=False):
             with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
-                with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
-                    with patch("nextdns_blocker.watchdog.get_crontab", return_value=""):
-                        result = runner.invoke(main, ["watchdog", "status"])
+                with patch("nextdns_blocker.watchdog.has_systemd", return_value=False):
+                    with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
+                        with patch("nextdns_blocker.watchdog.get_crontab", return_value=""):
+                            result = runner.invoke(main, ["watchdog", "status"])
 
         assert result.exit_code == 0
         # Should indicate missing or not found
@@ -164,7 +172,7 @@ class TestWatchdogCheck:
         runner: CliRunner,
         tmp_path: Path,
     ) -> None:
-        """Test watchdog check restores deleted jobs."""
+        """Test watchdog check restores deleted jobs on Linux without systemd."""
         log_dir = tmp_path / "logs"
         log_dir.mkdir(parents=True)
 
@@ -176,22 +184,23 @@ class TestWatchdogCheck:
             if len(calls) == 0:
                 calls.append(1)
                 return ""
-            return "*/2 * * * * /usr/local/bin/nextdns-blocker sync"
+            return "*/2 * * * * /usr/local/bin/nextdns-blocker config sync"
 
         with patch("nextdns_blocker.watchdog.is_macos", return_value=False):
             with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
-                with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
-                    with patch(
-                        "nextdns_blocker.watchdog.get_crontab", side_effect=mock_get_crontab
-                    ):
+                with patch("nextdns_blocker.watchdog.has_systemd", return_value=False):
+                    with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
                         with patch(
-                            "nextdns_blocker.watchdog.set_crontab", return_value=True
-                        ) as mock_set:
+                            "nextdns_blocker.watchdog.get_crontab", side_effect=mock_get_crontab
+                        ):
                             with patch(
-                                "nextdns_blocker.watchdog.get_executable_path",
-                                return_value="/usr/local/bin/nextdns-blocker",
-                            ):
-                                result = runner.invoke(main, ["watchdog", "check"])
+                                "nextdns_blocker.watchdog.set_crontab", return_value=True
+                            ) as mock_set:
+                                with patch(
+                                    "nextdns_blocker.watchdog.get_executable_path",
+                                    return_value="/usr/local/bin/nextdns-blocker",
+                                ):
+                                    result = runner.invoke(main, ["watchdog", "check"])
 
         assert result.exit_code == 0
         # Should have tried to restore jobs
@@ -309,7 +318,7 @@ class TestWatchdogRecoveryWorkflow:
         runner: CliRunner,
         tmp_path: Path,
     ) -> None:
-        """Test complete workflow: install → delete → check → restored."""
+        """Test complete workflow: install → delete → check → restored on Linux without systemd."""
         log_dir = tmp_path / "logs"
         log_dir.mkdir(parents=True)
 
@@ -324,30 +333,31 @@ class TestWatchdogRecoveryWorkflow:
 
         with patch("nextdns_blocker.watchdog.is_macos", return_value=False):
             with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
-                with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
-                    with patch("nextdns_blocker.watchdog.get_crontab", mock_get_crontab):
-                        with patch("nextdns_blocker.watchdog.set_crontab", mock_set_crontab):
-                            with patch(
-                                "nextdns_blocker.watchdog.get_executable_path",
-                                return_value="/usr/local/bin/nextdns-blocker",
-                            ):
-                                # Step 1: Install jobs
-                                result = runner.invoke(main, ["watchdog", "install"])
-                                assert result.exit_code == 0
+                with patch("nextdns_blocker.watchdog.has_systemd", return_value=False):
+                    with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
+                        with patch("nextdns_blocker.watchdog.get_crontab", mock_get_crontab):
+                            with patch("nextdns_blocker.watchdog.set_crontab", mock_set_crontab):
+                                with patch(
+                                    "nextdns_blocker.watchdog.get_executable_path",
+                                    return_value="/usr/local/bin/nextdns-blocker",
+                                ):
+                                    # Step 1: Install jobs
+                                    result = runner.invoke(main, ["watchdog", "install"])
+                                    assert result.exit_code == 0
 
-                                # Verify jobs are installed
-                                assert "nextdns-blocker sync" in crontab_state[0]
-                                assert "nextdns-blocker watchdog" in crontab_state[0]
+                                    # Verify jobs are installed
+                                    assert "nextdns-blocker config sync" in crontab_state[0]
+                                    assert "nextdns-blocker watchdog" in crontab_state[0]
 
-                                # Step 2: Simulate job deletion (user manually removes cron)
-                                crontab_state[0] = ""
+                                    # Step 2: Simulate job deletion (user manually removes cron)
+                                    crontab_state[0] = ""
 
-                                # Step 3: Run watchdog check
-                                result = runner.invoke(main, ["watchdog", "check"])
-                                assert result.exit_code == 0
+                                    # Step 3: Run watchdog check
+                                    result = runner.invoke(main, ["watchdog", "check"])
+                                    assert result.exit_code == 0
 
-                                # Step 4: Verify jobs are restored
-                                assert "nextdns-blocker sync" in crontab_state[0]
+                                    # Step 4: Verify jobs are restored
+                                    assert "nextdns-blocker config sync" in crontab_state[0]
 
     def test_disabled_watchdog_does_not_restore_jobs(
         self,
@@ -373,12 +383,15 @@ class TestWatchdogRecoveryWorkflow:
 
         with patch("nextdns_blocker.watchdog.is_macos", return_value=False):
             with patch("nextdns_blocker.watchdog.is_windows", return_value=False):
-                with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
-                    with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
-                        with patch("nextdns_blocker.watchdog.get_crontab", mock_get_crontab):
-                            with patch("nextdns_blocker.watchdog.set_crontab", mock_set_crontab):
-                                # Run watchdog check while disabled
-                                result = runner.invoke(main, ["watchdog", "check"])
+                with patch("nextdns_blocker.watchdog.has_systemd", return_value=False):
+                    with patch("nextdns_blocker.watchdog.get_log_dir", return_value=log_dir):
+                        with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
+                            with patch("nextdns_blocker.watchdog.get_crontab", mock_get_crontab):
+                                with patch(
+                                    "nextdns_blocker.watchdog.set_crontab", mock_set_crontab
+                                ):
+                                    # Run watchdog check while disabled
+                                    result = runner.invoke(main, ["watchdog", "check"])
 
         assert result.exit_code == 0
         assert "disabled" in result.output.lower()

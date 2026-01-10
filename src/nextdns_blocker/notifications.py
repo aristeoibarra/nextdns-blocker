@@ -18,7 +18,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 # Notification timeout in seconds
-NOTIFICATION_TIMEOUT = 5
+NOTIF_TIMEOUT = 10  # Increased timeout for external APIs
 
 
 class EventType(Enum):
@@ -127,13 +127,13 @@ class DiscordAdapter(NotificationAdapter):
             response = requests.post(
                 self._webhook_url,  # type: ignore[arg-type]
                 json=payload,
-                timeout=NOTIFICATION_TIMEOUT,
+                timeout=NOTIF_TIMEOUT,
             )
             response.raise_for_status()
             logger.debug(f"Discord notification sent with {len(batch.events)} events")
             return True
         except requests.exceptions.Timeout:
-            logger.warning(f"Discord notification timeout ({NOTIFICATION_TIMEOUT}s)")
+            logger.warning(f"Discord notification timeout ({NOTIF_TIMEOUT}s)")
         except requests.exceptions.ConnectionError as e:
             logger.warning(f"Discord notification connection error: {e}")
         except requests.exceptions.HTTPError as e:
@@ -218,6 +218,171 @@ class DiscordAdapter(NotificationAdapter):
             return ", ".join(domains)
         shown = ", ".join(domains[:max_show])
         return f"{shown}... (+{len(domains) - max_show} more)"
+
+
+class TelegramAdapter(NotificationAdapter):
+    """Telegram notification adapter."""
+
+    def __init__(self, bot_token: str, chat_id: str) -> None:
+        self._bot_token = bot_token
+        self._chat_id = chat_id
+
+    @property
+    def name(self) -> str:
+        return "Telegram"
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self._bot_token and self._chat_id)
+
+    def send(self, batch: BatchedNotification) -> bool:
+        if not self.is_configured:
+            return False
+
+        message = self.format_batch(batch)
+        if not message:
+            return True
+
+        url = f"https://api.telegram.org/bot{self._bot_token}/sendMessage"
+        payload = {
+            "chat_id": self._chat_id,
+            "text": message,
+            "parse_mode": "Markdown",
+            "disable_web_page_preview": True,
+        }
+
+        try:
+            response = requests.post(url, json=payload, timeout=NOTIF_TIMEOUT)
+            response.raise_for_status()
+            logger.debug(f"Telegram notification sent with {len(batch.events)} events")
+            return True
+        except Exception as e:
+            logger.warning(f"Telegram notification failed: {e}")
+            return False
+
+    def format_batch(self, batch: BatchedNotification) -> str:
+        """Format batch for Telegram markdown."""
+        # Simple text summary
+        blocked = [e.domain for e in batch.events if e.event_type == EventType.BLOCK]
+        unblocked = [e.domain for e in batch.events if e.event_type == EventType.UNBLOCK]
+        errors = [e.domain for e in batch.events if e.event_type == EventType.ERROR]
+
+        lines: list[str] = []
+        if blocked:
+            lines.append(f"🛑 *Blocked ({len(blocked)}):*\n" + ", ".join(blocked[:5]))
+        if unblocked:
+            lines.append(f"✅ *Unblocked ({len(unblocked)}):*\n" + ", ".join(unblocked[:5]))
+        if errors:
+            lines.append(f"⚠️ *Errors ({len(errors)}):*\n" + ", ".join(errors[:5]))
+
+        return "\n\n".join(lines)
+
+
+class SlackAdapter(NotificationAdapter):
+    """Slack notification adapter."""
+
+    def __init__(self, webhook_url: str) -> None:
+        self._webhook_url = webhook_url
+
+    @property
+    def name(self) -> str:
+        return "Slack"
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self._webhook_url)
+
+    def send(self, batch: BatchedNotification) -> bool:
+        if not self.is_configured:
+            return False
+
+        payload = self.format_batch(batch)
+        if not payload:
+            return True
+
+        try:
+            response = requests.post(self._webhook_url, json=payload, timeout=NOTIF_TIMEOUT)
+            response.raise_for_status()
+            logger.debug(f"Slack notification sent with {len(batch.events)} events")
+            return True
+        except Exception as e:
+            logger.warning(f"Slack notification failed: {e}")
+            return False
+
+    def format_batch(self, batch: BatchedNotification) -> dict[str, Any]:
+        """Format batch for Slack Block Kit."""
+        blocks: list[dict[str, Any]] = []
+
+        # Title block
+        blocks.append(
+            {"type": "header", "text": {"type": "plain_text", "text": "NextDNS Blocker Sync"}}
+        )
+
+        blocked = [e.domain for e in batch.events if e.event_type == EventType.BLOCK]
+        if blocked:
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Blocked ({len(blocked)})*:\n" + ", ".join(blocked[:5]),
+                    },
+                }
+            )
+
+        return {"blocks": blocks}
+
+
+class NtfyAdapter(NotificationAdapter):
+    """Ntfy notification adapter."""
+
+    def __init__(self, topic: str, server: str = "https://ntfy.sh") -> None:
+        self._topic = topic
+        self._server = server.rstrip("/")
+
+    @property
+    def name(self) -> str:
+        return "Ntfy"
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self._topic)
+
+    def send(self, batch: BatchedNotification) -> bool:
+        if not self.is_configured:
+            return False
+
+        message = self.format_batch(batch)
+        if not message:
+            return True
+
+        url = f"{self._server}/{self._topic}"
+        headers = {"Title": "NextDNS Blocker Sync", "Priority": "3"}
+
+        try:
+            response = requests.post(
+                url, data=message.encode("utf-8"), headers=headers, timeout=NOTIF_TIMEOUT
+            )
+            response.raise_for_status()
+            logger.debug(f"Ntfy notification sent with {len(batch.events)} events")
+            return True
+        except Exception as e:
+            logger.warning(f"Ntfy notification failed: {e}")
+            return False
+
+    def format_batch(self, batch: BatchedNotification) -> str:
+        """Format batch for Ntfy simple text."""
+        # Simple text summary
+        blocked = len([e for e in batch.events if e.event_type == EventType.BLOCK])
+        unblocked = len([e for e in batch.events if e.event_type == EventType.UNBLOCK])
+
+        parts = []
+        if blocked:
+            parts.append(f"Blocked: {blocked}")
+        if unblocked:
+            parts.append(f"Unblocked: {unblocked}")
+
+        return " | ".join(parts) if parts else ""
 
 
 class MacOSAdapter(NotificationAdapter):
@@ -431,6 +596,32 @@ class NotificationManager:
             if adapter.is_configured:
                 self._adapters.append(adapter)
                 logger.debug("macOS adapter configured")
+
+        # Configure Telegram adapter
+        telegram_config = channels.get("telegram", {})
+        if telegram_config.get("enabled", False):
+            bot_token = telegram_config.get("bot_token")
+            chat_id = telegram_config.get("chat_id")
+            if bot_token and chat_id:
+                self._adapters.append(TelegramAdapter(bot_token, chat_id))
+                logger.debug("Telegram adapter configured")
+
+        # Configure Slack adapter
+        slack_config = channels.get("slack", {})
+        if slack_config.get("enabled", False):
+            webhook_url = slack_config.get("webhook_url")
+            if webhook_url:
+                self._adapters.append(SlackAdapter(webhook_url))
+                logger.debug("Slack adapter configured")
+
+        # Configure Ntfy adapter
+        ntfy_config = channels.get("ntfy", {})
+        if ntfy_config.get("enabled", False):
+            topic = ntfy_config.get("topic")
+            server = ntfy_config.get("server", "https://ntfy.sh")
+            if topic:
+                self._adapters.append(NtfyAdapter(topic, server))
+                logger.debug("Ntfy adapter configured")
 
     def start_batch(self, profile_id: str) -> None:
         """Start collecting events for a batch."""

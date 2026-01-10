@@ -12,12 +12,12 @@ import click
 from rich.console import Console
 
 from . import __version__
+from .analytics_cli import register_stats
 from .client import NextDNSClient
 from .common import (
     audit_log,
     ensure_log_dir,
     ensure_naive_datetime,
-    get_audit_log_file,
     get_log_dir,
     read_secure_file,
     validate_domain,
@@ -53,6 +53,7 @@ from .notifications import (
     send_notification,
 )
 from .platform_utils import get_executable_path, is_macos, is_windows
+from .protection_cli import register_protection
 from .scheduler import ScheduleEvaluator
 from .watchdog import (
     LAUNCHD_SYNC_LABEL,
@@ -114,6 +115,77 @@ def setup_logging(verbose: bool = False) -> None:
 
 logger = logging.getLogger(__name__)
 console = Console(highlight=False)
+
+
+# =============================================================================
+# PIN VERIFICATION HELPER
+# =============================================================================
+
+
+def require_pin_verification(command_name: str) -> bool:
+    """
+    Check if PIN verification is required and prompt if needed.
+
+    This function should be called at the start of dangerous commands.
+    It will prompt for PIN if enabled and no valid session exists.
+
+    Args:
+        command_name: Name of the command being executed
+
+    Returns:
+        True if command can proceed, False if blocked
+
+    Raises:
+        SystemExit: If PIN verification fails
+    """
+    from .protection import (
+        PIN_MAX_ATTEMPTS,
+        get_failed_attempts_count,
+        get_lockout_remaining,
+        is_pin_enabled,
+        is_pin_locked_out,
+        is_pin_session_valid,
+        verify_pin,
+    )
+
+    # No PIN protection = proceed
+    if not is_pin_enabled():
+        return True
+
+    # Valid session = proceed
+    if is_pin_session_valid():
+        return True
+
+    # Check lockout
+    if is_pin_locked_out():
+        remaining = get_lockout_remaining()
+        console.print(
+            f"\n  [red]PIN locked out due to failed attempts. Try again in {remaining}[/red]\n"
+        )
+        sys.exit(1)
+
+    # Prompt for PIN
+    console.print(f"\n  [yellow]PIN required for '{command_name}'[/yellow]")
+
+    import click
+
+    pin = click.prompt("  Enter PIN", hide_input=True, default="", show_default=False)
+
+    if not pin:
+        console.print("\n  [red]PIN verification cancelled[/red]\n")
+        sys.exit(1)
+
+    if verify_pin(pin):
+        return True
+    else:
+        if is_pin_locked_out():
+            remaining = get_lockout_remaining()
+            console.print(f"\n  [red]Too many failed attempts. Locked out for {remaining}[/red]\n")
+        else:
+            attempts_left = PIN_MAX_ATTEMPTS - get_failed_attempts_count()
+            console.print(f"\n  [red]Incorrect PIN. {attempts_left} attempts remaining.[/red]\n")
+        sys.exit(1)
+
 
 # =============================================================================
 # CONSTANTS
@@ -286,6 +358,8 @@ def init(config_dir: Optional[Path], non_interactive: bool) -> None:
 @click.argument("minutes", default=DEFAULT_PAUSE_MINUTES, type=click.IntRange(min=1))
 def pause(minutes: int) -> None:
     """Pause blocking for MINUTES (default: 30)."""
+    require_pin_verification("pause")
+
     set_pause(minutes)
     pause_until = datetime.now() + timedelta(minutes=minutes)
     console.print(f"\n  [yellow]Blocking paused for {minutes} minutes[/yellow]")
@@ -311,6 +385,8 @@ def resume() -> None:
 @click.option("--force", is_flag=True, help="Skip delay and unblock immediately")
 def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
     """Manually unblock a DOMAIN."""
+    require_pin_verification("unblock")
+
     from .config import get_unblock_delay, parse_unblock_delay_seconds
     from .pending import create_pending_action, get_pending_for_domain
 
@@ -330,8 +406,7 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
         # Handle 'never' - cannot unblock
         if unblock_delay == "never":
             console.print(
-                f"\n  [blue]Error: '{domain}' cannot be unblocked "
-                f"(unblock_delay: never)[/blue]\n",
+                f"\n  [blue]Error: '{domain}' cannot be unblocked (unblock_delay: never)[/blue]\n",
                 highlight=False,
             )
             sys.exit(1)
@@ -506,7 +581,7 @@ def _handle_unblock(
 
         if dry_run:
             console.print(
-                f"  [yellow]Would schedule UNBLOCK: {domain} " f"(delay: {domain_delay})[/yellow]"
+                f"  [yellow]Would schedule UNBLOCK: {domain} (delay: {domain_delay})[/yellow]"
             )
         else:
             action = create_pending_action(domain, domain_delay, requested_by="sync")
@@ -765,18 +840,30 @@ def _sync_nextdns_parental_control(
     youtube_restricted = parental_control.get("youtube_restricted_mode")
     block_bypass = parental_control.get("block_bypass")
 
+    # Get current state from NextDNS to compare
+    current = client.get_parental_control()
+    if current is None:
+        logger.warning("Could not fetch current parental control state")
+        return False
+
+    # Build list of settings that need to change
+    changes: list[str] = []
+    if safe_search is not None and current.get("safeSearch") != safe_search:
+        changes.append(f"safe_search={safe_search}")
+    if (
+        youtube_restricted is not None
+        and current.get("youtubeRestrictedMode") != youtube_restricted
+    ):
+        changes.append(f"youtube_restricted_mode={youtube_restricted}")
+    if block_bypass is not None and current.get("blockBypass") != block_bypass:
+        changes.append(f"block_bypass={block_bypass}")
+
+    if not changes:
+        logger.debug("Parental control settings already in sync")
+        return True
+
     if dry_run:
-        settings = []
-        if safe_search is not None:
-            settings.append(f"safe_search={safe_search}")
-        if youtube_restricted is not None:
-            settings.append(f"youtube_restricted_mode={youtube_restricted}")
-        if block_bypass is not None:
-            settings.append(f"block_bypass={block_bypass}")
-        if settings:
-            console.print(
-                f"  [yellow]Would UPDATE parental control: {', '.join(settings)}[/yellow]"
-            )
+        console.print(f"  [yellow]Would UPDATE parental control: {', '.join(changes)}[/yellow]")
         return True
 
     if client.update_parental_control(
@@ -829,29 +916,16 @@ def _print_sync_summary(
         console.print("  Sync: [green]No changes needed[/green]")
 
 
-@main.command()
-@click.option("--dry-run", is_flag=True, help="Show changes without applying")
-@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Config directory (default: auto-detect)",
-)
-@click.option("--_from_config_group", is_flag=True, hidden=True)
-def sync(
+def sync_impl(
     dry_run: bool,
     verbose: bool,
     config_dir: Optional[Path],
-    _from_config_group: bool = False,
 ) -> None:
-    """Synchronize domain blocking with schedules."""
-    # Show deprecation warning if called directly
-    if not _from_config_group:
-        console.print(
-            "\n  [yellow]⚠ Deprecated:[/yellow] Use 'nextdns-blocker config sync' instead.\n",
-            highlight=False,
-        )
+    """
+    Synchronize domain blocking with schedules.
 
+    This is the implementation function called by config_cli.py.
+    """
     setup_logging(verbose)
 
     # Check pause state
@@ -864,6 +938,25 @@ def sync(
     from .panic import is_panic_mode
 
     panic_active = is_panic_mode()
+
+    # Check auto-panic schedule
+    import json as json_mod
+
+    from .protection import is_auto_panic_time
+
+    try:
+        config_for_autopanic = load_config(config_dir)
+        config_path = Path(config_for_autopanic["script_dir"]) / "config.json"
+        with open(config_path, encoding="utf-8") as f:
+            full_config = json_mod.load(f)
+
+        if is_auto_panic_time(full_config) and not panic_active:
+            # Auto-panic is active but panic mode isn't - treat as panic
+            panic_active = True
+            if verbose:
+                console.print("  [red]Auto-panic active (scheduled)[/red]")
+    except (OSError, json_mod.JSONDecodeError, ConfigurationError):
+        pass  # If we can't read config, continue without auto-panic
 
     try:
         config = load_config(config_dir)
@@ -1015,10 +1108,8 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
             else:
                 allowed_count += 1
 
-            # Check for protected domains
+            # Check for protected domains (unblock_delay="never")
             domain_delay = domain_config.get("unblock_delay")
-            if domain_config.get("protected", False):
-                domain_delay = "never"
             if domain_delay == "never":
                 protected_domains.append(domain)
 
@@ -1235,9 +1326,6 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
                 status_icon = "🔴" if is_blocked else "🟢"
 
                 domain_delay = domain_config.get("unblock_delay")
-                if domain_config.get("protected", False):
-                    domain_delay = "never"
-
                 if domain_delay == "never":
                     delay_flag = " [blue]\\[never][/blue]"
                 elif domain_delay and domain_delay != "0":
@@ -1274,6 +1362,8 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
 )
 def allow(domain: str, config_dir: Optional[Path]) -> None:
     """Add DOMAIN to allowlist."""
+    require_pin_verification("allow")
+
     try:
         if not validate_domain(domain):
             console.print(
@@ -1317,6 +1407,8 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
 )
 def disallow(domain: str, config_dir: Optional[Path]) -> None:
     """Remove DOMAIN from allowlist."""
+    require_pin_verification("disallow")
+
     try:
         if not validate_domain(domain):
             console.print(
@@ -1547,43 +1639,6 @@ def uninstall(yes: bool) -> None:
     console.print("    [yellow]pipx uninstall nextdns-blocker[/yellow]  (pipx)")
     console.print("    [yellow]pip uninstall nextdns-blocker[/yellow]   (pip)")
     console.print()
-
-
-@main.command()
-def stats() -> None:
-    """Show usage statistics from audit log."""
-    console.print("\n  [bold]Statistics[/bold]")
-    console.print("  [bold]----------[/bold]")
-
-    audit_file = get_audit_log_file()
-    if not audit_file.exists():
-        console.print("  No audit log found\n")
-        return
-
-    try:
-        with open(audit_file, encoding="utf-8") as f:
-            lines = f.readlines()
-
-        actions: dict[str, int] = {}
-        for line in lines:
-            parts = line.strip().split(" | ")
-            if len(parts) >= 2:
-                action = parts[1]
-                # Handle WD prefix entries: [timestamp, WD, action, detail]
-                if action == "WD" and len(parts) > 2:
-                    action = parts[2]
-                actions[action] = actions.get(action, 0) + 1
-
-        if actions:
-            for action, count in sorted(actions.items()):
-                console.print(f"    {action}: [bold]{count}[/bold]")
-        else:
-            console.print("  No actions recorded")
-
-        console.print(f"\n  Total entries: {len(lines)}\n")
-
-    except (OSError, ValueError) as e:
-        console.print(f"  [red]Error reading stats: {e}[/red]\n", highlight=False)
 
 
 @main.command()
@@ -1874,18 +1929,11 @@ def update(yes: bool) -> None:
         sys.exit(1)
 
 
-@main.command()
-@click.option("--json", "output_json", is_flag=True, help="Output in JSON format")
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Config directory (default: auto-detect)",
-)
-@click.option("--_from_config_group", is_flag=True, hidden=True)
-def validate(
-    output_json: bool, config_dir: Optional[Path], _from_config_group: bool = False
-) -> None:
-    """Validate configuration files before deployment.
+def validate_impl(output_json: bool, config_dir: Optional[Path]) -> None:
+    """
+    Validate configuration files before deployment.
+
+    This is the implementation function called by config_cli.py.
 
     Checks config.json for:
     - Valid JSON syntax
@@ -1893,13 +1941,6 @@ def validate(
     - Valid schedule time formats (HH:MM)
     - No denylist/allowlist conflicts
     """
-    # Show deprecation warning if called directly (but not for JSON output)
-    if not _from_config_group and not output_json:
-        console.print(
-            "\n  [yellow]⚠ Deprecated:[/yellow] Use 'nextdns-blocker config validate' instead.\n",
-            highlight=False,
-        )
-
     import json as json_module
 
     # Determine config directory
@@ -1941,7 +1982,7 @@ def validate(
     else:
         add_check("config.json", False, "file not found")
         add_error(
-            f"Config file not found: {config_file}\n" "Run 'nextdns-blocker init' to create one."
+            f"Config file not found: {config_file}\nRun 'nextdns-blocker init' to create one."
         )
 
     if domains_data is None:
@@ -2005,8 +2046,8 @@ def validate(
     # Combine blocklist and expanded category domains for validation
     all_blocked_domains = domains_list + expanded_category_domains
 
-    # Check 5: Count protected domains
-    protected_domains = [d for d in all_blocked_domains if d.get("protected", False)]
+    # Check 5: Count protected domains (unblock_delay="never")
+    protected_domains = [d for d in all_blocked_domains if d.get("unblock_delay") == "never"]
     results["summary"]["protected_count"] = len(protected_domains)
     if protected_domains:
         add_check("protected domains", True, f"{len(protected_domains)} protected")
@@ -2114,6 +2155,12 @@ register_config(main)
 
 # Register nextdns command group
 register_nextdns(main)
+
+# Register protection command group
+register_protection(main)
+
+# Register stats command group
+register_stats(main)
 
 
 if __name__ == "__main__":

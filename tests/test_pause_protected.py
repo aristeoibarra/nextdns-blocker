@@ -93,7 +93,7 @@ class TestProtectedDomains:
         """Should return empty list when no domains are protected."""
         domains = [
             {"domain": "example.com", "schedule": None},
-            {"domain": "test.com", "protected": False},
+            {"domain": "test.com"},
         ]
         assert get_protected_domains(domains) == []
 
@@ -113,15 +113,18 @@ class TestProtectedDomains:
 
     def test_get_protected_domains_missing_field(self):
         """Should not include domains without protected field."""
-        domains = [{"domain": "no-field.com"}, {"domain": "explicit-true.com", "protected": True}]
+        domains = [
+            {"domain": "no-field.com"},
+            {"domain": "explicit-true.com", "unblock_delay": "never"},
+        ]
         result = get_protected_domains(domains)
         assert result == ["explicit-true.com"]
 
     def test_get_protected_domains_false_value(self):
         """Should not include domains with protected=False."""
         domains = [
-            {"domain": "false-protected.com", "protected": False},
-            {"domain": "true-protected.com", "protected": True},
+            {"domain": "false-protected.com"},
+            {"domain": "true-protected.com", "unblock_delay": "never"},
         ]
         result = get_protected_domains(domains)
         assert result == ["true-protected.com"]
@@ -129,10 +132,10 @@ class TestProtectedDomains:
     def test_get_protected_domains_preserves_order(self):
         """Should preserve order of protected domains."""
         domains = [
-            {"domain": "first.com", "protected": True},
-            {"domain": "skip.com", "protected": False},
-            {"domain": "second.com", "protected": True},
-            {"domain": "third.com", "protected": True},
+            {"domain": "first.com", "unblock_delay": "never"},
+            {"domain": "skip.com"},
+            {"domain": "second.com", "unblock_delay": "never"},
+            {"domain": "third.com", "unblock_delay": "never"},
         ]
         result = get_protected_domains(domains)
         assert result == ["first.com", "second.com", "third.com"]

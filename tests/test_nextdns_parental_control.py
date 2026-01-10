@@ -1392,6 +1392,20 @@ class TestSyncNextDNSParentalControl:
 
         client = NextDNSClient("testapikey12345", "testprofile")
 
+        # Mock: GET returns different values (needs update)
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={
+                "data": {
+                    "safeSearch": False,
+                    "youtubeRestrictedMode": True,
+                    "blockBypass": False,
+                }
+            },
+            status=200,
+        )
+
         # Mock: update succeeds
         responses.add(
             responses.PATCH,
@@ -1430,11 +1444,26 @@ class TestSyncNextDNSParentalControl:
 
         assert result is True
 
-    def test_sync_dry_run_does_not_call_api(self):
-        """Sync in dry-run mode does not call API."""
+    @responses.activate
+    def test_sync_dry_run_does_not_call_patch(self):
+        """Sync in dry-run mode fetches current state but does not PATCH."""
         from nextdns_blocker.cli import _sync_nextdns_parental_control
 
         client = NextDNSClient("testapikey12345", "testprofile")
+
+        # Mock: GET returns different values (needs update)
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={
+                "data": {
+                    "safeSearch": False,
+                    "youtubeRestrictedMode": False,
+                    "blockBypass": False,
+                }
+            },
+            status=200,
+        )
 
         nextdns_config = {
             "parental_control": {
@@ -1448,4 +1477,45 @@ class TestSyncNextDNSParentalControl:
         )
 
         assert result is True
-        # No API calls should be made in dry-run mode
+        # Only GET should be called, no PATCH in dry-run mode
+        assert len(responses.calls) == 1
+        assert responses.calls[0].request.method == "GET"
+
+    @responses.activate
+    def test_sync_skips_patch_when_already_in_sync(self):
+        """Sync does not PATCH when values already match."""
+        from nextdns_blocker.cli import _sync_nextdns_parental_control
+
+        client = NextDNSClient("testapikey12345", "testprofile")
+
+        # Mock: GET returns same values as config (already in sync)
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/parentalControl",
+            json={
+                "data": {
+                    "safeSearch": True,
+                    "youtubeRestrictedMode": False,
+                    "blockBypass": True,
+                }
+            },
+            status=200,
+        )
+
+        nextdns_config = {
+            "parental_control": {
+                "safe_search": True,
+                "youtube_restricted_mode": False,
+                "block_bypass": True,
+            }
+        }
+        config = {}
+
+        result = _sync_nextdns_parental_control(
+            nextdns_config, client, config, dry_run=False, verbose=False
+        )
+
+        assert result is True
+        # Only GET should be called, no PATCH needed
+        assert len(responses.calls) == 1
+        assert responses.calls[0].request.method == "GET"

@@ -355,7 +355,7 @@ class TestAllowlistSyncIntegration:
             with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
                 result = runner.invoke(
                     main,
-                    ["sync", "--config-dir", str(config_dir), "-v"],
+                    ["config", "sync", "--config-dir", str(config_dir), "-v"],
                 )
 
         assert result.exit_code == 0

@@ -450,11 +450,13 @@ class TestLoadConfig:
                 load_config(tmp_path)
 
     def test_load_config_invalid_timezone(self, tmp_path: Path) -> None:
-        """Test config loading fails with invalid timezone."""
+        """Test config loading fails with invalid timezone in config.json."""
         env_file = tmp_path / ".env"
-        env_file.write_text(
-            "NEXTDNS_API_KEY=valid-api-key\nNEXTDNS_PROFILE_ID=abc123\nTIMEZONE=Invalid/TZ\n"
-        )
+        env_file.write_text("NEXTDNS_API_KEY=valid-api-key\nNEXTDNS_PROFILE_ID=abc123\n")
+
+        # config.json with invalid timezone
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"blocklist": [], "settings": {"timezone": "Invalid/TZ"}}')
 
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ConfigurationError, match="Invalid TIMEZONE"):

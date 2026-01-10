@@ -284,7 +284,7 @@ nextdns-blocker sync
 
 4. Force sync:
    ```bash
-   nextdns-blocker sync --verbose
+   nextdns-blocker config sync --verbose
    ```
 
 ### Cannot cancel action

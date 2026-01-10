@@ -55,15 +55,34 @@ Emergency lockdown:
 - Cannot be disabled early
 - Extendable duration
 
+## Security Features
+
+### [PIN Protection](/reference/security/)
+
+Optional authentication layer:
+- Protect sensitive commands
+- Session-based verification
+- Brute-force protection
+- Delayed PIN removal (24h)
+
+### [Protection Module](/reference/security/)
+
+Addiction safety features:
+- Locked items cannot be removed immediately
+- Unlock requests require waiting period
+- Pending unlock can be cancelled
+- Auto-panic configuration
+
 ## Communication Features
 
-### [Discord Notifications](/features/notifications/)
+### [Notifications](/features/notifications/)
 
-Real-time alerts:
-- Block/unblock events
-- Panic mode activation
-- Pending action status
-- Color-coded embeds
+Real-time alerts via multiple channels:
+- Discord webhooks with rich embeds
+- Telegram bot notifications
+- Slack incoming webhooks
+- Ntfy push notifications
+- macOS native notifications
 
 ## Productivity Features
 
@@ -83,15 +102,25 @@ Preview without changes:
 - Validate configuration
 - Debug issues safely
 
+### [Usage Analytics](/commands/stats/)
+
+Track blocking patterns:
+- Domain-level statistics
+- Effectiveness scores
+- Hourly activity patterns
+- CSV export for analysis
+
 ## Feature Matrix
 
 | Feature | Purpose | Command |
 |---------|---------|---------|
-| Schedules | Automatic access control | `sync` |
+| Schedules | Automatic access control | `config sync` |
 | Delays | Impulse protection | `unblock` |
 | Watchdog | Auto-sync | `watchdog install` |
 | Panic Mode | Emergency lockdown | `panic 60` |
+| PIN Protection | Command authentication | `protection pin set` |
 | Notifications | Real-time alerts | (automatic) |
+| Analytics | Usage patterns | `stats` |
 | Completion | Productivity | `completion bash` |
 | Dry Run | Safe testing | `sync --dry-run` |
 
@@ -119,6 +148,14 @@ Watchdog processes pending actions:
 - Executes due actions
 - Cleans up old actions
 
+### PIN + Protected Commands
+
+When PIN is enabled:
+- Sensitive commands require verification
+- Session lasts 30 minutes
+- Lockout after failed attempts
+- Works alongside panic mode
+
 ## Enabling Features
 
 | Feature | How to Enable |
@@ -127,6 +164,8 @@ Watchdog processes pending actions:
 | Delays | Set `unblock_delay` in config |
 | Watchdog | `watchdog install` |
 | Panic Mode | `panic DURATION` |
-| Notifications | Configure `.env` |
+| PIN Protection | `protection pin set` |
+| Notifications | Add to `config.json` |
+| Analytics | Automatic (uses audit log) |
 | Completion | `completion bash/zsh/fish` |
 | Dry Run | `--dry-run` flag |

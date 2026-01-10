@@ -160,6 +160,65 @@ All security-relevant actions:
 
 Audit logs use append-only writes with file locking to prevent tampering during concurrent access.
 
+## PIN Protection
+
+NextDNS Blocker includes optional PIN protection for sensitive commands, adding an authentication layer against impulsive behavior.
+
+### Protected Commands
+
+When PIN is enabled, these commands require verification:
+- `unblock` - Remove domain from denylist
+- `pause` - Pause all blocking
+- `allow` - Add domain to allowlist
+- `config edit` - Edit configuration
+- `config pull` - Pull remote config
+
+### PIN Features
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| Minimum length | 4 characters | PIN must be 4+ characters |
+| Maximum length | 32 characters | Upper limit for PIN |
+| Session duration | 30 minutes | Valid session after verification |
+| Max attempts | 3 | Attempts before lockout |
+| Lockout duration | 15 minutes | Cooldown after max attempts |
+| Removal delay | 24 hours | Waiting period to remove PIN |
+
+### PIN Commands
+
+```bash
+# Enable PIN
+nextdns-blocker protection pin set
+
+# Check PIN status
+nextdns-blocker protection pin status
+
+# Verify PIN and start session
+nextdns-blocker protection pin verify
+
+# Remove PIN (creates pending action with 24h delay)
+nextdns-blocker protection pin remove
+```
+
+### Security Properties
+
+1. **PBKDF2-SHA256**: PIN is hashed with 600,000 iterations (OWASP recommendation)
+2. **Random salt**: Unique salt per installation prevents rainbow table attacks
+3. **Secure storage**: Hash stored with `0600` permissions
+4. **Brute force protection**: Lockout after failed attempts
+5. **Session-based**: One verification covers multiple commands for 30 minutes
+6. **Delayed removal**: 24-hour delay prevents impulsive disabling
+
+### Configuration
+
+PIN data is stored separately from config:
+
+| File | Contents |
+|------|----------|
+| `.pin_hash` | Salt and hash (never contains plaintext) |
+| `.pin_session` | Session expiration timestamp |
+| `.pin_attempts` | Failed attempt timestamps |
+
 ## Panic Mode Security
 
 ### Cannot Be Cancelled
@@ -175,6 +234,13 @@ During panic:
 - `pause` is hidden
 - `allow` is hidden
 - Commands cannot be run directly
+
+### PIN During Panic
+
+When both panic mode and PIN are active:
+- Panic mode takes priority
+- Commands are completely hidden (not just PIN-protected)
+- No authentication prompt is shown
 
 ### Allowlist Sync Disabled
 
