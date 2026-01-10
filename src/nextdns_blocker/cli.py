@@ -12,12 +12,12 @@ import click
 from rich.console import Console
 
 from . import __version__
+from .analytics_cli import register_stats
 from .client import NextDNSClient
 from .common import (
     audit_log,
     ensure_log_dir,
     ensure_naive_datetime,
-    get_audit_log_file,
     get_log_dir,
     read_secure_file,
     validate_domain,
@@ -1642,43 +1642,6 @@ def uninstall(yes: bool) -> None:
 
 
 @main.command()
-def stats() -> None:
-    """Show usage statistics from audit log."""
-    console.print("\n  [bold]Statistics[/bold]")
-    console.print("  [bold]----------[/bold]")
-
-    audit_file = get_audit_log_file()
-    if not audit_file.exists():
-        console.print("  No audit log found\n")
-        return
-
-    try:
-        with open(audit_file, encoding="utf-8") as f:
-            lines = f.readlines()
-
-        actions: dict[str, int] = {}
-        for line in lines:
-            parts = line.strip().split(" | ")
-            if len(parts) >= 2:
-                action = parts[1]
-                # Handle WD prefix entries: [timestamp, WD, action, detail]
-                if action == "WD" and len(parts) > 2:
-                    action = parts[2]
-                actions[action] = actions.get(action, 0) + 1
-
-        if actions:
-            for action, count in sorted(actions.items()):
-                console.print(f"    {action}: [bold]{count}[/bold]")
-        else:
-            console.print("  No actions recorded")
-
-        console.print(f"\n  Total entries: {len(lines)}\n")
-
-    except (OSError, ValueError) as e:
-        console.print(f"  [red]Error reading stats: {e}[/red]\n", highlight=False)
-
-
-@main.command()
 def fix() -> None:
     """Fix common issues by reinstalling scheduler and running sync."""
     import subprocess
@@ -2195,6 +2158,9 @@ register_nextdns(main)
 
 # Register protection command group
 register_protection(main)
+
+# Register stats command group
+register_stats(main)
 
 
 if __name__ == "__main__":
