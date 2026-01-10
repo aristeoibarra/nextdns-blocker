@@ -61,6 +61,8 @@ Manage configuration files.
 | [`config validate`](/commands/config/) | Validate configuration syntax |
 | [`config set`](/commands/config/) | Set configuration values |
 | [`config sync`](/commands/config/) | Synchronize domain states based on schedules |
+| [`config diff`](/commands/config/) | Show differences between local and remote |
+| [`config pull`](/commands/config/) | Fetch domains from NextDNS to local config |
 
 ### watchdog
 
@@ -122,12 +124,63 @@ Manage NextDNS Parental Control.
 | [`nextdns categories`](/commands/nextdns/) | Show valid category IDs |
 | [`nextdns services`](/commands/nextdns/) | Show valid service IDs |
 
-### Allowlist Commands
+### denylist
+
+Manage NextDNS denylist (blocked domains).
+
+| Subcommand | Description |
+|------------|-------------|
+| [`denylist list`](/commands/allowlist/) | List all denylist domains |
+| [`denylist add`](/commands/allowlist/) | Add domains to denylist |
+| [`denylist remove`](/commands/allowlist/) | Remove domains from denylist |
+| [`denylist export`](/commands/allowlist/) | Export to JSON or CSV |
+| [`denylist import`](/commands/allowlist/) | Import from file |
+
+### allowlist
+
+Manage NextDNS allowlist (whitelisted domains).
+
+| Subcommand | Description |
+|------------|-------------|
+| [`allowlist list`](/commands/allowlist/) | List all allowlist domains |
+| [`allowlist add`](/commands/allowlist/) | Add domains to allowlist |
+| [`allowlist remove`](/commands/allowlist/) | Remove domains from allowlist |
+| [`allowlist export`](/commands/allowlist/) | Export to JSON or CSV |
+| [`allowlist import`](/commands/allowlist/) | Import from file |
+
+### Legacy Allowlist Commands
 
 | Command | Description |
 |---------|-------------|
 | [`allow`](/commands/allowlist/) | Add domain to allowlist |
 | [`disallow`](/commands/allowlist/) | Remove domain from allowlist |
+
+### protection
+
+Manage addiction protection features.
+
+| Subcommand | Description |
+|------------|-------------|
+| [`protection status`](/reference/security/) | Show protection status and locked items |
+| [`protection unlock-request`](/reference/security/) | Request to unlock a protected item |
+| [`protection cancel`](/reference/security/) | Cancel a pending unlock request |
+| [`protection list`](/reference/security/) | List pending unlock requests |
+| [`protection pin set`](/reference/security/) | Set or change PIN |
+| [`protection pin status`](/reference/security/) | Show PIN status |
+| [`protection pin verify`](/reference/security/) | Verify PIN and start session |
+| [`protection pin remove`](/reference/security/) | Remove PIN (with 24h delay) |
+
+### stats
+
+View usage statistics and patterns.
+
+| Subcommand | Description |
+|------------|-------------|
+| [`stats`](/commands/stats/) | Show summary statistics |
+| [`stats domains`](/commands/stats/) | Show top blocked domains |
+| [`stats hours`](/commands/stats/) | Show hourly activity patterns |
+| [`stats actions`](/commands/stats/) | Show action breakdown |
+| [`stats export`](/commands/stats/) | Export to CSV |
 
 ## Quick Reference
 

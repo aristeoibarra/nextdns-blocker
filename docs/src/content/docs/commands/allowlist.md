@@ -1,9 +1,275 @@
 ---
-title: allow / disallow
-description: Manage the NextDNS allowlist for domain exceptions
+title: allowlist / denylist
+description: Manage NextDNS lists with bulk operations
 ---
 
-The `allow` and `disallow` commands manage the NextDNS allowlist, which creates exceptions to blocking.
+NextDNS Blocker provides two command groups for managing domain lists with full CRUD operations: `allowlist` and `denylist`.
+
+## Command Groups
+
+### denylist
+
+Manage NextDNS denylist (blocked domains).
+
+| Subcommand | Description |
+|------------|-------------|
+| `denylist list` | List all domains in the denylist |
+| `denylist add` | Add one or more domains |
+| `denylist remove` | Remove one or more domains |
+| `denylist export` | Export to JSON or CSV |
+| `denylist import` | Import from file |
+
+### allowlist
+
+Manage NextDNS allowlist (whitelisted domains).
+
+| Subcommand | Description |
+|------------|-------------|
+| `allowlist list` | List all domains in the allowlist |
+| `allowlist add` | Add one or more domains |
+| `allowlist remove` | Remove one or more domains |
+| `allowlist export` | Export to JSON or CSV |
+| `allowlist import` | Import from file |
+
+## denylist Commands
+
+### denylist list
+
+List all domains currently in your NextDNS denylist.
+
+```bash
+nextdns-blocker denylist list
+```
+
+Output:
+```
+Denylist
+
+Domain               Active
+────────────────────────────
+reddit.com           Yes
+twitter.com          Yes
+instagram.com        Yes
+tiktok.com           No
+
+Total: 4 domains
+```
+
+### denylist add
+
+Add one or more domains to the denylist.
+
+```bash
+nextdns-blocker denylist add DOMAIN [DOMAIN ...]
+```
+
+Example:
+```bash
+nextdns-blocker denylist add reddit.com twitter.com instagram.com
+```
+
+Output:
+```
+  + reddit.com
+  + twitter.com
+  + instagram.com
+
+  Added 3 domain(s) to denylist
+```
+
+### denylist remove
+
+Remove one or more domains from the denylist.
+
+```bash
+nextdns-blocker denylist remove DOMAIN [DOMAIN ...]
+```
+
+Example:
+```bash
+nextdns-blocker denylist remove reddit.com
+```
+
+Output:
+```
+  - reddit.com
+
+  Removed 1 domain(s) from denylist
+```
+
+### denylist export
+
+Export denylist to a file.
+
+```bash
+nextdns-blocker denylist export [--format json|csv] [-o FILE]
+```
+
+Options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--format` | json | Output format (json or csv) |
+| `-o, --output` | stdout | Output file path |
+
+Examples:
+```bash
+# Export to JSON file
+nextdns-blocker denylist export -o denylist.json
+
+# Export to CSV
+nextdns-blocker denylist export --format csv -o denylist.csv
+
+# Print to stdout
+nextdns-blocker denylist export
+```
+
+JSON format:
+```json
+[
+  {"domain": "reddit.com", "active": true},
+  {"domain": "twitter.com", "active": true}
+]
+```
+
+CSV format:
+```csv
+domain,active
+reddit.com,True
+twitter.com,True
+```
+
+### denylist import
+
+Import domains from a file.
+
+```bash
+nextdns-blocker denylist import FILE [--dry-run]
+```
+
+Options:
+
+| Option | Description |
+|--------|-------------|
+| `--dry-run` | Preview what would be imported |
+
+Supported formats:
+- **JSON**: Array of strings or objects with `domain` field
+- **CSV**: Must have `domain` column, optional `active` column
+- **Plain text**: One domain per line (lines starting with `#` are ignored)
+
+Examples:
+```bash
+# Preview import
+nextdns-blocker denylist import domains.json --dry-run
+
+# Import from file
+nextdns-blocker denylist import domains.txt
+```
+
+Output:
+```
+  Importing 25 domains...
+
+  Added: 20
+  Skipped (existing): 5
+  Failed: 0
+```
+
+## allowlist Commands
+
+### allowlist list
+
+List all domains currently in your NextDNS allowlist.
+
+```bash
+nextdns-blocker allowlist list
+```
+
+Output:
+```
+Allowlist
+
+Domain               Active
+────────────────────────────
+aws.amazon.com       Yes
+github.com           Yes
+
+Total: 2 domains
+```
+
+### allowlist add
+
+Add one or more domains to the allowlist.
+
+```bash
+nextdns-blocker allowlist add DOMAIN [DOMAIN ...]
+```
+
+Example:
+```bash
+nextdns-blocker allowlist add github.com stackoverflow.com
+```
+
+Output:
+```
+  + github.com
+  + stackoverflow.com
+
+  Added 2 domain(s) to allowlist
+```
+
+### allowlist remove
+
+Remove one or more domains from the allowlist.
+
+```bash
+nextdns-blocker allowlist remove DOMAIN [DOMAIN ...]
+```
+
+Example:
+```bash
+nextdns-blocker allowlist remove github.com
+```
+
+Output:
+```
+  - github.com
+
+  Removed 1 domain(s) from allowlist
+```
+
+### allowlist export
+
+Export allowlist to a file.
+
+```bash
+nextdns-blocker allowlist export [--format json|csv] [-o FILE]
+```
+
+Example:
+```bash
+nextdns-blocker allowlist export -o allowlist.json
+```
+
+### allowlist import
+
+Import domains from a file.
+
+```bash
+nextdns-blocker allowlist import FILE [--dry-run]
+```
+
+Example:
+```bash
+nextdns-blocker allowlist import work-domains.txt
+```
+
+---
+
+## Legacy Commands: allow / disallow
+
+The single-domain `allow` and `disallow` commands are still available for quick operations.
 
 ## Overview
 

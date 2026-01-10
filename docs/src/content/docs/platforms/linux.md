@@ -3,7 +3,7 @@ title: Linux
 description: NextDNS Blocker setup and usage on Linux
 ---
 
-NextDNS Blocker works on all major Linux distributions using cron for scheduling.
+NextDNS Blocker works on all major Linux distributions using systemd timers (preferred) or cron for scheduling.
 
 ## Installation
 
@@ -40,7 +40,106 @@ nextdns-blocker config edit
 nextdns-blocker watchdog install
 ```
 
-## cron Integration
+## Scheduler Integration
+
+NextDNS Blocker automatically detects and uses the best scheduler for your system:
+
+| System | Scheduler | Detection |
+|--------|-----------|-----------|
+| Modern Linux with systemd | systemd timers | `/run/systemd/system` exists |
+| Older Linux / minimal installs | cron | systemd not detected |
+| WSL (Windows Subsystem for Linux) | cron | WSL detected in kernel |
+
+### Check Your Scheduler
+
+```bash
+nextdns-blocker watchdog status
+```
+
+Output shows which scheduler is in use:
+```
+Scheduler: systemd
+Status: active
+```
+
+## systemd Timer Integration (Recommended)
+
+On modern Linux distributions with systemd, NextDNS Blocker uses user-level systemd timers.
+
+### How It Works
+
+When you run `watchdog install`, it creates:
+
+1. **Service unit**: `~/.config/systemd/user/nextdns-blocker-sync.service`
+2. **Timer unit**: `~/.config/systemd/user/nextdns-blocker-sync.timer`
+3. **Watchdog service**: `~/.config/systemd/user/nextdns-blocker-wd.service`
+4. **Watchdog timer**: `~/.config/systemd/user/nextdns-blocker-wd.timer`
+
+### View Timer Status
+
+```bash
+# Check timer status
+systemctl --user status nextdns-blocker-sync.timer
+
+# List all timers
+systemctl --user list-timers
+
+# View timer details
+systemctl --user cat nextdns-blocker-sync.timer
+```
+
+### Timer Schedule
+
+| Timer | Interval | Purpose |
+|-------|----------|---------|
+| `nextdns-blocker-sync.timer` | Every 2 minutes | Domain sync based on schedules |
+| `nextdns-blocker-wd.timer` | Every 5 minutes | Health check and recovery |
+
+### Manual Control
+
+```bash
+# Stop timers temporarily
+systemctl --user stop nextdns-blocker-sync.timer
+
+# Start timers
+systemctl --user start nextdns-blocker-sync.timer
+
+# Disable timers (persist across reboots)
+systemctl --user disable nextdns-blocker-sync.timer
+
+# Enable timers
+systemctl --user enable nextdns-blocker-sync.timer
+
+# Run sync manually
+systemctl --user start nextdns-blocker-sync.service
+```
+
+### View Logs
+
+```bash
+# View service logs
+journalctl --user -u nextdns-blocker-sync.service -f
+
+# View recent logs
+journalctl --user -u nextdns-blocker-sync.service --since "1 hour ago"
+```
+
+### Lingering (Run Without Login)
+
+By default, user services only run while you're logged in. To run even when logged out:
+
+```bash
+# Enable lingering for your user
+sudo loginctl enable-linger $USER
+
+# Verify
+loginctl show-user $USER | grep Linger
+# Output: Linger=yes
+```
+
+## cron Integration (Fallback)
+
+On systems without systemd or on WSL, NextDNS Blocker uses cron.
 
 ### How It Works
 
@@ -293,42 +392,59 @@ sudo add-apt-repository ppa:deadsnakes/ppa
 sudo apt install python3.11
 ```
 
-## systemd Service (Alternative)
+## Troubleshooting systemd
 
-Instead of cron, you can use a systemd timer:
-
-### Create Service
+### Timer Not Starting
 
 ```bash
-# ~/.config/systemd/user/nextdns-blocker.service
-[Unit]
-Description=NextDNS Blocker Sync
+# Check for errors
+systemctl --user status nextdns-blocker-sync.timer
 
-[Service]
-Type=oneshot
-ExecStart=/home/user/.local/bin/nextdns-blocker sync
-```
-
-### Create Timer
-
-```bash
-# ~/.config/systemd/user/nextdns-blocker.timer
-[Unit]
-Description=NextDNS Blocker Sync Timer
-
-[Timer]
-OnBootSec=1min
-OnUnitActiveSec=2min
-
-[Install]
-WantedBy=timers.target
-```
-
-### Enable
-
-```bash
+# Reload daemon
 systemctl --user daemon-reload
-systemctl --user enable --now nextdns-blocker.timer
+
+# Re-enable timer
+systemctl --user enable --now nextdns-blocker-sync.timer
+```
+
+### Service Fails to Run
+
+```bash
+# Check service status
+systemctl --user status nextdns-blocker-sync.service
+
+# View detailed logs
+journalctl --user -u nextdns-blocker-sync.service -n 50
+
+# Test manually
+~/.local/bin/nextdns-blocker config sync --verbose
+```
+
+### User Services Not Running After Reboot
+
+Enable lingering:
+```bash
+sudo loginctl enable-linger $USER
+```
+
+### Switching Between Schedulers
+
+If you need to switch from cron to systemd (or vice versa):
+
+```bash
+# Uninstall current scheduler
+nextdns-blocker watchdog uninstall
+
+# The next install will auto-detect the preferred scheduler
+nextdns-blocker watchdog install
+```
+
+To force a specific scheduler (advanced):
+
+```bash
+# Force cron even on systemd systems
+# (Not recommended - for debugging only)
+NEXTDNS_FORCE_CRON=1 nextdns-blocker watchdog install
 ```
 
 ## Uninstalling
