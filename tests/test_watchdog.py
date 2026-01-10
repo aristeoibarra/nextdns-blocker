@@ -1448,7 +1448,7 @@ class TestSystemdPaths:
     def test_get_systemd_user_dir(self):
         """Should return user systemd directory."""
         path = watchdog.get_systemd_user_dir()
-        assert str(path).endswith(".config/systemd/user")
+        assert path.as_posix().endswith(".config/systemd/user")
 
     def test_get_systemd_sync_service_path(self):
         """Should return sync service path."""
