@@ -542,9 +542,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.block("example.com")
+        success, was_added = client.block("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_added is True
 
     @responses.activate
     def test_block_already_blocked(self) -> None:
@@ -557,9 +558,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.block("example.com")
+        success, was_added = client.block("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_added is False  # Already existed
         # Only GET call, no POST
         assert len(responses.calls) == 1
 
@@ -587,9 +589,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123", retries=0)
-        result = client.block("example.com")
+        success, was_added = client.block("example.com")
 
-        assert result is False
+        assert success is False
+        assert was_added is False
 
     @responses.activate
     def test_unblock_domain(self) -> None:
@@ -608,9 +611,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.unblock("example.com")
+        success, was_removed = client.unblock("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_removed is True
 
     @responses.activate
     def test_unblock_not_blocked(self) -> None:
@@ -623,9 +627,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.unblock("example.com")
+        success, was_removed = client.unblock("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_removed is False  # Didn't exist
         # Only GET call, no DELETE
         assert len(responses.calls) == 1
 
@@ -653,9 +658,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123", retries=0)
-        result = client.unblock("example.com")
+        success, was_removed = client.unblock("example.com")
 
-        assert result is False
+        assert success is False
+        assert was_removed is False
 
     @responses.activate
     def test_refresh_cache(self) -> None:
@@ -793,9 +799,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.allow("example.com")
+        success, was_added = client.allow("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_added is True
 
     @responses.activate
     def test_allow_already_allowed(self) -> None:
@@ -808,9 +815,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.allow("example.com")
+        success, was_added = client.allow("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_added is False  # Already existed
         assert len(responses.calls) == 1
 
     def test_allow_invalid_domain(self) -> None:
@@ -837,9 +845,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123", retries=0)
-        result = client.allow("example.com")
+        success, was_added = client.allow("example.com")
 
-        assert result is False
+        assert success is False
+        assert was_added is False
 
     @responses.activate
     def test_disallow_domain(self) -> None:
@@ -858,9 +867,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.disallow("example.com")
+        success, was_removed = client.disallow("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_removed is True
 
     @responses.activate
     def test_disallow_not_in_list(self) -> None:
@@ -873,9 +883,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.disallow("example.com")
+        success, was_removed = client.disallow("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_removed is False  # Didn't exist
         assert len(responses.calls) == 1
 
     def test_disallow_invalid_domain(self) -> None:
@@ -902,9 +913,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123", retries=0)
-        result = client.disallow("example.com")
+        success, was_removed = client.disallow("example.com")
 
-        assert result is False
+        assert success is False
+        assert was_removed is False
 
     @responses.activate
     def test_refresh_allowlist_cache(self) -> None:

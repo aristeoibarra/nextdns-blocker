@@ -327,7 +327,7 @@ class TestDenylistAdd:
         )
 
         assert result.exit_code == 0
-        assert "Added 1 domain" in result.output
+        assert "Added 1" in result.output
 
     @responses.activate
     def test_add_multiple_domains(self, runner, temp_config_dir):
@@ -367,7 +367,7 @@ class TestDenylistAdd:
         )
 
         assert result.exit_code == 0
-        assert "Added 2 domain" in result.output
+        assert "Added 2" in result.output
 
     def test_add_invalid_domain(self, runner, temp_config_dir):
         """Test adding invalid domain fails."""
@@ -404,7 +404,7 @@ class TestDenylistRemove:
         )
 
         assert result.exit_code == 0
-        assert "Removed 1 domain" in result.output
+        assert "Removed 1" in result.output
 
     @responses.activate
     def test_remove_multiple_domains(self, runner, temp_config_dir):
@@ -456,7 +456,7 @@ class TestDenylistRemove:
         )
 
         assert result.exit_code == 0
-        assert "Removed 2 domain" in result.output
+        assert "Removed 2" in result.output
 
 
 class TestAllowlistList:
@@ -565,7 +565,7 @@ class TestAllowlistAdd:
         )
 
         assert result.exit_code == 0
-        assert "Added 1 domain" in result.output
+        assert "Added 1" in result.output
 
     @responses.activate
     def test_add_multiple_domains(self, runner, temp_config_dir):
@@ -605,7 +605,7 @@ class TestAllowlistAdd:
         )
 
         assert result.exit_code == 0
-        assert "Added 2 domain" in result.output
+        assert "Added 2" in result.output
 
 
 class TestAllowlistRemove:
@@ -633,4 +633,4 @@ class TestAllowlistRemove:
         )
 
         assert result.exit_code == 0
-        assert "Removed 1 domain" in result.output
+        assert "Removed 1" in result.output

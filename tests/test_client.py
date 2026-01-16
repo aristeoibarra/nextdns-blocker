@@ -124,8 +124,9 @@ class TestBlock:
             json={"success": True},
             status=200,
         )
-        result = client.block("newdomain.com")
-        assert result is True
+        success, was_added = client.block("newdomain.com")
+        assert success is True
+        assert was_added is True
 
     @responses.activate
     def test_block_already_blocked(self, client, mock_denylist):
@@ -136,8 +137,9 @@ class TestBlock:
             status=200,
         )
         # Domain already exists, no POST should be made
-        result = client.block("example.com")
-        assert result is True
+        success, was_added = client.block("example.com")
+        assert success is True
+        assert was_added is False  # Already existed
         assert len(responses.calls) == 1  # Only GET, no POST
 
     @responses.activate
@@ -149,8 +151,9 @@ class TestBlock:
             status=200,
         )
         responses.add(responses.POST, f"{API_URL}/profiles/testprofile/denylist", status=500)
-        result = client.block("newdomain.com")
-        assert result is False
+        success, was_added = client.block("newdomain.com")
+        assert success is False
+        assert was_added is False
 
 
 class TestUnblock:
@@ -170,8 +173,9 @@ class TestUnblock:
             json={"success": True},
             status=200,
         )
-        result = client.unblock("example.com")
-        assert result is True
+        success, was_removed = client.unblock("example.com")
+        assert success is True
+        assert was_removed is True
 
     @responses.activate
     def test_unblock_not_found(self, client):
@@ -181,9 +185,10 @@ class TestUnblock:
             json={"data": []},
             status=200,
         )
-        # Domain not in denylist, should return True (already unblocked)
-        result = client.unblock("notfound.com")
-        assert result is True
+        # Domain not in denylist, should return success but was_removed=False
+        success, was_removed = client.unblock("notfound.com")
+        assert success is True
+        assert was_removed is False  # Didn't exist
         assert len(responses.calls) == 1  # Only GET, no DELETE
 
     @responses.activate
@@ -197,8 +202,9 @@ class TestUnblock:
         responses.add(
             responses.DELETE, f"{API_URL}/profiles/testprofile/denylist/example.com", status=500
         )
-        result = client.unblock("example.com")
-        assert result is False
+        success, was_removed = client.unblock("example.com")
+        assert success is False
+        assert was_removed is False
 
 
 class TestRequestRetry:

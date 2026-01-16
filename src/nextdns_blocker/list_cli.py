@@ -279,8 +279,11 @@ def denylist_import(file: Path, dry_run: bool, config_dir: Optional[Path]) -> No
                 skipped += 1
                 continue
 
-            if client.block(domain):
+            success, was_added = client.block(domain)
+            if success and was_added:
                 added += 1
+            elif success:
+                skipped += 1  # Already exists (shouldn't happen due to check above)
             else:
                 failed += 1
 
@@ -325,17 +328,32 @@ def denylist_add(domains: tuple[str, ...], config_dir: Optional[Path]) -> None:
         client = _get_client(config_dir)
 
         added = 0
+        skipped = 0
         failed = 0
 
         for domain in valid:
-            if client.block(domain):
-                console.print(f"  [green]+[/green] {domain}")
-                added += 1
+            success, was_added = client.block(domain)
+            if success:
+                if was_added:
+                    console.print(f"  [green]+[/green] {domain}")
+                    added += 1
+                else:
+                    console.print(f"  [yellow]~[/yellow] {domain} [dim](already exists)[/dim]")
+                    skipped += 1
             else:
-                console.print(f"  [red]x[/red] {domain} (failed)")
+                console.print(f"  [red]x[/red] {domain} [dim](failed)[/dim]")
                 failed += 1
 
-        console.print(f"\n  Added {added} domain(s) to denylist\n")
+        # Build summary message
+        parts = []
+        if added > 0:
+            parts.append(f"added {added}")
+        if skipped > 0:
+            parts.append(f"skipped {skipped} (duplicates)")
+        if failed > 0:
+            parts.append(f"failed {failed}")
+        summary = ", ".join(parts) if parts else "no changes"
+        console.print(f"\n  {summary.capitalize()}\n")
 
         if added > 0:
             audit_log("DENYLIST_ADD", f"Added {added} domains: {', '.join(valid)}")
@@ -364,17 +382,32 @@ def denylist_remove(domains: tuple[str, ...], config_dir: Optional[Path]) -> Non
         client = _get_client(config_dir)
 
         removed = 0
+        not_found = 0
         failed = 0
 
         for domain in domains:
-            if client.unblock(domain):
-                console.print(f"  [green]-[/green] {domain}")
-                removed += 1
+            success, was_removed = client.unblock(domain)
+            if success:
+                if was_removed:
+                    console.print(f"  [green]-[/green] {domain}")
+                    removed += 1
+                else:
+                    console.print(f"  [yellow]?[/yellow] {domain} [dim](not found)[/dim]")
+                    not_found += 1
             else:
-                console.print(f"  [red]x[/red] {domain} (not found or failed)")
+                console.print(f"  [red]x[/red] {domain} [dim](failed)[/dim]")
                 failed += 1
 
-        console.print(f"\n  Removed {removed} domain(s) from denylist\n")
+        # Build summary message
+        parts = []
+        if removed > 0:
+            parts.append(f"removed {removed}")
+        if not_found > 0:
+            parts.append(f"not found {not_found}")
+        if failed > 0:
+            parts.append(f"failed {failed}")
+        summary = ", ".join(parts) if parts else "no changes"
+        console.print(f"\n  {summary.capitalize()}\n")
 
         if removed > 0:
             audit_log("DENYLIST_REMOVE", f"Removed {removed} domains: {', '.join(domains)}")
@@ -547,8 +580,11 @@ def allowlist_import(file: Path, dry_run: bool, config_dir: Optional[Path]) -> N
                 skipped += 1
                 continue
 
-            if client.allow(domain):
+            success, was_added = client.allow(domain)
+            if success and was_added:
                 added += 1
+            elif success:
+                skipped += 1  # Already exists (shouldn't happen due to check above)
             else:
                 failed += 1
 
@@ -593,17 +629,32 @@ def allowlist_add(domains: tuple[str, ...], config_dir: Optional[Path]) -> None:
         client = _get_client(config_dir)
 
         added = 0
+        skipped = 0
         failed = 0
 
         for domain in valid:
-            if client.allow(domain):
-                console.print(f"  [green]+[/green] {domain}")
-                added += 1
+            success, was_added = client.allow(domain)
+            if success:
+                if was_added:
+                    console.print(f"  [green]+[/green] {domain}")
+                    added += 1
+                else:
+                    console.print(f"  [yellow]~[/yellow] {domain} [dim](already exists)[/dim]")
+                    skipped += 1
             else:
-                console.print(f"  [red]x[/red] {domain} (failed)")
+                console.print(f"  [red]x[/red] {domain} [dim](failed)[/dim]")
                 failed += 1
 
-        console.print(f"\n  Added {added} domain(s) to allowlist\n")
+        # Build summary message
+        parts = []
+        if added > 0:
+            parts.append(f"added {added}")
+        if skipped > 0:
+            parts.append(f"skipped {skipped} (duplicates)")
+        if failed > 0:
+            parts.append(f"failed {failed}")
+        summary = ", ".join(parts) if parts else "no changes"
+        console.print(f"\n  {summary.capitalize()}\n")
 
         if added > 0:
             audit_log("ALLOWLIST_ADD", f"Added {added} domains: {', '.join(valid)}")
@@ -632,17 +683,32 @@ def allowlist_remove(domains: tuple[str, ...], config_dir: Optional[Path]) -> No
         client = _get_client(config_dir)
 
         removed = 0
+        not_found = 0
         failed = 0
 
         for domain in domains:
-            if client.disallow(domain):
-                console.print(f"  [green]-[/green] {domain}")
-                removed += 1
+            success, was_removed = client.disallow(domain)
+            if success:
+                if was_removed:
+                    console.print(f"  [green]-[/green] {domain}")
+                    removed += 1
+                else:
+                    console.print(f"  [yellow]?[/yellow] {domain} [dim](not found)[/dim]")
+                    not_found += 1
             else:
-                console.print(f"  [red]x[/red] {domain} (not found or failed)")
+                console.print(f"  [red]x[/red] {domain} [dim](failed)[/dim]")
                 failed += 1
 
-        console.print(f"\n  Removed {removed} domain(s) from allowlist\n")
+        # Build summary message
+        parts = []
+        if removed > 0:
+            parts.append(f"removed {removed}")
+        if not_found > 0:
+            parts.append(f"not found {not_found}")
+        if failed > 0:
+            parts.append(f"failed {failed}")
+        summary = ", ".join(parts) if parts else "no changes"
+        console.print(f"\n  {summary.capitalize()}\n")
 
         if removed > 0:
             audit_log("ALLOWLIST_REMOVE", f"Removed {removed} domains: {', '.join(domains)}")
