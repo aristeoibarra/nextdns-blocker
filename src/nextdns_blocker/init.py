@@ -17,10 +17,11 @@ from .config import DEFAULT_TIMEOUT, get_config_dir
 from .platform_utils import (
     get_executable_args,
     get_executable_path,
+    has_systemd,
     is_macos,
     is_windows,
 )
-from .watchdog import _build_task_command
+from .watchdog import _build_task_command, _install_systemd_timers
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +241,7 @@ def create_config_file(config_dir: Path, timezone: str) -> Path:
 
 def install_scheduling() -> tuple[bool, str]:
     """
-    Install scheduling jobs (launchd on macOS, cron on Linux, Task Scheduler on Windows).
+    Install scheduling jobs (launchd on macOS, systemd/cron on Linux, Task Scheduler on Windows).
 
     Returns:
         Tuple of (success, message)
@@ -250,7 +251,23 @@ def install_scheduling() -> tuple[bool, str]:
     elif is_windows():
         return _install_windows_task()
     else:
+        # Linux: prefer systemd if available, fall back to cron
+        if has_systemd():
+            return _install_systemd()
         return _install_cron()
+
+
+def _install_systemd() -> tuple[bool, str]:
+    """Install systemd user timers for Linux."""
+    try:
+        _install_systemd_timers()
+        return True, "systemd timers installed (sync: 2 min, watchdog: 1 min)"
+    except SystemExit:
+        # _install_systemd_timers() calls sys.exit(1) on failure
+        return False, "failed to install systemd timers"
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.error(f"Failed to install systemd timers: {e}")
+        return False, f"failed to install systemd timers: {e}"
 
 
 def _install_launchd() -> tuple[bool, str]:
