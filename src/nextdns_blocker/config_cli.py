@@ -224,6 +224,11 @@ def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
     """Open config file in editor."""
     from .cli import require_pin_verification
     from .panic import is_panic_mode
+    from .protection import (
+        validate_no_auto_panic_weakening,
+        validate_no_locked_removal,
+        validate_no_locked_weakening,
+    )
 
     # Block config edit during panic mode
     if is_panic_mode():
@@ -243,6 +248,10 @@ def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
             f"\n  [dim]Run 'nextdns-blocker init' to create one.[/dim]\n"
         )
         sys.exit(1)
+
+    # Save original config for validation and potential rollback
+    original_config = load_config_file(config_path)
+    original_content = config_path.read_text(encoding="utf-8")
 
     # Get editor
     editor_str = editor or get_editor()
@@ -264,6 +273,33 @@ def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
         sys.exit(1)
     except FileNotFoundError:
         console.print(f"\n  [red]Error: Editor '{editor_args[0]}' not found[/red]\n")
+        sys.exit(1)
+
+    # Load the edited config and validate protection rules
+    try:
+        new_config = load_config_file(config_path)
+    except (json.JSONDecodeError, OSError) as e:
+        console.print(f"\n  [red]Error: Invalid JSON after edit: {e}[/red]\n")
+        # Restore original
+        config_path.write_text(original_content, encoding="utf-8")
+        console.print("  [yellow]![/yellow] Original config restored\n")
+        sys.exit(1)
+
+    # Validate protection rules - these are CRITICAL for addiction safety
+    protection_errors = []
+    protection_errors.extend(validate_no_locked_removal(original_config, new_config))
+    protection_errors.extend(validate_no_locked_weakening(original_config, new_config))
+    protection_errors.extend(validate_no_auto_panic_weakening(original_config, new_config))
+
+    if protection_errors:
+        console.print("\n  [red]Protection violation detected![/red]\n")
+        for error in protection_errors:
+            console.print(f"  [red]✗[/red] {error}\n")
+
+        # Restore original config
+        config_path.write_text(original_content, encoding="utf-8")
+        console.print("  [yellow]![/yellow] Original config restored\n")
+        audit_log("CONFIG_EDIT_BLOCKED", f"Protection violation: {protection_errors[0]}")
         sys.exit(1)
 
     audit_log("CONFIG_EDIT", str(config_path))

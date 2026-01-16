@@ -190,6 +190,97 @@ def validate_no_locked_weakening(
     return errors
 
 
+def validate_no_auto_panic_weakening(
+    old_config: dict[str, Any], new_config: dict[str, Any]
+) -> list[str]:
+    """Validate that auto-panic settings are not being weakened when cannot_disable is true.
+
+    Protected changes when cannot_disable=true:
+    - Changing enabled: true to enabled: false
+    - Changing cannot_disable: true to cannot_disable: false
+    - Removing auto_panic section entirely
+    - Modifying schedule to reduce coverage
+
+    Args:
+        old_config: Current configuration
+        new_config: Proposed new configuration
+
+    Returns:
+        List of error messages for auto-panic being weakened
+    """
+    errors: list[str] = []
+
+    old_protection = old_config.get("protection", {})
+    old_auto_panic = old_protection.get("auto_panic", {})
+
+    # Only enforce if cannot_disable is currently true
+    if not old_auto_panic.get("cannot_disable", False):
+        return errors
+
+    new_protection = new_config.get("protection", {})
+    new_auto_panic = new_protection.get("auto_panic", {})
+
+    # Check if auto_panic section was removed entirely
+    if "auto_panic" not in new_protection and "auto_panic" in old_protection:
+        errors.append(
+            "Cannot remove auto_panic section. It has 'cannot_disable: true'. "
+            f"Use 'ndb protection unlock-request auto_panic' to request modification "
+            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+        )
+        return errors
+
+    # Check if enabled was changed from true to false
+    if old_auto_panic.get("enabled", False) and not new_auto_panic.get("enabled", True):
+        errors.append(
+            "Cannot disable auto_panic. It has 'cannot_disable: true'. "
+            f"Use 'ndb protection unlock-request auto_panic' to request modification "
+            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+        )
+
+    # Check if cannot_disable was changed from true to false
+    if old_auto_panic.get("cannot_disable", False) and not new_auto_panic.get(
+        "cannot_disable", True
+    ):
+        errors.append(
+            "Cannot change 'cannot_disable' from true to false. "
+            f"Use 'ndb protection unlock-request auto_panic' to request modification "
+            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+        )
+
+    # Check if schedule was weakened (reduced coverage)
+    old_schedule = old_auto_panic.get("schedule", {})
+    new_schedule = new_auto_panic.get("schedule", {})
+
+    if old_schedule and new_schedule:
+        # Check if start time was made later (less coverage)
+        old_start = old_schedule.get("start", "23:00")
+        new_start = new_schedule.get("start", "23:00")
+        # Check if end time was made earlier (less coverage)
+        old_end = old_schedule.get("end", "06:00")
+        new_end = new_schedule.get("end", "06:00")
+
+        if old_start != new_start or old_end != new_end:
+            errors.append(
+                "Cannot modify auto_panic schedule. It has 'cannot_disable: true'. "
+                f"Use 'ndb protection unlock-request auto_panic' to request modification "
+                f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+            )
+
+    # Check if days were reduced
+    old_days = set(old_auto_panic.get("days", []))
+    new_days = set(new_auto_panic.get("days", []))
+
+    if old_days and new_days and not old_days.issubset(new_days):
+        # Some days were removed
+        errors.append(
+            "Cannot reduce auto_panic active days. It has 'cannot_disable: true'. "
+            f"Use 'ndb protection unlock-request auto_panic' to request modification "
+            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+        )
+
+    return errors
+
+
 def create_unlock_request(
     item_type: str,
     item_id: str,
@@ -318,6 +409,13 @@ def execute_unlock_request(request_id: str, config_path: Path) -> bool:
         elif item_type == "service":
             services = config.get("nextdns", {}).get("services", [])
             config["nextdns"]["services"] = [s for s in services if s.get("id") != item_id]
+        elif item_type == "auto_panic":
+            # Disable the cannot_disable flag to allow modifications
+            protection = config.get("protection", {})
+            auto_panic = protection.get("auto_panic", {})
+            if auto_panic:
+                auto_panic["cannot_disable"] = False
+                config["protection"]["auto_panic"] = auto_panic
 
         # Write updated config
         with open(config_path, "w", encoding="utf-8") as f:
