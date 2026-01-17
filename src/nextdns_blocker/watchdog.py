@@ -1449,11 +1449,15 @@ def _process_pending_actions() -> None:
 
         if action_type == "unblock":
             try:
-                if client.unblock(domain):
+                success, was_removed = client.unblock(domain)
+                if success:
                     mark_action_executed(action_id)
-                    audit_log("UNBLOCK", f"{domain} (pending: {action_id})")
-                    send_notification(EventType.UNBLOCK, domain, config)
-                    click.echo(f"  Executed pending unblock: {domain}")
+                    if was_removed:
+                        audit_log("UNBLOCK", f"{domain} (pending: {action_id})")
+                        send_notification(EventType.UNBLOCK, domain, config)
+                        click.echo(f"  Executed pending unblock: {domain}")
+                    else:
+                        click.echo(f"  Pending unblock: {domain} (already unblocked)")
                 else:
                     logger.error(f"Failed to unblock {domain} (pending: {action_id})")
             except DomainValidationError as e:

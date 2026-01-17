@@ -6,19 +6,61 @@ import logging
 import sys
 from io import StringIO
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, NoReturn, Optional
 
 import click
+import requests
 from rich.console import Console
 from rich.table import Table
 
 from .client import NextDNSClient
 from .common import audit_log, validate_domain
 from .config import load_config
+from .notifications import EventType, send_notification
 
 logger = logging.getLogger(__name__)
 
 console = Console(highlight=False)
+
+
+def _handle_api_error(e: Exception) -> NoReturn:
+    """Handle API-related errors with specific messages."""
+    if isinstance(e, requests.exceptions.Timeout):
+        console.print("\n  [red]Error: API timeout - please try again[/red]\n")
+    elif isinstance(e, requests.exceptions.ConnectionError):
+        console.print("\n  [red]Error: Connection failed - check your network[/red]\n")
+    elif isinstance(e, requests.exceptions.HTTPError):
+        console.print(f"\n  [red]Error: API error - {e}[/red]\n")
+    elif isinstance(e, PermissionError):
+        console.print("\n  [red]Error: Permission denied accessing config[/red]\n")
+    elif isinstance(e, FileNotFoundError):
+        console.print(f"\n  [red]Error: File not found - {e.filename}[/red]\n")
+    elif isinstance(e, json.JSONDecodeError):
+        console.print(f"\n  [red]Error: Invalid JSON format - {e.msg}[/red]\n")
+    elif isinstance(e, ValueError):
+        console.print(f"\n  [red]Error: Invalid value - {e}[/red]\n")
+    else:
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        console.print(f"\n  [red]Error: {e}[/red]\n")
+    sys.exit(1)
+
+
+def _handle_file_error(e: Exception) -> NoReturn:
+    """Handle file-related errors with specific messages."""
+    if isinstance(e, PermissionError):
+        console.print(f"\n  [red]Error: Permission denied - {e.filename}[/red]\n")
+    elif isinstance(e, FileNotFoundError):
+        console.print(f"\n  [red]Error: File not found - {e.filename}[/red]\n")
+    elif isinstance(e, json.JSONDecodeError):
+        console.print(f"\n  [red]Error: Invalid file format (JSON error: {e.msg})[/red]\n")
+    elif isinstance(e, csv.Error):
+        console.print(f"\n  [red]Error: Invalid CSV format - {e}[/red]\n")
+    elif isinstance(e, UnicodeDecodeError):
+        console.print("\n  [red]Error: File encoding issue - use UTF-8[/red]\n")
+    else:
+        logger.error(f"Unexpected file error: {e}", exc_info=True)
+        console.print(f"\n  [red]Error: {e}[/red]\n")
+    sys.exit(1)
 
 
 # =============================================================================
@@ -30,6 +72,15 @@ def _get_client(config_dir: Optional[Path] = None) -> NextDNSClient:
     """Create a NextDNS client from config."""
     config = load_config(config_dir)
     return NextDNSClient(config["api_key"], config["profile_id"])
+
+
+def _get_client_and_config(
+    config_dir: Optional[Path] = None,
+) -> tuple[NextDNSClient, dict[str, Any]]:
+    """Create a NextDNS client and return the config for notifications."""
+    config = load_config(config_dir)
+    client = NextDNSClient(config["api_key"], config["profile_id"])
+    return client, config
 
 
 def _export_to_json(domains: list[dict[str, Any]]) -> str:
@@ -164,8 +215,17 @@ def denylist_list(config_dir: Optional[Path]) -> None:
         console.print(table)
         console.print(f"\n  Total: {len(domains)} domains\n")
 
+    except (
+        requests.exceptions.RequestException,
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as e:
+        _handle_api_error(e)
     except Exception as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
         sys.exit(1)
 
 
@@ -211,8 +271,17 @@ def denylist_export(output_format: str, output: Optional[Path], config_dir: Opti
 
         audit_log("DENYLIST_EXPORT", f"Exported {len(domains)} domains")
 
+    except (
+        requests.exceptions.RequestException,
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as e:
+        _handle_api_error(e)
     except Exception as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
         sys.exit(1)
 
 
@@ -279,8 +348,11 @@ def denylist_import(file: Path, dry_run: bool, config_dir: Optional[Path]) -> No
                 skipped += 1
                 continue
 
-            if client.block(domain):
+            success, was_added = client.block(domain)
+            if success and was_added:
                 added += 1
+            elif success:
+                skipped += 1  # Already exists (shouldn't happen due to check above)
             else:
                 failed += 1
 
@@ -295,8 +367,17 @@ def denylist_import(file: Path, dry_run: bool, config_dir: Optional[Path]) -> No
             f"Added {added}, skipped {skipped}, failed {failed} from {file.name}",
         )
 
+    except (
+        requests.exceptions.RequestException,
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as e:
+        _handle_api_error(e)
     except Exception as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
         sys.exit(1)
 
 
@@ -322,29 +403,58 @@ def denylist_add(domains: tuple[str, ...], config_dir: Optional[Path]) -> None:
             if not valid:
                 sys.exit(1)
 
-        client = _get_client(config_dir)
+        client, config = _get_client_and_config(config_dir)
 
         added = 0
+        skipped = 0
         failed = 0
+        added_domains: list[str] = []
 
         for domain in valid:
-            if client.block(domain):
-                console.print(f"  [green]+[/green] {domain}")
-                added += 1
+            success, was_added = client.block(domain)
+            if success:
+                if was_added:
+                    console.print(f"  [green]+[/green] {domain}")
+                    added += 1
+                    added_domains.append(domain)
+                else:
+                    console.print(f"  [yellow]~[/yellow] {domain} [dim](already exists)[/dim]")
+                    skipped += 1
             else:
-                console.print(f"  [red]x[/red] {domain} (failed)")
+                console.print(f"  [red]x[/red] {domain} [dim](failed)[/dim]")
                 failed += 1
 
-        console.print(f"\n  Added {added} domain(s) to denylist\n")
+        # Build summary message
+        parts = []
+        if added > 0:
+            parts.append(f"added {added}")
+        if skipped > 0:
+            parts.append(f"skipped {skipped} (duplicates)")
+        if failed > 0:
+            parts.append(f"failed {failed}")
+        summary = ", ".join(parts) if parts else "no changes"
+        console.print(f"\n  {summary.capitalize()}\n")
 
         if added > 0:
             audit_log("DENYLIST_ADD", f"Added {added} domains: {', '.join(valid)}")
+            # Send notifications for each blocked domain
+            for domain in added_domains:
+                send_notification(EventType.BLOCK, domain, config)
 
         if failed > 0:
             sys.exit(1)
 
+    except (
+        requests.exceptions.RequestException,
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as e:
+        _handle_api_error(e)
     except Exception as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
         sys.exit(1)
 
 
@@ -361,26 +471,55 @@ def denylist_remove(domains: tuple[str, ...], config_dir: Optional[Path]) -> Non
     Example: nextdns-blocker denylist remove example.com test.org
     """
     try:
-        client = _get_client(config_dir)
+        client, config = _get_client_and_config(config_dir)
 
         removed = 0
+        not_found = 0
         failed = 0
+        removed_domains: list[str] = []
 
         for domain in domains:
-            if client.unblock(domain):
-                console.print(f"  [green]-[/green] {domain}")
-                removed += 1
+            success, was_removed = client.unblock(domain)
+            if success:
+                if was_removed:
+                    console.print(f"  [green]-[/green] {domain}")
+                    removed += 1
+                    removed_domains.append(domain)
+                else:
+                    console.print(f"  [yellow]?[/yellow] {domain} [dim](not found)[/dim]")
+                    not_found += 1
             else:
-                console.print(f"  [red]x[/red] {domain} (not found or failed)")
+                console.print(f"  [red]x[/red] {domain} [dim](failed)[/dim]")
                 failed += 1
 
-        console.print(f"\n  Removed {removed} domain(s) from denylist\n")
+        # Build summary message
+        parts = []
+        if removed > 0:
+            parts.append(f"removed {removed}")
+        if not_found > 0:
+            parts.append(f"not found {not_found}")
+        if failed > 0:
+            parts.append(f"failed {failed}")
+        summary = ", ".join(parts) if parts else "no changes"
+        console.print(f"\n  {summary.capitalize()}\n")
 
         if removed > 0:
             audit_log("DENYLIST_REMOVE", f"Removed {removed} domains: {', '.join(domains)}")
+            # Send notifications for each unblocked domain
+            for domain in removed_domains:
+                send_notification(EventType.UNBLOCK, domain, config)
 
+    except (
+        requests.exceptions.RequestException,
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as e:
+        _handle_api_error(e)
     except Exception as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
         sys.exit(1)
 
 
@@ -430,8 +569,17 @@ def allowlist_list(config_dir: Optional[Path]) -> None:
         console.print(table)
         console.print(f"\n  Total: {len(domains)} domains\n")
 
+    except (
+        requests.exceptions.RequestException,
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as e:
+        _handle_api_error(e)
     except Exception as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
         sys.exit(1)
 
 
@@ -479,8 +627,17 @@ def allowlist_export(
 
         audit_log("ALLOWLIST_EXPORT", f"Exported {len(domains)} domains")
 
+    except (
+        requests.exceptions.RequestException,
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as e:
+        _handle_api_error(e)
     except Exception as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
         sys.exit(1)
 
 
@@ -547,8 +704,11 @@ def allowlist_import(file: Path, dry_run: bool, config_dir: Optional[Path]) -> N
                 skipped += 1
                 continue
 
-            if client.allow(domain):
+            success, was_added = client.allow(domain)
+            if success and was_added:
                 added += 1
+            elif success:
+                skipped += 1  # Already exists (shouldn't happen due to check above)
             else:
                 failed += 1
 
@@ -563,8 +723,17 @@ def allowlist_import(file: Path, dry_run: bool, config_dir: Optional[Path]) -> N
             f"Added {added}, skipped {skipped}, failed {failed} from {file.name}",
         )
 
+    except (
+        requests.exceptions.RequestException,
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as e:
+        _handle_api_error(e)
     except Exception as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
         sys.exit(1)
 
 
@@ -590,29 +759,58 @@ def allowlist_add(domains: tuple[str, ...], config_dir: Optional[Path]) -> None:
             if not valid:
                 sys.exit(1)
 
-        client = _get_client(config_dir)
+        client, config = _get_client_and_config(config_dir)
 
         added = 0
+        skipped = 0
         failed = 0
+        added_domains: list[str] = []
 
         for domain in valid:
-            if client.allow(domain):
-                console.print(f"  [green]+[/green] {domain}")
-                added += 1
+            success, was_added = client.allow(domain)
+            if success:
+                if was_added:
+                    console.print(f"  [green]+[/green] {domain}")
+                    added += 1
+                    added_domains.append(domain)
+                else:
+                    console.print(f"  [yellow]~[/yellow] {domain} [dim](already exists)[/dim]")
+                    skipped += 1
             else:
-                console.print(f"  [red]x[/red] {domain} (failed)")
+                console.print(f"  [red]x[/red] {domain} [dim](failed)[/dim]")
                 failed += 1
 
-        console.print(f"\n  Added {added} domain(s) to allowlist\n")
+        # Build summary message
+        parts = []
+        if added > 0:
+            parts.append(f"added {added}")
+        if skipped > 0:
+            parts.append(f"skipped {skipped} (duplicates)")
+        if failed > 0:
+            parts.append(f"failed {failed}")
+        summary = ", ".join(parts) if parts else "no changes"
+        console.print(f"\n  {summary.capitalize()}\n")
 
         if added > 0:
             audit_log("ALLOWLIST_ADD", f"Added {added} domains: {', '.join(valid)}")
+            # Send notifications for each allowed domain
+            for domain in added_domains:
+                send_notification(EventType.ALLOW, domain, config)
 
         if failed > 0:
             sys.exit(1)
 
+    except (
+        requests.exceptions.RequestException,
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as e:
+        _handle_api_error(e)
     except Exception as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
         sys.exit(1)
 
 
@@ -629,26 +827,55 @@ def allowlist_remove(domains: tuple[str, ...], config_dir: Optional[Path]) -> No
     Example: nextdns-blocker allowlist remove example.com test.org
     """
     try:
-        client = _get_client(config_dir)
+        client, config = _get_client_and_config(config_dir)
 
         removed = 0
+        not_found = 0
         failed = 0
+        removed_domains: list[str] = []
 
         for domain in domains:
-            if client.disallow(domain):
-                console.print(f"  [green]-[/green] {domain}")
-                removed += 1
+            success, was_removed = client.disallow(domain)
+            if success:
+                if was_removed:
+                    console.print(f"  [green]-[/green] {domain}")
+                    removed += 1
+                    removed_domains.append(domain)
+                else:
+                    console.print(f"  [yellow]?[/yellow] {domain} [dim](not found)[/dim]")
+                    not_found += 1
             else:
-                console.print(f"  [red]x[/red] {domain} (not found or failed)")
+                console.print(f"  [red]x[/red] {domain} [dim](failed)[/dim]")
                 failed += 1
 
-        console.print(f"\n  Removed {removed} domain(s) from allowlist\n")
+        # Build summary message
+        parts = []
+        if removed > 0:
+            parts.append(f"removed {removed}")
+        if not_found > 0:
+            parts.append(f"not found {not_found}")
+        if failed > 0:
+            parts.append(f"failed {failed}")
+        summary = ", ".join(parts) if parts else "no changes"
+        console.print(f"\n  {summary.capitalize()}\n")
 
         if removed > 0:
             audit_log("ALLOWLIST_REMOVE", f"Removed {removed} domains: {', '.join(domains)}")
+            # Send notifications for each disallowed domain
+            for domain in removed_domains:
+                send_notification(EventType.DISALLOW, domain, config)
 
+    except (
+        requests.exceptions.RequestException,
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as e:
+        _handle_api_error(e)
     except Exception as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
         sys.exit(1)
 
 

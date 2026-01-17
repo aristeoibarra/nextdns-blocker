@@ -447,10 +447,14 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
             config["api_key"], config["profile_id"], config["timeout"], config["retries"]
         )
 
-        if client.unblock(domain):
-            audit_log("UNBLOCK", domain)
-            send_notification(EventType.UNBLOCK, domain, config)
-            console.print(f"\n  [green]Unblocked: {domain}[/green]\n")
+        success, was_removed = client.unblock(domain)
+        if success:
+            if was_removed:
+                audit_log("UNBLOCK", domain)
+                send_notification(EventType.UNBLOCK, domain, config)
+                console.print(f"\n  [green]Unblocked: {domain}[/green]\n")
+            else:
+                console.print(f"\n  [yellow]Domain not in denylist: {domain}[/yellow]\n")
         else:
             console.print(f"\n  [red]Error: Failed to unblock '{domain}'[/red]\n", highlight=False)
             sys.exit(1)
@@ -507,7 +511,8 @@ def _sync_denylist(
             if dry_run:
                 console.print(f"  [yellow]Would BLOCK: {domain}[/yellow]")
             else:
-                if client.block(domain):
+                success, was_added = client.block(domain)
+                if success and was_added:
                     audit_log("BLOCK", domain)
                     nm.queue(EventType.BLOCK, domain)
                     blocked_count += 1
@@ -594,7 +599,8 @@ def _handle_unblock(
         console.print(f"  [green]Would UNBLOCK: {domain}[/green]")
         return False
     else:
-        if client.unblock(domain):
+        success, was_removed = client.unblock(domain)
+        if success and was_removed:
             audit_log("UNBLOCK", domain)
             nm.queue(EventType.UNBLOCK, domain)
             return True
@@ -652,7 +658,8 @@ def _sync_allowlist(
             if dry_run:
                 console.print(f"  [green]Would ADD to allowlist: {domain}[/green]")
             else:
-                if client.allow(domain):
+                success, was_added = client.allow(domain)
+                if success and was_added:
                     audit_log("ALLOW", domain)
                     nm.queue(EventType.ALLOW, domain)
                     allowed_count += 1
@@ -662,7 +669,8 @@ def _sync_allowlist(
             if dry_run:
                 console.print(f"  [yellow]Would REMOVE from allowlist: {domain}[/yellow]")
             else:
-                if client.disallow(domain):
+                success, was_removed = client.disallow(domain)
+                if success and was_removed:
                     audit_log("DISALLOW", domain)
                     nm.queue(EventType.DISALLOW, domain)
                     disallowed_count += 1
@@ -1382,10 +1390,14 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
                 f"  [yellow]Warning: '{domain}' is currently blocked in denylist[/yellow]"
             )
 
-        if client.allow(domain):
-            audit_log("ALLOW", domain)
-            send_notification(EventType.ALLOW, domain, config)
-            console.print(f"\n  [green]Added to allowlist: {domain}[/green]\n")
+        success, was_added = client.allow(domain)
+        if success:
+            if was_added:
+                audit_log("ALLOW", domain)
+                send_notification(EventType.ALLOW, domain, config)
+                console.print(f"\n  [green]Added to allowlist: {domain}[/green]\n")
+            else:
+                console.print(f"\n  [yellow]Already in allowlist: {domain}[/yellow]\n")
         else:
             console.print("\n  [red]Error: Failed to add to allowlist[/red]\n", highlight=False)
             sys.exit(1)
@@ -1421,10 +1433,14 @@ def disallow(domain: str, config_dir: Optional[Path]) -> None:
             config["api_key"], config["profile_id"], config["timeout"], config["retries"]
         )
 
-        if client.disallow(domain):
-            audit_log("DISALLOW", domain)
-            send_notification(EventType.DISALLOW, domain, config)
-            console.print(f"\n  [green]Removed from allowlist: {domain}[/green]\n")
+        success, was_removed = client.disallow(domain)
+        if success:
+            if was_removed:
+                audit_log("DISALLOW", domain)
+                send_notification(EventType.DISALLOW, domain, config)
+                console.print(f"\n  [green]Removed from allowlist: {domain}[/green]\n")
+            else:
+                console.print(f"\n  [yellow]Not in allowlist: {domain}[/yellow]\n")
         else:
             console.print(
                 "\n  [red]Error: Failed to remove from allowlist[/red]\n", highlight=False

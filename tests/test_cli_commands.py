@@ -612,7 +612,7 @@ class TestAllowCommand:
 
         mock_client = mock_client_cls.return_value
         mock_client.is_blocked.return_value = False
-        mock_client.allow.return_value = True
+        mock_client.allow.return_value = (True, True)  # (success, was_added)
 
         result = runner.invoke(main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)])
 

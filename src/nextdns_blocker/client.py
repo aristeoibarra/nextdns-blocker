@@ -542,7 +542,7 @@ class NextDNSClient:
         """
         return self.find_domain(domain) is not None
 
-    def block(self, domain: str) -> bool:
+    def block(self, domain: str) -> tuple[bool, bool]:
         """
         Add a domain to the denylist.
 
@@ -550,7 +550,9 @@ class NextDNSClient:
             domain: Domain name to block
 
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, was_added):
+            - success: True if operation completed without error
+            - was_added: True if domain was actually added, False if already existed
 
         Raises:
             DomainValidationError: If domain is invalid
@@ -561,7 +563,7 @@ class NextDNSClient:
         # Check if already blocked (using cache for efficiency)
         if self.find_domain(domain):
             logger.debug(f"Domain already blocked: {domain}")
-            return True
+            return (True, False)  # Success but not added (already exists)
 
         result = self.request(
             "POST", f"/profiles/{self.profile_id}/denylist", {"id": domain, "active": True}
@@ -571,12 +573,12 @@ class NextDNSClient:
             # Optimistic cache update
             self._cache.add_domain(domain)
             logger.info(f"Blocked: {domain}")
-            return True
+            return (True, True)  # Success and was added
 
         logger.error(f"Failed to block: {domain}")
-        return False
+        return (False, False)  # Failed
 
-    def unblock(self, domain: str) -> bool:
+    def unblock(self, domain: str) -> tuple[bool, bool]:
         """
         Remove a domain from the denylist.
 
@@ -584,7 +586,9 @@ class NextDNSClient:
             domain: Domain name to unblock
 
         Returns:
-            True if successful (including if domain wasn't blocked), False on error
+            Tuple of (success, was_removed):
+            - success: True if operation completed without error
+            - was_removed: True if domain was actually removed, False if didn't exist
 
         Raises:
             DomainValidationError: If domain is invalid
@@ -594,7 +598,7 @@ class NextDNSClient:
 
         if not self.find_domain(domain):
             logger.debug(f"Domain not in denylist: {domain}")
-            return True
+            return (True, False)  # Success but not removed (didn't exist)
 
         result = self.request("DELETE", f"/profiles/{self.profile_id}/denylist/{domain}")
 
@@ -602,10 +606,10 @@ class NextDNSClient:
             # Optimistic cache update
             self._cache.remove_domain(domain)
             logger.info(f"Unblocked: {domain}")
-            return True
+            return (True, True)  # Success and was removed
 
         logger.error(f"Failed to unblock: {domain}")
-        return False
+        return (False, False)  # Failed
 
     def refresh_cache(self) -> bool:
         """
@@ -683,7 +687,7 @@ class NextDNSClient:
         """
         return self.find_in_allowlist(domain) is not None
 
-    def allow(self, domain: str) -> bool:
+    def allow(self, domain: str) -> tuple[bool, bool]:
         """
         Add a domain to the allowlist.
 
@@ -691,7 +695,9 @@ class NextDNSClient:
             domain: Domain name to allow
 
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, was_added):
+            - success: True if operation completed without error
+            - was_added: True if domain was actually added, False if already existed
 
         Raises:
             DomainValidationError: If domain is invalid
@@ -701,7 +707,7 @@ class NextDNSClient:
 
         if self.find_in_allowlist(domain):
             logger.debug(f"Domain already in allowlist: {domain}")
-            return True
+            return (True, False)  # Success but not added (already exists)
 
         result = self.request(
             "POST", f"/profiles/{self.profile_id}/allowlist", {"id": domain, "active": True}
@@ -710,12 +716,12 @@ class NextDNSClient:
         if result is not None:
             self._allowlist_cache.add_domain(domain)
             logger.info(f"Added to allowlist: {domain}")
-            return True
+            return (True, True)  # Success and was added
 
         logger.error(f"Failed to add to allowlist: {domain}")
-        return False
+        return (False, False)  # Failed
 
-    def disallow(self, domain: str) -> bool:
+    def disallow(self, domain: str) -> tuple[bool, bool]:
         """
         Remove a domain from the allowlist.
 
@@ -723,7 +729,9 @@ class NextDNSClient:
             domain: Domain name to remove from allowlist
 
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, was_removed):
+            - success: True if operation completed without error
+            - was_removed: True if domain was actually removed, False if didn't exist
 
         Raises:
             DomainValidationError: If domain is invalid
@@ -733,17 +741,17 @@ class NextDNSClient:
 
         if not self.find_in_allowlist(domain):
             logger.debug(f"Domain not in allowlist: {domain}")
-            return True
+            return (True, False)  # Success but not removed (didn't exist)
 
         result = self.request("DELETE", f"/profiles/{self.profile_id}/allowlist/{domain}")
 
         if result is not None:
             self._allowlist_cache.remove_domain(domain)
             logger.info(f"Removed from allowlist: {domain}")
-            return True
+            return (True, True)  # Success and was removed
 
         logger.error(f"Failed to remove from allowlist: {domain}")
-        return False
+        return (False, False)  # Failed
 
     def refresh_allowlist_cache(self) -> bool:
         """

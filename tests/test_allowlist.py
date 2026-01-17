@@ -193,8 +193,9 @@ class TestAllow:
             status=200,
         )
 
-        result = client.allow("aws.amazon.com")
-        assert result is True
+        success, was_added = client.allow("aws.amazon.com")
+        assert success is True
+        assert was_added is True
 
     @responses.activate
     def test_allow_already_allowed(self):
@@ -208,8 +209,9 @@ class TestAllow:
             status=200,
         )
 
-        result = client.allow("aws.amazon.com")
-        assert result is True
+        success, was_added = client.allow("aws.amazon.com")
+        assert success is True
+        assert was_added is False  # Already existed
         assert len(responses.calls) == 1  # No POST call
 
     def test_allow_invalid_domain(self):
@@ -241,8 +243,9 @@ class TestDisallow:
             status=200,
         )
 
-        result = client.disallow("aws.amazon.com")
-        assert result is True
+        success, was_removed = client.disallow("aws.amazon.com")
+        assert success is True
+        assert was_removed is True
 
     @responses.activate
     def test_disallow_not_in_allowlist(self):
@@ -256,8 +259,9 @@ class TestDisallow:
             status=200,
         )
 
-        result = client.disallow("aws.amazon.com")
-        assert result is True
+        success, was_removed = client.disallow("aws.amazon.com")
+        assert success is True
+        assert was_removed is False  # Didn't exist
         assert len(responses.calls) == 1  # No DELETE call
 
     def test_disallow_invalid_domain(self):
@@ -404,7 +408,7 @@ class TestAllowCommand:
 
         mock_client = mock_client_cls.return_value
         mock_client.find_in_allowlist.return_value = None
-        mock_client.allow.return_value = True
+        mock_client.allow.return_value = (True, True)  # (success, was_added)
         mock_client.is_blocked.return_value = False
 
         result = runner.invoke(main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)])
@@ -430,7 +434,7 @@ class TestAllowCommand:
 
         mock_client = mock_client_cls.return_value
         mock_client.find_in_allowlist.return_value = None
-        mock_client.allow.return_value = True
+        mock_client.allow.return_value = (True, True)  # (success, was_added)
         mock_client.is_blocked.return_value = True  # Domain IS in denylist
 
         result = runner.invoke(main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)])
