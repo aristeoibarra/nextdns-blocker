@@ -44,6 +44,7 @@ dependencies = [
     "click>=8.0.0",
     "platformdirs>=3.0.0",
     "tzdata>=2023.3",
+    "tzlocal>=4.0",
     "rich>=13.0.0",
 ]
 

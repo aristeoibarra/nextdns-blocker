@@ -178,24 +178,14 @@ class TestDetectSystemTimezone:
         assert result == "America/Los_Angeles"
 
     @patch.dict(os.environ, {}, clear=True)
-    @patch("nextdns_blocker.init.is_windows", return_value=True)
-    @patch("nextdns_blocker.init.subprocess.run")
-    def test_windows_tzutil_detection(self, mock_run, mock_is_windows):
-        """Should detect timezone using tzutil on Windows."""
-        mock_run.return_value = MagicMock(stdout="Pacific Standard Time\n")
-
+    def test_tzlocal_detection(self):
+        """Should detect timezone using tzlocal library (cross-platform)."""
+        # tzlocal should work on any system and return a valid IANA timezone
         result = detect_system_timezone()
-        assert result == "America/Los_Angeles"
+        from zoneinfo import ZoneInfo
 
-    @patch.dict(os.environ, {}, clear=True)
-    @patch("nextdns_blocker.init.is_windows", return_value=True)
-    @patch("nextdns_blocker.init.subprocess.run")
-    def test_windows_unknown_timezone_falls_back(self, mock_run, mock_is_windows):
-        """Should fall back to UTC for unknown Windows timezone."""
-        mock_run.return_value = MagicMock(stdout="Unknown Timezone Name\n")
-
-        result = detect_system_timezone()
-        assert result == "UTC"
+        # Just verify we get a valid IANA timezone back
+        ZoneInfo(result)  # Will raise KeyError if invalid
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("nextdns_blocker.init.is_windows", return_value=False)
