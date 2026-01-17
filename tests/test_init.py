@@ -151,7 +151,7 @@ class TestDetectSystemTimezone:
     @patch("nextdns_blocker.init.is_windows", return_value=False)
     @patch("nextdns_blocker.init.Path")
     def test_unix_symlink_detection(self, mock_path_class, mock_is_windows):
-        """Should detect timezone from /etc/localtime symlink on Unix."""
+        """Should detect timezone from /etc/localtime symlink on Unix when tzlocal fails."""
         mock_path = MagicMock()
         mock_path.is_symlink.return_value = True
         mock_path.resolve.return_value = MagicMock(
@@ -159,14 +159,16 @@ class TestDetectSystemTimezone:
         )
         mock_path_class.return_value = mock_path
 
-        result = detect_system_timezone()
-        assert result == "Europe/London"
+        # Mock tzlocal to fail so we fall back to symlink detection
+        with patch.dict("sys.modules", {"tzlocal": None}):
+            result = detect_system_timezone()
+            assert result == "Europe/London"
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("nextdns_blocker.init.is_windows", return_value=False)
     @patch("nextdns_blocker.init.Path")
     def test_macos_zoneinfo_default_path(self, mock_path_class, mock_is_windows):
-        """Should detect timezone from macOS zoneinfo.default path."""
+        """Should detect timezone from macOS zoneinfo.default path when tzlocal fails."""
         mock_path = MagicMock()
         mock_path.is_symlink.return_value = True
         mock_path.resolve.return_value = MagicMock(
@@ -174,8 +176,10 @@ class TestDetectSystemTimezone:
         )
         mock_path_class.return_value = mock_path
 
-        result = detect_system_timezone()
-        assert result == "America/Los_Angeles"
+        # Mock tzlocal to fail so we fall back to symlink detection
+        with patch.dict("sys.modules", {"tzlocal": None}):
+            result = detect_system_timezone()
+            assert result == "America/Los_Angeles"
 
     @patch.dict(os.environ, {}, clear=True)
     def test_tzlocal_detection(self):

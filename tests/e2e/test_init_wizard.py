@@ -290,14 +290,36 @@ class TestInstallScheduling:
 
     @patch("nextdns_blocker.init.is_macos", return_value=False)
     @patch("nextdns_blocker.init.is_windows", return_value=False)
-    @patch("nextdns_blocker.init._install_cron")
-    def test_install_uses_cron_on_linux(
+    @patch("nextdns_blocker.init.has_systemd", return_value=True)
+    @patch("nextdns_blocker.init._install_systemd")
+    def test_install_uses_systemd_on_linux(
         self,
         mock_install: MagicMock,
+        mock_has_systemd: MagicMock,
         mock_is_windows: MagicMock,
         mock_is_macos: MagicMock,
     ) -> None:
-        """Test scheduling installation uses cron on Linux."""
+        """Test scheduling installation uses systemd on Linux when available."""
+        from nextdns_blocker.init import install_scheduling
+
+        mock_install.return_value = (True, "systemd")
+
+        success, sched_type = install_scheduling()
+
+        mock_install.assert_called_once()
+
+    @patch("nextdns_blocker.init.is_macos", return_value=False)
+    @patch("nextdns_blocker.init.is_windows", return_value=False)
+    @patch("nextdns_blocker.init.has_systemd", return_value=False)
+    @patch("nextdns_blocker.init._install_cron")
+    def test_install_uses_cron_on_linux_without_systemd(
+        self,
+        mock_install: MagicMock,
+        mock_has_systemd: MagicMock,
+        mock_is_windows: MagicMock,
+        mock_is_macos: MagicMock,
+    ) -> None:
+        """Test scheduling installation falls back to cron when systemd unavailable."""
         from nextdns_blocker.init import install_scheduling
 
         mock_install.return_value = (True, "cron")
