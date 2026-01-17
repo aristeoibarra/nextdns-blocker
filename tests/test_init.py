@@ -200,8 +200,10 @@ class TestDetectSystemTimezone:
         mock_path.is_symlink.return_value = False
         mock_path_class.return_value = mock_path
 
-        result = detect_system_timezone()
-        assert result == "UTC"
+        # Mock tzlocal to fail so we fall back to UTC
+        with patch.dict("sys.modules", {"tzlocal": None}):
+            result = detect_system_timezone()
+            assert result == "UTC"
 
 
 class TestCreateEnvFile:
@@ -816,14 +818,31 @@ class TestInstallScheduling:
         mock_launchd.assert_called_once()
 
     def test_install_scheduling_linux(self):
-        """Should use cron on Linux."""
+        """Should use systemd on Linux when available, cron as fallback."""
+        from nextdns_blocker.init import install_scheduling
+
+        # Test with systemd available
+        with patch("nextdns_blocker.init.is_macos", return_value=False):
+            with patch("nextdns_blocker.init.is_windows", return_value=False):
+                with patch("nextdns_blocker.init.has_systemd", return_value=True):
+                    with patch("nextdns_blocker.init._install_systemd") as mock_systemd:
+                        mock_systemd.return_value = (True, "systemd")
+                        success, result = install_scheduling()
+
+        assert success is True
+        assert result == "systemd"
+        mock_systemd.assert_called_once()
+
+    def test_install_scheduling_linux_cron_fallback(self):
+        """Should use cron on Linux when systemd not available."""
         from nextdns_blocker.init import install_scheduling
 
         with patch("nextdns_blocker.init.is_macos", return_value=False):
             with patch("nextdns_blocker.init.is_windows", return_value=False):
-                with patch("nextdns_blocker.init._install_cron") as mock_cron:
-                    mock_cron.return_value = (True, "cron")
-                    success, result = install_scheduling()
+                with patch("nextdns_blocker.init.has_systemd", return_value=False):
+                    with patch("nextdns_blocker.init._install_cron") as mock_cron:
+                        mock_cron.return_value = (True, "cron")
+                        success, result = install_scheduling()
 
         assert success is True
         assert result == "cron"
