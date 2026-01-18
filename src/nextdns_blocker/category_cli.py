@@ -13,13 +13,14 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from .cli_formatter import CLIOutput as out
 from .common import audit_log, validate_category_id, validate_domain
 from .config import get_config_dir
 from .exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
-console = Console(highlight=False)
+console = Console(highlight=False)  # Keep for tables and complex output
 
 
 # =============================================================================
@@ -119,13 +120,13 @@ def cmd_list(config_dir: Optional[Path]) -> None:
     config_path = _get_config_file_path(config_dir)
 
     if not config_path.exists():
-        console.print(f"\n  [red]Error: Config file not found: {config_path}[/red]\n")
+        out.error(f"Config file not found: {config_path}")
         sys.exit(1)
 
     try:
         config = _load_config_file(config_path)
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
     categories = _get_categories(config)
@@ -174,20 +175,20 @@ def cmd_show(category_id: str, config_dir: Optional[Path]) -> None:
     config_path = _get_config_file_path(config_dir)
 
     if not config_path.exists():
-        console.print(f"\n  [red]Error: Config file not found: {config_path}[/red]\n")
+        out.error(f"Config file not found: {config_path}")
         sys.exit(1)
 
     try:
         config = _load_config_file(config_path)
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
     categories = _get_categories(config)
     category = _find_category_by_id(categories, category_id)
 
     if not category:
-        console.print(f"\n  [red]Error: Category '{category_id}' not found[/red]\n")
+        out.error(f"Category '{category_id}' not found")
         sys.exit(1)
 
     console.print("\n  [bold]Category Details[/bold]")
@@ -230,32 +231,32 @@ def cmd_add(category_id: str, domain: str, config_dir: Optional[Path]) -> None:
 
     # Block during panic mode
     if is_panic_mode():
-        console.print("\n  [red]Error: Cannot modify categories during panic mode[/red]\n")
+        out.error("Cannot modify categories during panic mode")
         sys.exit(1)
 
     # Validate domain format
     domain = domain.strip().lower()
     if not validate_domain(domain):
-        console.print(f"\n  [red]Error: Invalid domain format: {domain}[/red]\n")
+        out.error(f"Invalid domain format: {domain}")
         sys.exit(1)
 
     config_path = _get_config_file_path(config_dir)
 
     if not config_path.exists():
-        console.print(f"\n  [red]Error: Config file not found: {config_path}[/red]\n")
+        out.error(f"Config file not found: {config_path}")
         sys.exit(1)
 
     try:
         config = _load_config_file(config_path)
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
     categories = _get_categories(config)
     category_idx = _find_category_index(categories, category_id)
 
     if category_idx is None:
-        console.print(f"\n  [red]Error: Category '{category_id}' not found[/red]\n")
+        out.error(f"Category '{category_id}' not found")
         sys.exit(1)
 
     category = categories[category_idx]
@@ -300,11 +301,11 @@ def cmd_add(category_id: str, domain: str, config_dir: Optional[Path]) -> None:
     try:
         _save_config_file(config_path, config)
     except (OSError, TypeError, ValueError) as e:
-        console.print(f"\n  [red]Error saving config: {e}[/red]\n")
+        out.error(f"Saving config: {e}")
         sys.exit(1)
 
     audit_log("CATEGORY_ADD", f"Added {domain} to category {category_id}")
-    console.print(f"\n  [green]Added '{domain}' to category '{category_id}'[/green]\n")
+    out.success(f"Added '{domain}' to category '{category_id}'")
 
 
 @category_cli.command("remove")
@@ -322,27 +323,27 @@ def cmd_remove(category_id: str, domain: str, yes: bool, config_dir: Optional[Pa
 
     # Block during panic mode
     if is_panic_mode():
-        console.print("\n  [red]Error: Cannot modify categories during panic mode[/red]\n")
+        out.error("Cannot modify categories during panic mode")
         sys.exit(1)
 
     domain = domain.strip().lower()
     config_path = _get_config_file_path(config_dir)
 
     if not config_path.exists():
-        console.print(f"\n  [red]Error: Config file not found: {config_path}[/red]\n")
+        out.error(f"Config file not found: {config_path}")
         sys.exit(1)
 
     try:
         config = _load_config_file(config_path)
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
     categories = _get_categories(config)
     category_idx = _find_category_index(categories, category_id)
 
     if category_idx is None:
-        console.print(f"\n  [red]Error: Category '{category_id}' not found[/red]\n")
+        out.error(f"Category '{category_id}' not found")
         sys.exit(1)
 
     category = categories[category_idx]
@@ -377,11 +378,11 @@ def cmd_remove(category_id: str, domain: str, yes: bool, config_dir: Optional[Pa
     try:
         _save_config_file(config_path, config)
     except (OSError, TypeError, ValueError) as e:
-        console.print(f"\n  [red]Error saving config: {e}[/red]\n")
+        out.error(f"Saving config: {e}")
         sys.exit(1)
 
     audit_log("CATEGORY_REMOVE", f"Removed {domain} from category {category_id}")
-    console.print(f"\n  [green]Removed '{domain}' from category '{category_id}'[/green]\n")
+    out.success(f"Removed '{domain}' from category '{category_id}'")
 
 
 @category_cli.command("create")
@@ -401,7 +402,7 @@ def cmd_create(
 
     # Block during panic mode
     if is_panic_mode():
-        console.print("\n  [red]Error: Cannot create categories during panic mode[/red]\n")
+        out.error("Cannot create categories during panic mode")
         sys.exit(1)
 
     # Validate category ID
@@ -416,13 +417,13 @@ def cmd_create(
     config_path = _get_config_file_path(config_dir)
 
     if not config_path.exists():
-        console.print(f"\n  [red]Error: Config file not found: {config_path}[/red]\n")
+        out.error(f"Config file not found: {config_path}")
         sys.exit(1)
 
     try:
         config = _load_config_file(config_path)
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
     # Ensure categories array exists
@@ -436,7 +437,7 @@ def cmd_create(
 
     # Check if category already exists
     if _find_category_by_id(categories, category_id):
-        console.print(f"\n  [red]Error: Category '{category_id}' already exists[/red]\n")
+        out.error(f"Category '{category_id}' already exists")
         sys.exit(1)
 
     # Validate delay format before creating
@@ -469,15 +470,15 @@ def cmd_create(
     try:
         _save_config_file(config_path, config)
     except (OSError, TypeError, ValueError) as e:
-        console.print(f"\n  [red]Error saving config: {e}[/red]\n")
+        out.error(f"Saving config: {e}")
         sys.exit(1)
 
     audit_log("CATEGORY_CREATE", f"Created category {category_id}")
-    console.print(f"\n  [green]Created category '{category_id}'[/green]")
+    out.success(f"Created category '{category_id}'")
     if description:
-        console.print(f"  Description: {description}")
-    console.print(f"  Delay: {delay}")
-    console.print("\n  Use 'nextdns-blocker category add' to add domains.\n")
+        out.info(f"Description: {description}")
+    out.info(f"Delay: {delay}")
+    out.info_block("Use 'nextdns-blocker category add' to add domains.")
 
 
 @category_cli.command("delete")
@@ -494,26 +495,26 @@ def cmd_delete(category_id: str, yes: bool, config_dir: Optional[Path]) -> None:
 
     # Block during panic mode
     if is_panic_mode():
-        console.print("\n  [red]Error: Cannot delete categories during panic mode[/red]\n")
+        out.error("Cannot delete categories during panic mode")
         sys.exit(1)
 
     config_path = _get_config_file_path(config_dir)
 
     if not config_path.exists():
-        console.print(f"\n  [red]Error: Config file not found: {config_path}[/red]\n")
+        out.error(f"Config file not found: {config_path}")
         sys.exit(1)
 
     try:
         config = _load_config_file(config_path)
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
     categories = _get_categories(config)
     category_idx = _find_category_index(categories, category_id)
 
     if category_idx is None:
-        console.print(f"\n  [red]Error: Category '{category_id}' not found[/red]\n")
+        out.error(f"Category '{category_id}' not found")
         sys.exit(1)
 
     category = categories[category_idx]
@@ -535,13 +536,11 @@ def cmd_delete(category_id: str, yes: bool, config_dir: Optional[Path]) -> None:
     try:
         _save_config_file(config_path, config)
     except (OSError, TypeError, ValueError) as e:
-        console.print(f"\n  [red]Error saving config: {e}[/red]\n")
+        out.error(f"Saving config: {e}")
         sys.exit(1)
 
     audit_log("CATEGORY_DELETE", f"Deleted category {category_id} ({domain_count} domains)")
-    console.print(
-        f"\n  [green]Deleted category '{category_id}' ({domain_count} domain(s))[/green]\n"
-    )
+    out.success(f"Deleted category '{category_id}' ({domain_count} domain(s))")
 
 
 def register_category(main_group: click.Group) -> None:

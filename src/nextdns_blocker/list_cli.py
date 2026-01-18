@@ -13,6 +13,7 @@ import requests
 from rich.console import Console
 from rich.table import Table
 
+from .cli_formatter import CLIOutput as out
 from .client import NextDNSClient
 from .common import audit_log, validate_domain
 from .config import load_config
@@ -20,46 +21,46 @@ from .notifications import EventType, send_notification
 
 logger = logging.getLogger(__name__)
 
-console = Console(highlight=False)
+console = Console(highlight=False)  # Keep for tables
 
 
 def _handle_api_error(e: Exception) -> NoReturn:
     """Handle API-related errors with specific messages."""
     if isinstance(e, requests.exceptions.Timeout):
-        console.print("\n  [red]Error: API timeout - please try again[/red]\n")
+        out.error("API timeout - please try again")
     elif isinstance(e, requests.exceptions.ConnectionError):
-        console.print("\n  [red]Error: Connection failed - check your network[/red]\n")
+        out.error("Connection failed - check your network")
     elif isinstance(e, requests.exceptions.HTTPError):
-        console.print(f"\n  [red]Error: API error - {e}[/red]\n")
+        out.error(f"API error - {e}")
     elif isinstance(e, PermissionError):
-        console.print("\n  [red]Error: Permission denied accessing config[/red]\n")
+        out.error("Permission denied accessing config")
     elif isinstance(e, FileNotFoundError):
-        console.print(f"\n  [red]Error: File not found - {e.filename}[/red]\n")
+        out.error(f"File not found - {e.filename}")
     elif isinstance(e, json.JSONDecodeError):
-        console.print(f"\n  [red]Error: Invalid JSON format - {e.msg}[/red]\n")
+        out.error(f"Invalid JSON format - {e.msg}")
     elif isinstance(e, ValueError):
-        console.print(f"\n  [red]Error: Invalid value - {e}[/red]\n")
+        out.error(f"Invalid value - {e}")
     else:
         logger.error(f"Unexpected error: {e}", exc_info=True)
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
     sys.exit(1)
 
 
 def _handle_file_error(e: Exception) -> NoReturn:
     """Handle file-related errors with specific messages."""
     if isinstance(e, PermissionError):
-        console.print(f"\n  [red]Error: Permission denied - {e.filename}[/red]\n")
+        out.error(f"Permission denied - {e.filename}")
     elif isinstance(e, FileNotFoundError):
-        console.print(f"\n  [red]Error: File not found - {e.filename}[/red]\n")
+        out.error(f"File not found - {e.filename}")
     elif isinstance(e, json.JSONDecodeError):
-        console.print(f"\n  [red]Error: Invalid file format (JSON error: {e.msg})[/red]\n")
+        out.error(f"Invalid file format (JSON error: {e.msg})")
     elif isinstance(e, csv.Error):
-        console.print(f"\n  [red]Error: Invalid CSV format - {e}[/red]\n")
+        out.error(f"Invalid CSV format - {e}")
     elif isinstance(e, UnicodeDecodeError):
-        console.print("\n  [red]Error: File encoding issue - use UTF-8[/red]\n")
+        out.error("File encoding issue - use UTF-8")
     else:
         logger.error(f"Unexpected file error: {e}", exc_info=True)
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
     sys.exit(1)
 
 
