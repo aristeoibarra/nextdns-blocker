@@ -33,8 +33,6 @@ nextdns-blocker [OPTIONS] COMMAND [ARGS]
 |---------|-------------|
 | [`config sync`](/commands/sync/) | Synchronize domain states based on schedules |
 | [`status`](/commands/status/) | Show current blocking status |
-| [`pause`](/commands/pause-resume/) | Temporarily pause all blocking |
-| [`resume`](/commands/pause-resume/) | Resume blocking after pause |
 | [`unblock`](/commands/unblock/) | Request manual domain unblock |
 | [`update`](/commands/update/) | Check for and install updates |
 
@@ -202,12 +200,6 @@ nextdns-blocker status
 ```bash
 # Check what's blocked
 nextdns-blocker status
-
-# Quick break (pause 30 min)
-nextdns-blocker pause
-
-# Done with break
-nextdns-blocker resume
 
 # Emergency mode
 nextdns-blocker panic 60

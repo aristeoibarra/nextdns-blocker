@@ -50,10 +50,6 @@ export default defineConfig({
                         { label: "Overview", slug: "commands" },
                         { label: "sync", slug: "commands/sync" },
                         { label: "status", slug: "commands/status" },
-                        {
-                            label: "pause / resume",
-                            slug: "commands/pause-resume",
-                        },
                         { label: "unblock", slug: "commands/unblock" },
                         { label: "config", slug: "commands/config" },
                         { label: "watchdog", slug: "commands/watchdog" },

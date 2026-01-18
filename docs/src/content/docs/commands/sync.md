@@ -180,12 +180,13 @@ When panic mode is active, sync behavior changes:
 
 This ensures emergency lockdown cannot be bypassed by scheduled unblocks.
 
-## Sync During Pause
+## Sync During Auto-Panic
 
-When paused:
-- Sync runs normally
-- Domains that should be blocked are **not blocked**
-- When pause expires, next sync re-blocks them
+When auto-panic schedule is active:
+- All domains are blocked regardless of their individual schedules
+- Unblock actions are skipped
+- Allowlist sync is skipped
+- This provides additional protection during configured high-risk hours
 
 ## Caching
 

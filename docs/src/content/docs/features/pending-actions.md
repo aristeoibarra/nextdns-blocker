@@ -115,13 +115,15 @@ nextdns-blocker pending cancel pnd_20240115_143000_a1b2c3 -y
 
 IDs follow this pattern:
 ```
-pnd_YYYYMMDD_HHMMSS_RANDOM
+pnd_YYYYMMDD_HHMMSS_random6
 ```
 
-- `pnd_` - Prefix
-- `YYYYMMDD` - Date created
-- `HHMMSS` - Time created
-- `RANDOM` - 6-character suffix
+- `pnd_` - Prefix indicating pending action
+- `YYYYMMDD` - Date created (year, month, day)
+- `HHMMSS` - Time created (hour, minute, second)
+- `random6` - 6-character alphanumeric suffix (lowercase letters and digits)
+
+Example: `pnd_20251215_143022_a1b2c3`
 
 ### Partial IDs
 

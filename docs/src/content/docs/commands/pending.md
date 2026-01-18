@@ -260,7 +260,7 @@ Manual cleanup:
 
 ```bash
 # Force cleanup by triggering sync
-nextdns-blocker sync
+nextdns-blocker config sync
 ```
 
 ## Troubleshooting

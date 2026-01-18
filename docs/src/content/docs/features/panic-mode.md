@@ -201,7 +201,7 @@ Contains ISO 8601 expiration timestamp.
 
 1. Force sync:
    ```bash
-   nextdns-blocker sync
+   nextdns-blocker config sync
    ```
 
 2. Check watchdog:

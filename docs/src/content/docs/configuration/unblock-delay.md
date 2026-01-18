@@ -335,7 +335,7 @@ To make bypass harder:
 
 3. Force sync:
    ```bash
-   nextdns-blocker sync
+   nextdns-blocker config sync
    ```
 
 ### Changed my mind but can't cancel

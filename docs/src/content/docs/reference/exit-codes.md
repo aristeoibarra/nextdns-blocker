@@ -24,7 +24,7 @@ NextDNS Blocker uses standard exit codes to indicate success or failure, enablin
 Command completed without errors.
 
 ```bash
-nextdns-blocker sync
+nextdns-blocker config sync
 echo $?  # Returns: 0
 ```
 
@@ -54,7 +54,7 @@ Common causes:
 
 ```bash
 # With invalid config
-nextdns-blocker sync
+nextdns-blocker config sync
 echo $?  # Returns: 2
 ```
 
@@ -71,7 +71,7 @@ Common causes:
 
 ```bash
 # With wrong API key
-nextdns-blocker sync
+nextdns-blocker config sync
 echo $?  # Returns: 3
 ```
 
@@ -103,7 +103,7 @@ Common causes:
 ```bash
 # With read-only config
 chmod 000 ~/.config/nextdns-blocker/config.json
-nextdns-blocker sync
+nextdns-blocker config sync
 echo $?  # Returns: 5
 ```
 
@@ -244,7 +244,7 @@ max_attempts=3
 attempt=1
 
 while [ $attempt -le $max_attempts ]; do
-    nextdns-blocker sync
+    nextdns-blocker config sync
     if [ $? -eq 0 ]; then
         exit 0
     fi
@@ -263,7 +263,7 @@ exit 1
 #!/bin/bash
 # sync-notify.sh
 
-nextdns-blocker sync
+nextdns-blocker config sync
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then

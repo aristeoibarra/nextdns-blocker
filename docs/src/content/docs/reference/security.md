@@ -34,7 +34,7 @@ Credentials can be provided via environment for CI/CD:
 ```bash
 export NEXTDNS_API_KEY=your_key
 export NEXTDNS_PROFILE_ID=your_id
-nextdns-blocker sync
+nextdns-blocker config sync
 ```
 
 ## File Permissions

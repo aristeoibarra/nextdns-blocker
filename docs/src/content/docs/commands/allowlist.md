@@ -545,7 +545,7 @@ This is valid and will show a warning during config load.
 
 3. Force sync:
    ```bash
-   nextdns-blocker sync
+   nextdns-blocker config sync
    ```
 
 ### allow command hidden

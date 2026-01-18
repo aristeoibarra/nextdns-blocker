@@ -155,6 +155,76 @@ Array of domains to keep accessible (exceptions).
 
 See [Allowlist Configuration](/configuration/allowlist/) for details.
 
+### nextdns
+
+Configuration for NextDNS Parental Control categories and services.
+
+```json
+{
+  "nextdns": {
+    "parental_control": {
+      "safe_search": true,
+      "youtube_restricted_mode": true,
+      "block_bypass": true
+    },
+    "categories": [
+      {
+        "id": "gambling",
+        "locked": true,
+        "schedule": null
+      }
+    ],
+    "services": [
+      {
+        "id": "tiktok",
+        "schedule": {
+          "available_hours": [...]
+        }
+      }
+    ]
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `parental_control` | object | Global Parental Control settings |
+| `categories` | array | NextDNS native categories (gambling, porn, dating, etc.) |
+| `services` | array | NextDNS native services (tiktok, youtube, reddit, etc.) |
+
+**Valid category IDs:** `porn`, `gambling`, `dating`, `piracy`, `social-networks`, `gaming`, `video-streaming`
+
+### protection
+
+Addiction protection features including auto-panic and unlock delays.
+
+```json
+{
+  "protection": {
+    "unlock_delay_hours": 48,
+    "auto_panic": {
+      "enabled": true,
+      "cannot_disable": true,
+      "schedule": {
+        "start": "23:00",
+        "end": "06:00"
+      },
+      "days": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `unlock_delay_hours` | int | 48 | Default delay for unlock requests (min 24h) |
+| `auto_panic` | object | null | Auto-panic configuration |
+| `auto_panic.enabled` | boolean | false | Enable auto-panic mode |
+| `auto_panic.cannot_disable` | boolean | false | Prevent disabling (requires unlock request) |
+| `auto_panic.schedule.start` | string | "23:00" | Time to start auto-panic (HH:MM) |
+| `auto_panic.schedule.end` | string | "06:00" | Time to end auto-panic (HH:MM) |
+| `auto_panic.days` | array | all days | Days when auto-panic is active |
+
 ## Domain Entry Fields
 
 Both blocklist and allowlist entries share these fields:
@@ -447,5 +517,5 @@ notepad %APPDATA%\nextdns-blocker\config.json
 Changes take effect on next sync (within 2 minutes) or immediately:
 
 ```bash
-nextdns-blocker sync
+nextdns-blocker config sync
 ```

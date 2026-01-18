@@ -10,7 +10,7 @@ The `panic` command activates an emergency lockdown that immediately blocks all 
 Panic mode is designed for crisis moments when you need absolute protection against impulsive access. It:
 
 - **Immediately blocks** all configured domains
-- **Hides** commands like `unblock`, `pause`, `allow`
+- **Hides** commands like `unblock`, `allow`, `disallow`
 - **Cannot be disabled** until the timer expires
 - **Minimum duration** of 15 minutes
 
@@ -68,10 +68,13 @@ Expires at: 2024-01-15 15:30:00
 All domains are now blocked.
 The following commands are disabled:
   - unblock
-  - pause
-  - resume
   - allow
   - disallow
+
+Subcommands also restricted:
+  - config edit
+  - pending cancel
+  - watchdog disable
 
 Panic mode cannot be cancelled.
 Wait for expiration or use 'panic extend' to add more time.
@@ -106,7 +109,7 @@ nextdns-blocker panic status
 Panic Mode Status
 ━━━━━━━━━━━━━━━━━
 
-Status: ACTIVE ⚠️
+Status: ACTIVE
 
 Activated: 2024-01-15 14:30:00
 Expires: 2024-01-15 15:30:00
@@ -114,10 +117,13 @@ Remaining: 45 minutes
 
 Hidden commands:
   - unblock
-  - pause
-  - resume
   - allow
   - disallow
+
+Hidden subcommands:
+  - config edit
+  - pending cancel
+  - watchdog disable
 ```
 
 ### Output (Inactive)
@@ -187,10 +193,18 @@ These commands are completely hidden from help and tab completion:
 | Command | Why Hidden |
 |---------|------------|
 | `unblock` | Would bypass panic |
-| `pause` | Would pause blocking |
-| `resume` | Not needed (already forced) |
-| `allow` | Would add exceptions |
-| `disallow` | Not dangerous but hidden for consistency |
+| `allow` | Would add allowlist entries that bypass blocks |
+| `disallow` | Hidden for consistency |
+
+### Subcommands Hidden
+
+These subcommands are also hidden during panic mode:
+
+| Subcommand | Why Hidden |
+|------------|------------|
+| `config edit` | Would allow modifying schedules |
+| `pending cancel` | Would allow cancelling pending actions |
+| `watchdog disable` | Would stop automatic sync |
 
 Attempting to run them directly:
 
@@ -270,7 +284,7 @@ nextdns-blocker panic status
 Force a sync:
 
 ```bash
-nextdns-blocker sync
+nextdns-blocker config sync
 ```
 
 Check watchdog is running:

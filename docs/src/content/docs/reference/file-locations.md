@@ -57,7 +57,12 @@ echo $env:APPDATA\nextdns-blocker\
 |------|---------|-------------|
 | `.paused` | Pause state | ISO timestamp when pause expires |
 | `.panic` | Panic state | ISO timestamp when panic expires |
+| `.pin_hash` | PIN protection | Salted hash of PIN (if enabled) |
+| `.pin_session` | PIN session | Session expiration timestamp |
+| `.pin_attempts` | PIN attempts | Failed attempt tracking for lockout |
+| `.cannot_disable_lock` | Protection lock | Persistent cannot_disable state |
 | `pending.json` | Pending actions | Queue of delayed unblocks |
+| `unlock_requests.json` | Unlock requests | Pending unlock requests for protected items |
 | `logs/` | Log directory | Application and audit logs |
 
 ### View Path

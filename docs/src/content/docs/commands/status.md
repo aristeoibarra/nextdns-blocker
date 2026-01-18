@@ -165,7 +165,7 @@ Blocklist (3 domains):
 Force a fresh sync:
 
 ```bash
-nextdns-blocker sync
+nextdns-blocker config sync
 nextdns-blocker status
 ```
 

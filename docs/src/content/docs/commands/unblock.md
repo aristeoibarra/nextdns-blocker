@@ -223,5 +223,5 @@ nextdns-blocker status | grep <domain>
 
 3. Force sync:
    ```bash
-   nextdns-blocker sync
+   nextdns-blocker config sync
    ```
