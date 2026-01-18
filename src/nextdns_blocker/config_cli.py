@@ -769,6 +769,37 @@ def cmd_validate(output_json: bool, config_dir: Optional[Path]) -> None:
     validate_impl(output_json=output_json, config_dir=config_dir)
 
 
+@config_cli.command("push")
+@click.option("--dry-run", is_flag=True, help="Show changes without applying")
+@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
+@click.option(
+    "--config-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Config directory (default: auto-detect)",
+)
+def cmd_push(
+    dry_run: bool,
+    verbose: bool,
+    config_dir: Optional[Path],
+) -> None:
+    """Push local config to NextDNS (sync schedules).
+
+    Applies your local config.json schedules to NextDNS.
+    Blocks/unblocks domains based on their schedule configuration.
+
+    This is the recommended command for applying local changes.
+
+    Examples:
+        ndb config push             # Apply local config to NextDNS
+        ndb config push --dry-run   # Preview changes
+        ndb config push -v          # Verbose output
+    """
+    # Import here to avoid circular imports
+    from .cli import sync_impl
+
+    sync_impl(dry_run=dry_run, verbose=verbose, config_dir=config_dir)
+
+
 @config_cli.command("sync")
 @click.option("--dry-run", is_flag=True, help="Show changes without applying")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
@@ -782,9 +813,19 @@ def cmd_sync(
     verbose: bool,
     config_dir: Optional[Path],
 ) -> None:
-    """Synchronize domain blocking with schedules."""
+    """Synchronize domain blocking with schedules.
+
+    DEPRECATED: Use 'config push' instead. This command will be removed in v8.0.0.
+    """
     # Import here to avoid circular imports
     from .cli import sync_impl
+
+    # Show deprecation warning
+    console.print(
+        "\n  [yellow]\u26a0\ufe0f  Warning: 'config sync' is deprecated. "
+        "Use 'config push' instead.[/yellow]"
+    )
+    console.print("  [dim]This command will be removed in v8.0.0.[/dim]\n")
 
     sync_impl(dry_run=dry_run, verbose=verbose, config_dir=config_dir)
 

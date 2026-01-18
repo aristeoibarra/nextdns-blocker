@@ -11,6 +11,7 @@ import click
 from rich.console import Console
 
 from . import __version__
+from .alias_cli import register_alias
 from .analytics_cli import register_stats
 from .client import NextDNSClient
 from .common import (
@@ -2050,6 +2051,9 @@ def completion(shell: str) -> None:
 
 # Register config command group
 register_config(main)
+
+# Register alias command group
+register_alias(main)
 
 # Register nextdns command group
 register_nextdns(main)

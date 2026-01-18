@@ -580,3 +580,87 @@ class TestConfigPull:
         # Check backup file was created
         backups = list(temp_config_dir.glob(".config.json.backup.*"))
         assert len(backups) == 1
+
+
+class TestConfigPush:
+    """Test config push command."""
+
+    def test_push_help(self, runner):
+        """Test config push --help shows usage."""
+        result = runner.invoke(main, ["config", "push", "--help"])
+        assert result.exit_code == 0
+        assert "Push local config to NextDNS" in result.output
+        assert "--dry-run" in result.output
+        assert "--verbose" in result.output
+
+    def test_push_command_exists(self, runner):
+        """Test config push command is registered."""
+        result = runner.invoke(main, ["config", "--help"])
+        assert result.exit_code == 0
+        assert "push" in result.output
+
+    def test_push_in_help_output(self, runner):
+        """Test that push appears in config help."""
+        result = runner.invoke(main, ["config", "--help"])
+        assert result.exit_code == 0
+        assert "push" in result.output
+
+
+class TestConfigSyncDeprecation:
+    """Test config sync deprecation warning."""
+
+    def test_sync_shows_deprecation_warning(self, runner, temp_config_dir, new_config_format):
+        """Test that config sync shows deprecation warning."""
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(new_config_format))
+
+        with patch("nextdns_blocker.cli.NextDNSClient") as mock_client:
+            mock_instance = mock_client.return_value
+            mock_instance.is_blocked.return_value = False
+            mock_instance.is_allowed.return_value = False
+            mock_instance.get_parental_control.return_value = None
+
+            result = runner.invoke(
+                main, ["config", "sync", "--dry-run", "--config-dir", str(temp_config_dir)]
+            )
+
+        # Should still work (exit code 0) but show deprecation warning
+        assert result.exit_code == 0
+        assert "deprecated" in result.output.lower()
+        assert "config push" in result.output
+
+    def test_sync_mentions_v8_removal(self, runner, temp_config_dir, new_config_format):
+        """Test that deprecation warning mentions v8.0.0 removal."""
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(new_config_format))
+
+        with patch("nextdns_blocker.cli.NextDNSClient") as mock_client:
+            mock_instance = mock_client.return_value
+            mock_instance.is_blocked.return_value = False
+            mock_instance.is_allowed.return_value = False
+            mock_instance.get_parental_control.return_value = None
+
+            result = runner.invoke(
+                main, ["config", "sync", "--dry-run", "--config-dir", str(temp_config_dir)]
+            )
+
+        assert result.exit_code == 0
+        assert "8.0.0" in result.output
+
+    def test_push_no_deprecation_warning(self, runner, temp_config_dir, new_config_format):
+        """Test that config push does NOT show deprecation warning."""
+        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file.write_text(json.dumps(new_config_format))
+
+        with patch("nextdns_blocker.cli.NextDNSClient") as mock_client:
+            mock_instance = mock_client.return_value
+            mock_instance.is_blocked.return_value = False
+            mock_instance.is_allowed.return_value = False
+            mock_instance.get_parental_control.return_value = None
+
+            result = runner.invoke(
+                main, ["config", "push", "--dry-run", "--config-dir", str(temp_config_dir)]
+            )
+
+        assert result.exit_code == 0
+        assert "deprecated" not in result.output.lower()
