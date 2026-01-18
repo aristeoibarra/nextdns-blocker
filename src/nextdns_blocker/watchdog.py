@@ -1408,10 +1408,8 @@ def _process_pending_actions() -> None:
     from .config import load_config
     from .notifications import EventType, send_notification
     from .pending import cleanup_old_actions, get_ready_actions, mark_action_executed
-
-    ready_actions = get_ready_actions()
-    if not ready_actions:
-        return
+    from .retry_queue import enqueue as retry_enqueue
+    from .retry_queue import process_queue as process_retry_queue
 
     try:
         config = load_config()
@@ -1429,6 +1427,25 @@ def _process_pending_actions() -> None:
         return
     except OSError as e:
         logger.error(f"I/O error loading config for pending actions: {e}")
+        return
+
+    # Process retry queue first
+    retry_result = process_retry_queue(client)
+    if retry_result.succeeded:
+        for item in retry_result.succeeded:
+            click.echo(f"  Retry succeeded: {item.action} {item.domain}")
+            send_notification(
+                EventType.UNBLOCK if item.action == "unblock" else EventType.BLOCK,
+                item.domain,
+                config,
+            )
+    if retry_result.exhausted:
+        for item in retry_result.exhausted:
+            click.echo(f"  Retry exhausted: {item.action} {item.domain}")
+
+    # Process pending actions
+    ready_actions = get_ready_actions()
+    if not ready_actions:
         return
 
     for action in ready_actions:
@@ -1449,7 +1466,7 @@ def _process_pending_actions() -> None:
 
         if action_type == "unblock":
             try:
-                success, was_removed = client.unblock(domain)
+                success, was_removed, api_result = client.unblock_with_result(domain)
                 if success:
                     mark_action_executed(action_id)
                     if was_removed:
@@ -1458,8 +1475,21 @@ def _process_pending_actions() -> None:
                         click.echo(f"  Executed pending unblock: {domain}")
                     else:
                         click.echo(f"  Pending unblock: {domain} (already unblocked)")
+                elif api_result.is_retryable:
+                    # Add to retry queue for transient failures
+                    retry_enqueue(
+                        domain=domain,
+                        action="unblock",
+                        error_type=api_result.error_type,
+                        error_msg=api_result.error_msg,
+                    )
+                    logger.warning(
+                        f"Queued for retry: unblock {domain} (error: {api_result.error_type})"
+                    )
                 else:
-                    logger.error(f"Failed to unblock {domain} (pending: {action_id})")
+                    # Non-retryable error, mark as executed to prevent infinite loops
+                    mark_action_executed(action_id)
+                    logger.error(f"Non-retryable error for {domain}: {api_result.error_msg}")
             except DomainValidationError as e:
                 # Domain validation failed - log and skip this action
                 logger.error(f"Invalid domain in pending action {action_id}: {e}")
@@ -1534,6 +1564,41 @@ def cmd_status() -> None:
         _status_systemd_timers()
     else:
         _status_cron_jobs()
+
+
+@watchdog_cli.command("retry-status")
+def cmd_retry_status() -> None:
+    """Display retry queue status."""
+    from .retry_queue import get_queue_items, get_queue_stats
+
+    stats = get_queue_stats()
+    items = get_queue_items()
+
+    click.echo("\n  Retry Queue Status")
+    click.echo("  " + "-" * 40)
+    click.echo(f"  Total items:    {stats['total']}")
+    click.echo(f"  Ready to retry: {stats['ready']}")
+    click.echo(f"  Pending:        {stats['pending']}")
+    click.echo(f"  Total attempts: {stats['total_attempts']}")
+
+    if stats["by_action"]:
+        click.echo("\n  By Action:")
+        for action, count in stats["by_action"].items():
+            click.echo(f"    {action}: {count}")
+
+    if stats["by_error"]:
+        click.echo("\n  By Error Type:")
+        for error, count in stats["by_error"].items():
+            click.echo(f"    {error}: {count}")
+
+    if items:
+        click.echo("\n  Queue Items:")
+        for item in items:
+            ready_str = "[READY]" if item.is_ready() else f"[next: {item.next_retry_at[:16]}]"
+            click.echo(
+                f"    {item.action} {item.domain} " f"(attempts: {item.attempt_count}, {ready_str})"
+            )
+    click.echo()
 
 
 @watchdog_cli.command("disable")

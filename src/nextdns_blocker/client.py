@@ -738,6 +738,82 @@ class NextDNSClient:
         logger.error(f"Failed to unblock: {domain} - {result.error_msg}")
         return (False, False)  # Failed
 
+    def block_with_result(self, domain: str) -> tuple[bool, bool, APIRequestResult]:
+        """
+        Add a domain to the denylist, returning full error context.
+
+        This method is useful when the caller needs to know if the error
+        is retryable (e.g., for retry queue integration).
+
+        Args:
+            domain: Domain name to block
+
+        Returns:
+            Tuple of (success, was_added, api_result):
+            - success: True if operation completed without error
+            - was_added: True if domain was actually added, False if already existed
+            - api_result: Full APIRequestResult with error context if failed
+
+        Raises:
+            DomainValidationError: If domain is invalid
+        """
+        if not validate_domain(domain):
+            raise DomainValidationError(f"Invalid domain: {domain}")
+
+        if self.find_domain(domain):
+            logger.debug(f"Domain already blocked: {domain}")
+            return (True, False, APIRequestResult.ok())
+
+        result = self.request(
+            "PUT",
+            f"/profiles/{self.profile_id}/denylist",
+            {"id": domain, "active": True},
+        )
+
+        if result.success:
+            self._cache.add_domain(domain)
+            logger.info(f"Blocked: {domain}")
+            return (True, True, result)
+
+        logger.error(f"Failed to block: {domain} - {result.error_msg}")
+        return (False, False, result)
+
+    def unblock_with_result(self, domain: str) -> tuple[bool, bool, APIRequestResult]:
+        """
+        Remove a domain from the denylist, returning full error context.
+
+        This method is useful when the caller needs to know if the error
+        is retryable (e.g., for retry queue integration).
+
+        Args:
+            domain: Domain name to unblock
+
+        Returns:
+            Tuple of (success, was_removed, api_result):
+            - success: True if operation completed without error
+            - was_removed: True if domain was actually removed, False if didn't exist
+            - api_result: Full APIRequestResult with error context if failed
+
+        Raises:
+            DomainValidationError: If domain is invalid
+        """
+        if not validate_domain(domain):
+            raise DomainValidationError(f"Invalid domain: {domain}")
+
+        if not self.find_domain(domain):
+            logger.debug(f"Domain not in denylist: {domain}")
+            return (True, False, APIRequestResult.ok())
+
+        result = self.request("DELETE", f"/profiles/{self.profile_id}/denylist/{domain}")
+
+        if result.success:
+            self._cache.remove_domain(domain)
+            logger.info(f"Unblocked: {domain}")
+            return (True, True, result)
+
+        logger.error(f"Failed to unblock: {domain} - {result.error_msg}")
+        return (False, False, result)
+
     def refresh_cache(self) -> bool:
         """
         Force refresh the denylist cache.
@@ -879,6 +955,74 @@ class NextDNSClient:
 
         logger.error(f"Failed to remove from allowlist: {domain} - {result.error_msg}")
         return (False, False)  # Failed
+
+    def allow_with_result(self, domain: str) -> tuple[bool, bool, APIRequestResult]:
+        """
+        Add a domain to the allowlist, returning full error context.
+
+        Args:
+            domain: Domain name to allow
+
+        Returns:
+            Tuple of (success, was_added, api_result):
+            - success: True if operation completed without error
+            - was_added: True if domain was actually added, False if already existed
+            - api_result: Full APIRequestResult with error context if failed
+
+        Raises:
+            DomainValidationError: If domain is invalid
+        """
+        if not validate_domain(domain):
+            raise DomainValidationError(f"Invalid domain: {domain}")
+
+        if self.find_in_allowlist(domain):
+            logger.debug(f"Domain already in allowlist: {domain}")
+            return (True, False, APIRequestResult.ok())
+
+        result = self.request(
+            "POST", f"/profiles/{self.profile_id}/allowlist", {"id": domain, "active": True}
+        )
+
+        if result.success:
+            self._allowlist_cache.add_domain(domain)
+            logger.info(f"Added to allowlist: {domain}")
+            return (True, True, result)
+
+        logger.error(f"Failed to add to allowlist: {domain} - {result.error_msg}")
+        return (False, False, result)
+
+    def disallow_with_result(self, domain: str) -> tuple[bool, bool, APIRequestResult]:
+        """
+        Remove a domain from the allowlist, returning full error context.
+
+        Args:
+            domain: Domain name to remove from allowlist
+
+        Returns:
+            Tuple of (success, was_removed, api_result):
+            - success: True if operation completed without error
+            - was_removed: True if domain was actually removed, False if didn't exist
+            - api_result: Full APIRequestResult with error context if failed
+
+        Raises:
+            DomainValidationError: If domain is invalid
+        """
+        if not validate_domain(domain):
+            raise DomainValidationError(f"Invalid domain: {domain}")
+
+        if not self.find_in_allowlist(domain):
+            logger.debug(f"Domain not in allowlist: {domain}")
+            return (True, False, APIRequestResult.ok())
+
+        result = self.request("DELETE", f"/profiles/{self.profile_id}/allowlist/{domain}")
+
+        if result.success:
+            self._allowlist_cache.remove_domain(domain)
+            logger.info(f"Removed from allowlist: {domain}")
+            return (True, True, result)
+
+        logger.error(f"Failed to remove from allowlist: {domain} - {result.error_msg}")
+        return (False, False, result)
 
     def refresh_allowlist_cache(self) -> bool:
         """
