@@ -433,9 +433,9 @@ class TestProcessQueue:
             items[0].next_retry_at = (datetime.now() - timedelta(minutes=1)).isoformat()
             update_item(items[0])
 
-            # Mock successful client response
+            # Mock successful client response using *_with_result() methods
             mock_client = MagicMock()
-            mock_client.block.return_value = (True, True)
+            mock_client.block_with_result.return_value = (True, True, APIRequestResult.ok())
 
             result = process_queue(mock_client)
 
@@ -463,10 +463,13 @@ class TestProcessQueue:
             items[0].next_retry_at = (datetime.now() - timedelta(minutes=1)).isoformat()
             update_item(items[0])
 
-            # Mock failed client response with retryable error
+            # Mock failed client response with retryable error using *_with_result() methods
             mock_client = MagicMock()
-            mock_client.block.return_value = (False, False)
-            mock_client.request.return_value = APIRequestResult.timeout("Still failing")
+            mock_client.block_with_result.return_value = (
+                False,
+                False,
+                APIRequestResult.timeout("Still failing"),
+            )
 
             result = process_queue(mock_client)
 

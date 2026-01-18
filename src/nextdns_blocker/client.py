@@ -196,6 +196,11 @@ class RateLimiter:
                     return total_waited
 
                 # Calculate wait time until oldest request expires
+                # Safety check: if deque is empty after cleanup, we can proceed
+                if not self._requests:
+                    self._requests.append(now)
+                    return total_waited
+
                 wait_time = self._requests[0] - cutoff
                 if wait_time <= 0:
                     # Oldest request already expired, try again
@@ -263,7 +268,10 @@ class DomainCache:
         with self._lock:
             self._data = data
             # Filter out entries without valid id to prevent false positives
-            self._domains = {str(entry["id"]) for entry in data if entry.get("id")}
+            # Also validate each entry is a dict to handle malformed API responses
+            self._domains = {
+                str(entry["id"]) for entry in data if isinstance(entry, dict) and entry.get("id")
+            }
             self._timestamp = time.monotonic()
 
     def contains(self, domain: str) -> Optional[bool]:
@@ -461,8 +469,24 @@ class NextDNSClient:
         last_error: Optional[APIRequestResult] = None
 
         for attempt in range(self.retries + 1):
-            # Apply rate limiting
-            self._rate_limiter.acquire()
+            # Apply rate limiting with timeout to prevent indefinite blocking
+            try:
+                self._rate_limiter.acquire(timeout=float(self.timeout * 2))
+            except TimeoutError:
+                # Rate limiter timeout - treat as retryable
+                last_error = APIRequestResult.timeout("Rate limiter acquire timed out")
+                if attempt < self.retries:
+                    backoff = self._calculate_backoff(attempt)
+                    logger.warning(
+                        f"Rate limiter timeout for {method} {endpoint}, "
+                        f"retry {attempt + 1}/{self.retries} after {backoff:.1f}s"
+                    )
+                    time.sleep(backoff)
+                    continue
+                logger.error(
+                    f"Rate limiter timeout after {self.retries} retries: {method} {endpoint}"
+                )
+                return last_error
 
             try:
                 # Use requests.request() for all methods to reduce code duplication
@@ -542,14 +566,22 @@ class NextDNSClient:
                     retry_after=retry_after,
                 )
 
-                # Retry on 429 (rate limit) and 5xx errors
-                if status_code == 429 or (500 <= status_code < 600):
+                # Retry on 408 (request timeout), 429 (rate limit) and 5xx errors
+                if status_code in (408, 429) or (500 <= status_code < 600):
                     if attempt < self.retries:
-                        backoff = self._calculate_backoff(attempt)
-                        logger.warning(
-                            f"HTTP {status_code} for {method} {endpoint}, "
-                            f"retry {attempt + 1}/{self.retries} after {backoff:.1f}s"
-                        )
+                        # Use Retry-After header if available, otherwise use calculated backoff
+                        if retry_after is not None and retry_after > 0:
+                            backoff = float(retry_after)
+                            logger.warning(
+                                f"HTTP {status_code} for {method} {endpoint}, "
+                                f"retry {attempt + 1}/{self.retries} after {backoff:.1f}s (Retry-After)"
+                            )
+                        else:
+                            backoff = self._calculate_backoff(attempt)
+                            logger.warning(
+                                f"HTTP {status_code} for {method} {endpoint}, "
+                                f"retry {attempt + 1}/{self.retries} after {backoff:.1f}s"
+                            )
                         time.sleep(backoff)
                         continue
                 logger.error(f"API HTTP error for {method} {endpoint}: {e}")

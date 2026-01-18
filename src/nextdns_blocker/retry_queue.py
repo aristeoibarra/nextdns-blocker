@@ -334,31 +334,20 @@ def process_queue(
             )
             continue
 
-        # Attempt the operation
+        # Attempt the operation using *_with_result() methods to get error context
+        # without making extra API calls
+        success = False
         api_result: Optional[APIRequestResult] = None
 
         try:
             if item.action == "block":
-                success, _ = client.block(item.domain)
-                if not success:
-                    # Get error info from a fresh request to understand the failure
-                    api_result = client.request("PUT", f"/profiles/{client.profile_id}/denylist")
+                success, _, api_result = client.block_with_result(item.domain)
             elif item.action == "unblock":
-                success, _ = client.unblock(item.domain)
-                if not success:
-                    api_result = client.request(
-                        "DELETE", f"/profiles/{client.profile_id}/denylist/{item.domain}"
-                    )
+                success, _, api_result = client.unblock_with_result(item.domain)
             elif item.action == "allow":
-                success, _ = client.allow(item.domain)
-                if not success:
-                    api_result = client.request("PUT", f"/profiles/{client.profile_id}/allowlist")
+                success, _, api_result = client.allow_with_result(item.domain)
             elif item.action == "disallow":
-                success, _ = client.disallow(item.domain)
-                if not success:
-                    api_result = client.request(
-                        "DELETE", f"/profiles/{client.profile_id}/allowlist/{item.domain}"
-                    )
+                success, _, api_result = client.disallow_with_result(item.domain)
             else:
                 logger.error(f"Unknown action type: {item.action}")
                 remove_item(item.id)

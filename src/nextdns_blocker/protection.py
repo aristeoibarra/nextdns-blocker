@@ -149,7 +149,7 @@ def validate_no_locked_weakening(
 
     Weakening includes:
     - Changing locked: true to locked: false
-    - Changing unblock_delay: "never" to something else
+    - Changing unblock_delay: "never" to something else (ANY other value)
     - Removing the locked field entirely
 
     Args:
@@ -173,6 +173,16 @@ def validate_no_locked_weakening(
             errors.append(
                 f"Cannot weaken protection for category '{cat_id}'. It is marked as locked."
             )
+        # Check if unblock_delay was weakened from "never" to something else
+        if new_cat:
+            old_delay = old_cat.get("unblock_delay")
+            new_delay = new_cat.get("unblock_delay")
+            if old_delay == "never" and new_delay != "never":
+                errors.append(
+                    f"Cannot change unblock_delay for category '{cat_id}' from 'never' to '{new_delay}'. "
+                    f"Use 'ndb protection unlock-request {cat_id}' to request modification "
+                    f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+                )
 
     # Check nextdns.services
     old_services = {s["id"]: s for s in old_config.get("nextdns", {}).get("services", [])}
@@ -186,6 +196,40 @@ def validate_no_locked_weakening(
             errors.append(
                 f"Cannot weaken protection for service '{svc_id}'. It is marked as locked."
             )
+        # Check if unblock_delay was weakened from "never" to something else
+        if new_svc:
+            old_delay = old_svc.get("unblock_delay")
+            new_delay = new_svc.get("unblock_delay")
+            if old_delay == "never" and new_delay != "never":
+                errors.append(
+                    f"Cannot change unblock_delay for service '{svc_id}' from 'never' to '{new_delay}'. "
+                    f"Use 'ndb protection unlock-request {svc_id}' to request modification "
+                    f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+                )
+
+    # Check blocklist domains for unblock_delay weakening
+    old_blocklist = {
+        d.get("domain"): d for d in old_config.get("blocklist", []) if isinstance(d, dict)
+    }
+    new_blocklist = {
+        d.get("domain"): d for d in new_config.get("blocklist", []) if isinstance(d, dict)
+    }
+
+    for domain, old_entry in old_blocklist.items():
+        if not domain:
+            continue
+        old_delay = old_entry.get("unblock_delay")
+        if old_delay != "never":
+            continue
+        new_entry = new_blocklist.get(domain)
+        if new_entry:
+            new_delay = new_entry.get("unblock_delay")
+            if new_delay != "never":
+                errors.append(
+                    f"Cannot change unblock_delay for domain '{domain}' from 'never' to '{new_delay}'. "
+                    f"Use 'ndb protection unlock-request {domain}' to request modification "
+                    f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+                )
 
     return errors
 
@@ -997,3 +1041,164 @@ def can_execute_dangerous_command(command_name: str) -> tuple[bool, str]:
                 return False, "pin_required"
 
     return True, "ok"
+
+
+# =============================================================================
+# CANNOT_DISABLE STATE PERSISTENCE
+# =============================================================================
+
+
+def get_cannot_disable_lock_file() -> Path:
+    """Get the cannot_disable lock file path."""
+    return get_log_dir() / ".cannot_disable_lock"
+
+
+def persist_cannot_disable_state(enabled: bool) -> None:
+    """
+    Persist the cannot_disable state to a secure file.
+
+    This provides an additional layer of protection against config.json edits.
+    Even if a user modifies config.json, this lock file will preserve the
+    original cannot_disable state.
+
+    Args:
+        enabled: Whether cannot_disable is enabled
+    """
+    lock_file = get_cannot_disable_lock_file()
+    if enabled:
+        write_secure_file(lock_file, "true")
+        audit_log("CANNOT_DISABLE_LOCK", "Locked cannot_disable state")
+    else:
+        # Only remove if explicitly set to false after proper unlock request
+        if lock_file.exists():
+            lock_file.unlink(missing_ok=True)
+            audit_log("CANNOT_DISABLE_UNLOCK", "Unlocked cannot_disable state")
+
+
+def is_cannot_disable_locked() -> bool:
+    """
+    Check if cannot_disable is locked via the persistent lock file.
+
+    This function checks the lock file rather than config.json to prevent
+    bypass via config.json edits.
+
+    Returns:
+        True if cannot_disable is persistently locked
+    """
+    lock_file = get_cannot_disable_lock_file()
+    content = read_secure_file(lock_file)
+    return content == "true"
+
+
+def sync_cannot_disable_from_config(config: dict[str, Any]) -> None:
+    """
+    Sync the cannot_disable lock state from config.
+
+    Called during init or when config is validated. If config has
+    cannot_disable: true, this creates the lock file. The lock file
+    can only be removed through the proper unlock request process.
+
+    Args:
+        config: The full configuration dictionary
+    """
+    protection = config.get("protection", {})
+    auto_panic = protection.get("auto_panic", {})
+
+    if auto_panic.get("cannot_disable", False):
+        persist_cannot_disable_state(True)
+
+
+# =============================================================================
+# ALLOWLIST PANIC MODE VALIDATION
+# =============================================================================
+
+
+def validate_no_allowlist_bypass_during_panic(
+    old_config: dict[str, Any], new_config: dict[str, Any]
+) -> list[str]:
+    """
+    Validate that allowlist is not being modified during panic mode.
+
+    Since allowlist has highest priority in NextDNS and can bypass all blocks,
+    modifications to allowlist during panic mode are forbidden.
+
+    Args:
+        old_config: Current configuration
+        new_config: Proposed new configuration
+
+    Returns:
+        List of error messages for forbidden allowlist modifications
+    """
+    from .panic import is_panic_mode
+
+    if not is_panic_mode():
+        return []
+
+    errors = []
+
+    # Get old and new allowlists
+    old_allowlist = set()
+    for item in old_config.get("allowlist", []):
+        if isinstance(item, str):
+            old_allowlist.add(item)
+        elif isinstance(item, dict):
+            old_allowlist.add(item.get("domain", ""))
+
+    new_allowlist = set()
+    for item in new_config.get("allowlist", []):
+        if isinstance(item, str):
+            new_allowlist.add(item)
+        elif isinstance(item, dict):
+            new_allowlist.add(item.get("domain", ""))
+
+    # Check for added domains
+    added = new_allowlist - old_allowlist
+    if added:
+        for domain in added:
+            if domain:
+                errors.append(
+                    f"Cannot add '{domain}' to allowlist during panic mode. "
+                    f"Allowlist modifications are blocked to prevent bypassing protection."
+                )
+
+    return errors
+
+
+def get_all_config_validation_errors(
+    old_config: dict[str, Any], new_config: dict[str, Any]
+) -> list[str]:
+    """
+    Run all protection validation checks on a config change.
+
+    This is a convenience function that runs all validation checks
+    and returns a combined list of errors.
+
+    Args:
+        old_config: Current configuration
+        new_config: Proposed new configuration
+
+    Returns:
+        Combined list of all validation errors
+    """
+    errors = []
+
+    # Run all validators
+    errors.extend(validate_no_locked_removal(old_config, new_config))
+    errors.extend(validate_no_locked_weakening(old_config, new_config))
+    errors.extend(validate_no_auto_panic_weakening(old_config, new_config))
+    errors.extend(validate_no_allowlist_bypass_during_panic(old_config, new_config))
+
+    # Check persistent cannot_disable lock
+    if is_cannot_disable_locked():
+        new_protection = new_config.get("protection", {})
+        new_auto_panic = new_protection.get("auto_panic", {})
+
+        # If lock file exists but config shows cannot_disable=false, block the change
+        if not new_auto_panic.get("cannot_disable", True):
+            errors.append(
+                "Cannot change 'cannot_disable' - it is persistently locked. "
+                f"Use 'ndb protection unlock-request auto_panic' to request modification "
+                f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+            )
+
+    return errors

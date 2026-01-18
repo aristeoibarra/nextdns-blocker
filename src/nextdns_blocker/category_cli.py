@@ -56,17 +56,24 @@ def _save_config_file(config_path: Path, config: dict[str, Any]) -> None:
     temp_fd, temp_path = tempfile.mkstemp(
         dir=config_path.parent, prefix=f".{config_path.name}.", suffix=".tmp"
     )
+    temp_path_obj = Path(temp_path)
     try:
         with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
             f.write("\n")
             f.flush()
             os.fsync(f.fileno())
-        Path(temp_path).replace(config_path)
+        # Move temp file to final location (atomic on POSIX)
+        temp_path_obj.replace(config_path)
     except (OSError, TypeError, ValueError):
-        # Clean up temp file on error
+        # Clean up temp file on any error (including replace failure)
         with contextlib.suppress(OSError):
-            Path(temp_path).unlink()
+            temp_path_obj.unlink()
+        raise
+    except BaseException:
+        # Also clean up on unexpected exceptions (e.g., KeyboardInterrupt)
+        with contextlib.suppress(OSError):
+            temp_path_obj.unlink()
         raise
 
 

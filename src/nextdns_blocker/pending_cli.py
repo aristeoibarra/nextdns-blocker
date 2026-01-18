@@ -58,7 +58,8 @@ def cmd_list(show_all: bool) -> None:
                 time_str = "[green]READY[/green]"
 
             # Truncate ID for display (show last 12 chars)
-            display_id = action.get("id", "-")[-12:] if action.get("id") else "-"
+            action_id = action.get("id")
+            display_id = action_id[-12:] if action_id else "-"
 
             table.add_row(
                 display_id,
