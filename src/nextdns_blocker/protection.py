@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
 
-from .common import audit_log, get_log_dir, read_secure_file, write_secure_file
+from .common import (
+    audit_log,
+    ensure_naive_datetime,
+    get_log_dir,
+    read_secure_file,
+    write_secure_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -163,8 +169,16 @@ def validate_no_locked_weakening(
     errors = []
 
     # Check nextdns.categories
-    old_categories = {c["id"]: c for c in old_config.get("nextdns", {}).get("categories", [])}
-    new_categories = {c["id"]: c for c in new_config.get("nextdns", {}).get("categories", [])}
+    old_categories = {
+        c["id"]: c
+        for c in old_config.get("nextdns", {}).get("categories", [])
+        if isinstance(c, dict) and "id" in c
+    }
+    new_categories = {
+        c["id"]: c
+        for c in new_config.get("nextdns", {}).get("categories", [])
+        if isinstance(c, dict) and "id" in c
+    }
 
     for cat_id, old_cat in old_categories.items():
         if not is_locked(old_cat):
@@ -186,8 +200,16 @@ def validate_no_locked_weakening(
                 )
 
     # Check nextdns.services
-    old_services = {s["id"]: s for s in old_config.get("nextdns", {}).get("services", [])}
-    new_services = {s["id"]: s for s in new_config.get("nextdns", {}).get("services", [])}
+    old_services = {
+        s["id"]: s
+        for s in old_config.get("nextdns", {}).get("services", [])
+        if isinstance(s, dict) and "id" in s
+    }
+    new_services = {
+        s["id"]: s
+        for s in new_config.get("nextdns", {}).get("services", [])
+        if isinstance(s, dict) and "id" in s
+    }
 
     for svc_id, old_svc in old_services.items():
         if not is_locked(old_svc):
@@ -284,7 +306,7 @@ def validate_no_auto_panic_weakening(
 
     # Check if cannot_disable was changed from true to false
     if old_auto_panic.get("cannot_disable", False) and not new_auto_panic.get(
-        "cannot_disable", True
+        "cannot_disable", False
     ):
         errors.append(
             "Cannot change 'cannot_disable' from true to false. "
@@ -435,7 +457,7 @@ def execute_unlock_request(request_id: str, config_path: Path) -> bool:
         return False
 
     # Check if delay has passed
-    execute_at = datetime.fromisoformat(request["execute_at"])
+    execute_at = ensure_naive_datetime(datetime.fromisoformat(request["execute_at"]))
     if datetime.now() < execute_at:
         logger.warning(f"Request {request_id} not yet executable")
         return False

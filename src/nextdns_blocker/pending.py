@@ -165,7 +165,7 @@ def _load_pending_data() -> dict[str, Any]:
             data["pending_actions"] = []
         return data
     except json.JSONDecodeError as e:
-        logger.error(f"Invalid pending.json: {e}")
+        logger.error(f"Invalid pending.json: {e}", exc_info=True)
         # Log content preview for debugging (truncated for safety)
         content_preview = content[:200] + "..." if len(content) > 200 else content
         logger.warning(f"Corrupted content preview: {content_preview!r}")

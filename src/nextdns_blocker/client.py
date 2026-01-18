@@ -257,10 +257,11 @@ class DomainCache:
             return self._is_valid_unlocked()
 
     def get(self) -> Optional[list[dict[str, Any]]]:
-        """Get cached data if valid."""
+        """Get cached data if valid. Returns a copy to prevent external modification."""
         with self._lock:
             if self._is_valid_unlocked():
-                return self._data
+                # Return a shallow copy to prevent callers from modifying cache data
+                return list(self._data) if self._data else None
             return None
 
     def set(self, data: list[dict[str, Any]]) -> None:

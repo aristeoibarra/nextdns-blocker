@@ -1361,6 +1361,10 @@ def _expand_categories(categories: list[dict[str, Any]]) -> list[dict[str, Any]]
         category_description = category.get("description")
         category_domains = category.get("domains", [])
 
+        # Ensure category_domains is a list (could be None if explicitly set)
+        if not isinstance(category_domains, list):
+            category_domains = []
+
         for domain in category_domains:
             if isinstance(domain, str) and domain.strip():
                 domain_entry: dict[str, Any] = {
@@ -1640,11 +1644,20 @@ def _build_config_dict(config_dir: Path) -> dict[str, Any]:
     Returns:
         Configuration dictionary with raw values
     """
+    # Apply bounds validation for timeout and retries
+    # Timeout: min 1s, max 120s to prevent hanging requests
+    # Retries: min 0, max 10 to prevent infinite retry loops
+    raw_timeout = safe_int(os.getenv("API_TIMEOUT"), DEFAULT_TIMEOUT, "API_TIMEOUT")
+    timeout = min(120, max(1, raw_timeout))
+
+    raw_retries = safe_int(os.getenv("API_RETRIES"), DEFAULT_RETRIES, "API_RETRIES")
+    retries = min(10, max(0, raw_retries))
+
     return {
         "api_key": os.getenv("NEXTDNS_API_KEY"),
         "profile_id": os.getenv("NEXTDNS_PROFILE_ID"),
-        "timeout": safe_int(os.getenv("API_TIMEOUT"), DEFAULT_TIMEOUT, "API_TIMEOUT"),
-        "retries": safe_int(os.getenv("API_RETRIES"), DEFAULT_RETRIES, "API_RETRIES"),
+        "timeout": timeout,
+        "retries": retries,
         "script_dir": str(config_dir),
     }
 
