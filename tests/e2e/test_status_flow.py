@@ -15,7 +15,6 @@ from unittest.mock import patch
 
 import responses
 from click.testing import CliRunner
-from freezegun import freeze_time
 
 from nextdns_blocker.cli import main
 
@@ -163,90 +162,6 @@ class TestStatusBasic:
         # New UX shows allowlist summary, not individual domains
         assert "Allowlist" in result.output
         assert "active" in result.output.lower()
-
-
-class TestStatusPauseState:
-    """Tests for status showing pause state."""
-
-    @responses.activate
-    @freeze_time("2024-01-15 12:00:00")
-    def test_status_shows_active_pause(
-        self,
-        runner: CliRunner,
-        tmp_path: Path,
-    ) -> None:
-        """Test that status shows when blocking is paused."""
-        config_dir = tmp_path / "config"
-        log_dir = tmp_path / "logs"
-        config_dir.mkdir(parents=True)
-        log_dir.mkdir(parents=True)
-
-        (config_dir / ".env").write_text(
-            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
-            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
-            f"TIMEZONE={TEST_TIMEZONE}\n"
-        )
-
-        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "config.json").write_text(json.dumps(domains_data))
-
-        add_denylist_mock(responses, domains=[])
-        add_allowlist_mock(responses, domains=[])
-
-        with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
-            with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
-                # First pause
-                runner.invoke(main, ["pause", "30"])
-
-                with patch("nextdns_blocker.cli.is_macos", return_value=False):
-                    with patch("nextdns_blocker.cli.is_windows", return_value=False):
-                        with patch("nextdns_blocker.cli.get_crontab", return_value=""):
-                            result = runner.invoke(
-                                main,
-                                ["status", "--config-dir", str(config_dir)],
-                            )
-
-        assert result.exit_code == 0
-        assert "ACTIVE" in result.output or "paused" in result.output.lower()
-
-    @responses.activate
-    def test_status_shows_inactive_pause(
-        self,
-        runner: CliRunner,
-        tmp_path: Path,
-    ) -> None:
-        """Test that status shows when blocking is not paused."""
-        config_dir = tmp_path / "config"
-        log_dir = tmp_path / "logs"
-        config_dir.mkdir(parents=True)
-        log_dir.mkdir(parents=True)
-
-        (config_dir / ".env").write_text(
-            f"NEXTDNS_API_KEY={TEST_API_KEY}\n"
-            f"NEXTDNS_PROFILE_ID={TEST_PROFILE_ID}\n"
-            f"TIMEZONE={TEST_TIMEZONE}\n"
-        )
-
-        domains_data = {"blocklist": [{"domain": "youtube.com", "schedule": None}]}
-        (config_dir / "config.json").write_text(json.dumps(domains_data))
-
-        add_denylist_mock(responses, domains=[])
-        add_allowlist_mock(responses, domains=[])
-
-        with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
-            with patch("nextdns_blocker.cli.get_log_dir", return_value=log_dir):
-                with patch("nextdns_blocker.cli.is_macos", return_value=False):
-                    with patch("nextdns_blocker.cli.is_windows", return_value=False):
-                        with patch("nextdns_blocker.cli.get_crontab", return_value=""):
-                            result = runner.invoke(
-                                main,
-                                ["status", "--config-dir", str(config_dir)],
-                            )
-
-        assert result.exit_code == 0
-        # New UX: "silence is golden" - pause not shown when inactive
-        # Just verify pause ACTIVE is not shown
-        assert "pause" not in result.output.lower() or "active" not in result.output.lower()
 
 
 class TestStatusScheduler:

@@ -404,8 +404,6 @@ class TestHelpCommand:
         assert result.exit_code == 0
         assert "config" in result.output  # sync is now under config
         assert "init" in result.output
-        assert "pause" in result.output
-        assert "resume" in result.output
         assert "status" in result.output
         assert "health" in result.output
 

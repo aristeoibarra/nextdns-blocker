@@ -383,10 +383,10 @@ When sync runs:
 
 ```bash
 # Preview sync
-nextdns-blocker config sync --dry-run
+nextdns-blocker config push --dry-run
 
 # Force sync
-nextdns-blocker config sync
+nextdns-blocker config push
 ```
 
 ## Migration from Blocklist

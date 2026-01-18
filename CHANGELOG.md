@@ -5,6 +5,82 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.0] - 2026-01-18
+
+### Added
+- **Shell alias command** (#190): Manage shell aliases for the CLI
+  - `alias install <name>`: Install shell alias (e.g., `ndb` -> `nextdns-blocker`)
+  - `alias uninstall`: Remove the alias
+  - `alias status`: Show current alias configuration
+  - Cross-platform support: bash, zsh, fish, PowerShell
+- **Retry queue for transient API failures** (#196): Persistent queue for failed operations
+  - `RetryQueue` class with file-based persistence
+  - `RetryItem` dataclass with exponential backoff
+  - Integration with watchdog to process retries automatically
+  - New CLI command: `watchdog retry-status`
+  - Configurable max retries (default: 5)
+  - Audit logging for retry events
+- **APIRequestResult class**: Structured error handling with typed results
+  - Factory methods: `ok()`, `timeout()`, `connection_error()`, `http_error()`, `parse_error()`
+  - Error classification: auth, rate_limit, server_error, client_error
+  - `is_retryable` property for retry logic
+- **CLI formatter utility**: Centralized formatting for consistent CLI output
+- **Type definitions module** (`types.py`): Better type safety across the codebase
+
+### Changed
+- **Rename `config sync` to `config push`** (#187): Git-like terminology
+  - `config push` is the new primary command name
+  - `config sync` deprecated with warning (removal in v8.0.0)
+  - Both commands work identically for backwards compatibility
+- **Remove pause/resume commands**: Strengthens addiction protection
+  - Commands removed to prevent impulsive bypass of protections
+  - Aligns with project's core mission of effective self-control
+
+### Fixed
+- **Path.home() failure in Windows CI**: Handle `RuntimeError` when HOME environment variables are unavailable
+- **Security hardening**:
+  - Add `SecretsRedactionFilter` to prevent API keys/tokens from leaking to logs
+  - Validate config path to prevent path traversal attacks
+  - Add file locking for atomic unlock request operations
+  - Set secure permissions (600) on `.env` files in `install.sh`
+  - Explicitly enable SSL/TLS verification in API client
+- **Critical bugs from deep audit**:
+  - Fix `TypeError` with `ensure_naive_datetime` for datetime comparison
+  - Fix `cannot_disable` default from `True` to `False`
+  - Add `KeyError` protection to dict comprehensions for categories/services
+  - Add bounds validation for API timeout (1-120s) and retries (0-10)
+  - Fix cache reference leak by returning shallow copy
+- **Potential bugs and error handling**:
+  - Fix `IndexError` in analytics when splitting empty detail strings
+  - Fix `IndexError` in completion when parsing malformed env lines
+  - Replace `BaseException` with `KeyboardInterrupt` in category_cli
+  - Add type validation for domain strings in protection.py
+- **Race condition in RateLimiter**: Handle empty deque after cleanup
+- **Uninitialized variable in retry_queue**: Fix `process_queue()` edge case
+- **Use Retry-After header**: Respect server-provided backoff values
+- **Add timeout to rate limiter**: Prevent indefinite blocking in `acquire()`
+- **HTTP 408 retryable**: Add Request Timeout to retryable status codes
+- **Resource leak in category_cli**: Proper temp file cleanup
+- **Unblock delay validation**: Block changes from `"never"` to other values
+- **Persist cannot_disable state**: Store in separate lock file to prevent config bypass
+- **Block allowlist during panic**: Prevent modifications when in panic mode
+- **List modification during iteration**: Fixed in `pending.py` and `protection.py`
+
+### Documentation
+- Sync documentation with codebase changes
+- Update `sync` to `config sync` across 21+ documentation files
+- Remove `pause-resume.md` (commands no longer exist)
+- Add hidden subcommands documentation (`config edit`, `pending cancel`, `watchdog disable`)
+- Correct API methods (PUT -> POST for add operations)
+- Add Parental Control API endpoints documentation
+- Add missing data files to file-locations (`.pin_hash`, `.pin_session`, etc.)
+
+### Tests
+- Increase coverage to 80.88% for CI pipeline
+- Add comprehensive tests for `completion.py` (51% -> 90%)
+- Add comprehensive tests for `list_cli.py` (62% -> 84%)
+- Add tests for alias CLI, retry queue, CLI formatter, and protection module
+
 ## [7.0.0] - 2026-01-10
 
 ### Breaking Changes
@@ -742,6 +818,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[7.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v7.0.0...v7.1.0
 [7.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.4...v7.0.0
 [6.5.4]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.3...v6.5.4
 [6.5.3]: https://github.com/aristeoibarra/nextdns-blocker/compare/v6.5.2...v6.5.3

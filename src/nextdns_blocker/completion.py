@@ -54,7 +54,9 @@ def complete_blocklist_domains(
                 for line in f:
                     line = line.strip()
                     if line.startswith("NEXTDNS_SCRIPT_DIR="):
-                        script_dir = line.split("=", 1)[1].strip().strip("\"'")
+                        parts = line.split("=", 1)
+                        if len(parts) == 2:
+                            script_dir = parts[1].strip().strip("\"'")
                         break
 
         domains, _ = load_domains(script_dir)
@@ -122,7 +124,9 @@ def complete_allowlist_domains(
                 for line in f:
                     line = line.strip()
                     if line.startswith("NEXTDNS_SCRIPT_DIR="):
-                        script_dir = line.split("=", 1)[1].strip().strip("\"'")
+                        parts = line.split("=", 1)
+                        if len(parts) == 2:
+                            script_dir = parts[1].strip().strip("\"'")
                         break
 
         _, allowlist = load_domains(script_dir)

@@ -312,15 +312,3 @@ class TestDangerousCommands:
         from nextdns_blocker.panic import DANGEROUS_COMMANDS
 
         assert "unblock" in DANGEROUS_COMMANDS
-
-    def test_pause_in_dangerous_commands(self):
-        """Pause command should be in DANGEROUS_COMMANDS."""
-        from nextdns_blocker.panic import DANGEROUS_COMMANDS
-
-        assert "pause" in DANGEROUS_COMMANDS
-
-    def test_resume_in_dangerous_commands(self):
-        """Resume command should be in DANGEROUS_COMMANDS."""
-        from nextdns_blocker.panic import DANGEROUS_COMMANDS
-
-        assert "resume" in DANGEROUS_COMMANDS

@@ -204,7 +204,7 @@ class TestBlockAllDomains:
 
         mock_client = MagicMock()
         mock_client.is_blocked.return_value = False
-        mock_client.block.return_value = True
+        mock_client.block.return_value = (True, True)  # (success, was_added)
 
         mock_config = {
             "api_key": "test",

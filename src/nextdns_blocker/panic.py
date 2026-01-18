@@ -32,8 +32,6 @@ MIN_PANIC_DURATION_MINUTES = 15
 DANGEROUS_COMMANDS = frozenset(
     {
         "unblock",
-        "pause",
-        "resume",
         "disallow",
         "allow",
     }

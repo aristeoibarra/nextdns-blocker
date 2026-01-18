@@ -248,7 +248,6 @@ def parse_unblock_delay_seconds(delay: str) -> Optional[int]:
 DEFAULT_TIMEOUT = 10
 DEFAULT_RETRIES = 3
 DEFAULT_TIMEZONE = "UTC"
-DEFAULT_PAUSE_MINUTES = 30
 
 logger = logging.getLogger(__name__)
 
@@ -263,7 +262,7 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
     Get the configuration directory path.
 
     Resolution order:
-    1. Override path if provided
+    1. Override path if provided (validated to prevent path traversal)
     2. Current working directory if .env AND config.json exist
     3. XDG config directory (~/.config/nextdns-blocker on Linux,
        ~/Library/Application Support/nextdns-blocker on macOS)
@@ -273,9 +272,42 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
 
     Returns:
         Path to the configuration directory
+
+    Raises:
+        ConfigurationError: If override path is invalid or outside allowed directories
     """
     if override:
-        return Path(override)
+        override_path = Path(override)
+        # Resolve to absolute path and validate
+        try:
+            resolved = override_path.resolve()
+        except (OSError, RuntimeError) as e:
+            raise ConfigurationError(f"Invalid config path: {e}")
+
+        # Security: Ensure the path is within user's home directory or standard config locations
+        import tempfile
+
+        allowed_roots: list[Path] = [
+            Path("/tmp").resolve(),  # Allow temp directories for testing  # nosec B108
+            Path(tempfile.gettempdir()).resolve(),  # System temp dir (e.g., /var/folders on macOS)
+        ]
+
+        # Add home directory if available (may fail in some CI environments)
+        try:
+            home = Path.home().resolve()
+            allowed_roots.insert(0, home)
+        except (OSError, RuntimeError):
+            pass  # Home directory not available, continue with temp dirs only
+
+        # Check if resolved path is within allowed directories
+        is_allowed = any(resolved == root or root in resolved.parents for root in allowed_roots)
+
+        if not is_allowed:
+            raise ConfigurationError(
+                f"Config path must be within home directory or /tmp: {resolved}"
+            )
+
+        return resolved
 
     # Require .env AND config.json to use CWD (fixes #124)
     # This avoids false positives from unrelated .env files
@@ -522,9 +554,7 @@ def validate_schedule_or_reference(
             available = (
                 ", ".join(sorted(valid_schedule_names)) if valid_schedule_names else "(none)"
             )
-            return [
-                f"{prefix}: unknown schedule '{schedule}'. " f"Available schedules: {available}"
-            ]
+            return [f"{prefix}: unknown schedule '{schedule}'. Available schedules: {available}"]
         return []
 
     if isinstance(schedule, dict):
@@ -1287,7 +1317,11 @@ def load_nextdns_config(script_dir: str) -> Optional[dict[str, Any]]:
     try:
         with open(config_file, encoding="utf-8") as f:
             config = json.load(f)
-    except (json.JSONDecodeError, OSError):
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid JSON in {config_file}: {e}")
+        return None
+    except OSError as e:
+        logger.warning(f"Cannot read {config_file}: {e}")
         return None
 
     if not isinstance(config, dict):
@@ -1362,6 +1396,10 @@ def _expand_categories(categories: list[dict[str, Any]]) -> list[dict[str, Any]]
         category_description = category.get("description")
         category_domains = category.get("domains", [])
 
+        # Ensure category_domains is a list (could be None if explicitly set)
+        if not isinstance(category_domains, list):
+            category_domains = []
+
         for domain in category_domains:
             if isinstance(domain, str) and domain.strip():
                 domain_entry: dict[str, Any] = {
@@ -1403,7 +1441,7 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
 
     if not config_file.exists():
         raise ConfigurationError(
-            f"Config file not found: {config_file}\n" "Run 'nextdns-blocker init' to create one."
+            f"Config file not found: {config_file}\nRun 'nextdns-blocker init' to create one."
         )
 
     try:
@@ -1641,11 +1679,20 @@ def _build_config_dict(config_dir: Path) -> dict[str, Any]:
     Returns:
         Configuration dictionary with raw values
     """
+    # Apply bounds validation for timeout and retries
+    # Timeout: min 1s, max 120s to prevent hanging requests
+    # Retries: min 0, max 10 to prevent infinite retry loops
+    raw_timeout = safe_int(os.getenv("API_TIMEOUT"), DEFAULT_TIMEOUT, "API_TIMEOUT")
+    timeout = min(120, max(1, raw_timeout))
+
+    raw_retries = safe_int(os.getenv("API_RETRIES"), DEFAULT_RETRIES, "API_RETRIES")
+    retries = min(10, max(0, raw_retries))
+
     return {
         "api_key": os.getenv("NEXTDNS_API_KEY"),
         "profile_id": os.getenv("NEXTDNS_PROFILE_ID"),
-        "timeout": safe_int(os.getenv("API_TIMEOUT"), DEFAULT_TIMEOUT, "API_TIMEOUT"),
-        "retries": safe_int(os.getenv("API_RETRIES"), DEFAULT_RETRIES, "API_RETRIES"),
+        "timeout": timeout,
+        "retries": retries,
         "script_dir": str(config_dir),
     }
 

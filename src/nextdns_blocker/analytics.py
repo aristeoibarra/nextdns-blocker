@@ -352,7 +352,9 @@ class AnalyticsManager:
         if entry.action in self.DOMAIN_ACTIONS or entry.action in self.PENDING_ACTIONS:
             # Domain is typically the first word in detail
             if entry.detail:
-                return entry.detail.split()[0]
+                parts = entry.detail.split()
+                if parts:
+                    return parts[0]
         return None
 
     def get_hourly_patterns(

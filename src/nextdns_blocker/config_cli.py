@@ -224,6 +224,11 @@ def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
     """Open config file in editor."""
     from .cli import require_pin_verification
     from .panic import is_panic_mode
+    from .protection import (
+        validate_no_auto_panic_weakening,
+        validate_no_locked_removal,
+        validate_no_locked_weakening,
+    )
 
     # Block config edit during panic mode
     if is_panic_mode():
@@ -243,6 +248,10 @@ def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
             f"\n  [dim]Run 'nextdns-blocker init' to create one.[/dim]\n"
         )
         sys.exit(1)
+
+    # Save original config for validation and potential rollback
+    original_config = load_config_file(config_path)
+    original_content = config_path.read_text(encoding="utf-8")
 
     # Get editor
     editor_str = editor or get_editor()
@@ -264,6 +273,33 @@ def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
         sys.exit(1)
     except FileNotFoundError:
         console.print(f"\n  [red]Error: Editor '{editor_args[0]}' not found[/red]\n")
+        sys.exit(1)
+
+    # Load the edited config and validate protection rules
+    try:
+        new_config = load_config_file(config_path)
+    except (json.JSONDecodeError, OSError) as e:
+        console.print(f"\n  [red]Error: Invalid JSON after edit: {e}[/red]\n")
+        # Restore original
+        config_path.write_text(original_content, encoding="utf-8")
+        console.print("  [yellow]![/yellow] Original config restored\n")
+        sys.exit(1)
+
+    # Validate protection rules - these are CRITICAL for addiction safety
+    protection_errors = []
+    protection_errors.extend(validate_no_locked_removal(original_config, new_config))
+    protection_errors.extend(validate_no_locked_weakening(original_config, new_config))
+    protection_errors.extend(validate_no_auto_panic_weakening(original_config, new_config))
+
+    if protection_errors:
+        console.print("\n  [red]Protection violation detected![/red]\n")
+        for error in protection_errors:
+            console.print(f"  [red]✗[/red] {error}\n")
+
+        # Restore original config
+        config_path.write_text(original_content, encoding="utf-8")
+        console.print("  [yellow]![/yellow] Original config restored\n")
+        audit_log("CONFIG_EDIT_BLOCKED", f"Protection violation: {protection_errors[0]}")
         sys.exit(1)
 
     audit_log("CONFIG_EDIT", str(config_path))
@@ -733,6 +769,37 @@ def cmd_validate(output_json: bool, config_dir: Optional[Path]) -> None:
     validate_impl(output_json=output_json, config_dir=config_dir)
 
 
+@config_cli.command("push")
+@click.option("--dry-run", is_flag=True, help="Show changes without applying")
+@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
+@click.option(
+    "--config-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Config directory (default: auto-detect)",
+)
+def cmd_push(
+    dry_run: bool,
+    verbose: bool,
+    config_dir: Optional[Path],
+) -> None:
+    """Push local config to NextDNS (sync schedules).
+
+    Applies your local config.json schedules to NextDNS.
+    Blocks/unblocks domains based on their schedule configuration.
+
+    This is the recommended command for applying local changes.
+
+    Examples:
+        ndb config push             # Apply local config to NextDNS
+        ndb config push --dry-run   # Preview changes
+        ndb config push -v          # Verbose output
+    """
+    # Import here to avoid circular imports
+    from .cli import sync_impl
+
+    sync_impl(dry_run=dry_run, verbose=verbose, config_dir=config_dir)
+
+
 @config_cli.command("sync")
 @click.option("--dry-run", is_flag=True, help="Show changes without applying")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
@@ -746,9 +813,19 @@ def cmd_sync(
     verbose: bool,
     config_dir: Optional[Path],
 ) -> None:
-    """Synchronize domain blocking with schedules."""
+    """Synchronize domain blocking with schedules.
+
+    DEPRECATED: Use 'config push' instead. This command will be removed in v8.0.0.
+    """
     # Import here to avoid circular imports
     from .cli import sync_impl
+
+    # Show deprecation warning
+    console.print(
+        "\n  [yellow]\u26a0\ufe0f  Warning: 'config sync' is deprecated. "
+        "Use 'config push' instead.[/yellow]"
+    )
+    console.print("  [dim]This command will be removed in v8.0.0.[/dim]\n")
 
     sync_impl(dry_run=dry_run, verbose=verbose, config_dir=config_dir)
 

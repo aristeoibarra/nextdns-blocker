@@ -165,7 +165,7 @@ def _load_pending_data() -> dict[str, Any]:
             data["pending_actions"] = []
         return data
     except json.JSONDecodeError as e:
-        logger.error(f"Invalid pending.json: {e}")
+        logger.error(f"Invalid pending.json: {e}", exc_info=True)
         # Log content preview for debugging (truncated for safety)
         content_preview = content[:200] + "..." if len(content) > 200 else content
         logger.warning(f"Corrupted content preview: {content_preview!r}")
@@ -312,17 +312,25 @@ def cancel_pending_action(action_id: str) -> bool:
     # Use file lock for atomic read-modify-write operation
     with _pending_file_lock():
         data = _load_pending_data()
+        # Find the action to cancel (avoid modifying list during iteration)
+        action_index = None
+        action_domain = "unknown"
         for i, action in enumerate(data["pending_actions"]):
             if action.get("id") == action_id:
                 if action.get("status") != "pending":
                     return False
-                # Remove the action entirely
-                domain = action.get("domain", "unknown")
-                del data["pending_actions"][i]
-                if _save_pending_data(data):
-                    audit_log("PENDING_CANCEL", f"{action_id} {domain}")
-                    return True
-                return False
+                action_index = i
+                action_domain = action.get("domain", "unknown")
+                break
+
+        if action_index is None:
+            return False
+
+        # Remove the action after iteration is complete
+        del data["pending_actions"][action_index]
+        if _save_pending_data(data):
+            audit_log("PENDING_CANCEL", f"{action_id} {action_domain}")
+            return True
         return False
 
 
@@ -341,8 +349,8 @@ def get_ready_actions() -> list[dict[str, Any]]:
                     execute_at = ensure_naive_datetime(datetime.fromisoformat(execute_at_str))
                     if execute_at <= now:
                         ready.append(action)
-            except (ValueError, KeyError):
-                logger.warning(f"Invalid action: {action.get('id')}")
+            except ValueError:
+                logger.warning(f"Invalid execute_at in action: {action.get('id')}")
         return ready
 
 
@@ -351,14 +359,23 @@ def mark_action_executed(action_id: str) -> bool:
     # Use file lock for atomic read-modify-write operation
     with _pending_file_lock():
         data = _load_pending_data()
+        # Find the action to mark as executed (avoid modifying list during iteration)
+        action_index = None
+        action_domain = "unknown"
         for i, action in enumerate(data["pending_actions"]):
             if action.get("id") == action_id:
-                domain = action.get("domain", "unknown")
-                del data["pending_actions"][i]
-                if _save_pending_data(data):
-                    audit_log("PENDING_EXECUTE", f"{action_id} {domain}")
-                    return True
-                return False
+                action_index = i
+                action_domain = action.get("domain", "unknown")
+                break
+
+        if action_index is None:
+            return False
+
+        # Remove the action after iteration is complete
+        del data["pending_actions"][action_index]
+        if _save_pending_data(data):
+            audit_log("PENDING_EXECUTE", f"{action_id} {action_domain}")
+            return True
         return False
 
 

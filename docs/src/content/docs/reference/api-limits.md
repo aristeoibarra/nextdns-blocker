@@ -12,11 +12,17 @@ NextDNS Blocker interacts with the NextDNS API to manage your denylist and allow
 | Endpoint | Purpose | Method |
 |----------|---------|--------|
 | `/profiles/{id}/denylist` | Get denylist | GET |
-| `/profiles/{id}/denylist/{domain}` | Add to denylist | PUT |
+| `/profiles/{id}/denylist` | Add to denylist | POST |
 | `/profiles/{id}/denylist/{domain}` | Remove from denylist | DELETE |
 | `/profiles/{id}/allowlist` | Get allowlist | GET |
-| `/profiles/{id}/allowlist/{domain}` | Add to allowlist | PUT |
+| `/profiles/{id}/allowlist` | Add to allowlist | POST |
 | `/profiles/{id}/allowlist/{domain}` | Remove from allowlist | DELETE |
+| `/profiles/{id}/parentalControl` | Get Parental Control settings | GET |
+| `/profiles/{id}/parentalControl` | Update Parental Control settings | PATCH |
+| `/profiles/{id}/parentalControl/categories/{id}` | Update category | PATCH |
+| `/profiles/{id}/parentalControl/services` | Add service | POST |
+| `/profiles/{id}/parentalControl/services/{id}` | Update service | PATCH |
+| `/profiles/{id}/parentalControl/services/{id}` | Remove service | DELETE |
 
 ### Authentication
 
@@ -203,7 +209,7 @@ If NextDNS returns 429:
 ### Verbose Mode
 
 ```bash
-nextdns-blocker config sync --verbose
+nextdns-blocker config push --verbose
 ```
 
 Shows:
@@ -243,7 +249,7 @@ grep "API call" ~/.local/share/nextdns-blocker/logs/app.log | \
 
 2. **Test with dry run**:
    ```bash
-   nextdns-blocker config sync --dry-run
+   nextdns-blocker config push --dry-run
    ```
 
 3. **Check credentials**:

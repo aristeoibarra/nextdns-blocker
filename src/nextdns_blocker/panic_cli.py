@@ -50,7 +50,8 @@ def _block_all_domains() -> int:
         for domain_config in domains:
             domain = domain_config["domain"]
             if not client.is_blocked(domain):
-                if client.block(domain):
+                success, was_added = client.block(domain)
+                if success and was_added:
                     audit_log("BLOCK", f"{domain} (panic mode)")
                     blocked_domains.append(domain)
                     console.print(f"    - {domain} [green]blocked[/green]")

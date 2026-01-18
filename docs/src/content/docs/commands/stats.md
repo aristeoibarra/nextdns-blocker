@@ -178,8 +178,6 @@ BLOCK               245   ██████████████████
 SYNC                1847  ██████████████████████████████
 UNBLOCK             42    ████
 ALLOW               18    ██
-PAUSE               12    █
-RESUME              12    █
 PANIC_ACTIVATE      3
 PENDING_CREATE      8     █
 PENDING_CANCEL      3
@@ -240,8 +238,6 @@ Score = (blocks - unblocks) / blocks * 100
 | `UNBLOCK` | Domain was removed from denylist |
 | `ALLOW` | Domain was added to allowlist |
 | `DISALLOW` | Domain was removed from allowlist |
-| `PAUSE` | Blocking was paused |
-| `RESUME` | Blocking was resumed |
 | `PANIC_ACTIVATE` | Panic mode was activated |
 | `PENDING_CREATE` | Pending action was created |
 | `PENDING_CANCEL` | Pending action was cancelled |

@@ -85,3 +85,48 @@ class TestValidateDomain:
     def test_empty_domain(self):
         """Test empty domain."""
         assert validate_domain("") is False
+
+    def test_numeric_tld_rejected(self):
+        """Test that numeric TLD is rejected (RFC 1123)."""
+        assert validate_domain("example.123") is False
+
+    def test_label_too_long(self):
+        """Test that labels longer than 63 characters are rejected."""
+        long_label = "a" * 64  # 64 characters, exceeds max of 63
+        assert validate_domain(f"{long_label}.com") is False
+
+    def test_label_at_max_length(self):
+        """Test that labels at exactly 63 characters are valid."""
+        max_label = "a" * 63  # Exactly 63 characters
+        assert validate_domain(f"{max_label}.com") is True
+
+    def test_wildcard_rejected_by_default(self):
+        """Test that wildcard domains are rejected by default."""
+        assert validate_domain("*.example.com") is False
+
+    def test_wildcard_allowed_when_flag_set(self):
+        """Test that wildcard domains are accepted when allow_wildcards=True."""
+        assert validate_domain("*.example.com", allow_wildcards=True) is True
+
+    def test_wildcard_needs_valid_domain(self):
+        """Test that wildcard still validates the rest of the domain."""
+        # Invalid because only one label after wildcard
+        assert validate_domain("*.com", allow_wildcards=True) is False
+        # Invalid because of spaces
+        assert validate_domain("*.exa mple.com", allow_wildcards=True) is False
+
+    def test_single_label_rejected(self):
+        """Test that single-label domains are rejected (need at least domain.tld)."""
+        assert validate_domain("localhost") is False
+
+    def test_empty_label_rejected(self):
+        """Test that empty labels (double dots) are rejected."""
+        assert validate_domain("example..com") is False
+
+    def test_leading_hyphen_rejected(self):
+        """Test that labels starting with hyphen are rejected."""
+        assert validate_domain("-example.com") is False
+
+    def test_trailing_hyphen_rejected(self):
+        """Test that labels ending with hyphen are rejected."""
+        assert validate_domain("example-.com") is False

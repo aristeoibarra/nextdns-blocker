@@ -114,7 +114,7 @@ Track blocking patterns:
 
 | Feature | Purpose | Command |
 |---------|---------|---------|
-| Schedules | Automatic access control | `config sync` |
+| Schedules | Automatic access control | `config push` |
 | Delays | Impulse protection | `unblock` |
 | Watchdog | Auto-sync | `watchdog install` |
 | Panic Mode | Emergency lockdown | `panic 60` |
@@ -122,7 +122,7 @@ Track blocking patterns:
 | Notifications | Real-time alerts | (automatic) |
 | Analytics | Usage patterns | `stats` |
 | Completion | Productivity | `completion bash` |
-| Dry Run | Safe testing | `sync --dry-run` |
+| Dry Run | Safe testing | `config push --dry-run` |
 
 ## Feature Interactions
 
@@ -133,13 +133,6 @@ Panic mode overrides all other features:
 - Unblock delays irrelevant (`unblock` hidden)
 - Allowlist sync skipped
 - Pending actions paused
-
-### Pause + Sync
-
-During pause:
-- Sync runs normally
-- Blocking actions skipped
-- Resume re-enables blocking
 
 ### Watchdog + Pending Actions
 

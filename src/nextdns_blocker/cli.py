@@ -4,7 +4,6 @@ import logging
 import re
 import subprocess
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -12,16 +11,14 @@ import click
 from rich.console import Console
 
 from . import __version__
+from .alias_cli import register_alias
 from .analytics_cli import register_stats
 from .client import NextDNSClient
 from .common import (
     audit_log,
     ensure_log_dir,
-    ensure_naive_datetime,
     get_log_dir,
-    read_secure_file,
     validate_domain,
-    write_secure_file,
 )
 from .completion import (
     complete_allowlist_domains,
@@ -32,7 +29,6 @@ from .completion import (
     is_completion_installed,
 )
 from .config import (
-    DEFAULT_PAUSE_MINUTES,
     _expand_categories,
     get_config_dir,
     load_config,
@@ -75,9 +71,43 @@ def get_app_log_file() -> Path:
     return get_log_dir() / "app.log"
 
 
-def get_pause_file() -> Path:
-    """Get the pause state file path."""
-    return get_log_dir() / ".paused"
+class SecretsRedactionFilter(logging.Filter):
+    """Filter that redacts sensitive information from log messages."""
+
+    # Patterns for secrets that should be redacted
+    SECRET_PATTERNS = [
+        (re.compile(r"X-Api-Key:\s*[a-zA-Z0-9_-]{8,}"), "X-Api-Key: [REDACTED]"),
+        (
+            re.compile(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?[a-zA-Z0-9_-]{8,}['\"]?", re.IGNORECASE),
+            "api_key: [REDACTED]",
+        ),
+        (
+            re.compile(r"https://discord\.com/api/webhooks/\d+/[a-zA-Z0-9_.-]+"),
+            "https://discord.com/api/webhooks/[REDACTED]",
+        ),
+        (re.compile(r"\d+:[a-zA-Z0-9_-]{35,}"), "[TELEGRAM_TOKEN_REDACTED]"),  # Telegram bot token
+        (
+            re.compile(r"https://hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[a-zA-Z0-9]+"),
+            "https://hooks.slack.com/services/[REDACTED]",
+        ),
+    ]
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Redact secrets from log record message."""
+        if record.msg:
+            msg = str(record.msg)
+            for pattern, replacement in self.SECRET_PATTERNS:
+                msg = pattern.sub(replacement, msg)
+            record.msg = msg
+        if record.args:
+            args = []
+            for arg in record.args:
+                if isinstance(arg, str):
+                    for pattern, replacement in self.SECRET_PATTERNS:
+                        arg = pattern.sub(replacement, arg)
+                args.append(arg)
+            record.args = tuple(args)
+        return True
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -85,6 +115,7 @@ def setup_logging(verbose: bool = False) -> None:
 
     This function configures logging with both file and console handlers.
     It avoids adding duplicate handlers if called multiple times.
+    Includes a secrets redaction filter to prevent leaking sensitive data.
 
     Args:
         verbose: If True, sets log level to DEBUG; otherwise INFO.
@@ -102,14 +133,19 @@ def setup_logging(verbose: bool = False) -> None:
     root_logger.setLevel(level)
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
-    # File handler
+    # Create secrets redaction filter
+    secrets_filter = SecretsRedactionFilter()
+
+    # File handler with secrets redaction
     file_handler = logging.FileHandler(get_app_log_file())
     file_handler.setFormatter(formatter)
+    file_handler.addFilter(secrets_filter)
     root_logger.addHandler(file_handler)
 
-    # Console handler
+    # Console handler with secrets redaction
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
+    console_handler.addFilter(secrets_filter)
     root_logger.addHandler(console_handler)
 
 
@@ -200,82 +236,6 @@ PYPI_PACKAGE_URL = "https://pypi.org/pypi/nextdns-blocker/json"
 
 
 # =============================================================================
-# PAUSE MANAGEMENT
-# =============================================================================
-
-
-def _get_pause_info() -> tuple[bool, Optional[datetime]]:
-    """
-    Get pause state information.
-
-    Returns:
-        Tuple of (is_paused, pause_until_datetime).
-        If not paused or error, returns (False, None).
-
-    Note:
-        Uses missing_ok=True for unlink to handle race conditions where
-        another process may have already cleaned up the file.
-    """
-    pause_file = get_pause_file()
-    content = read_secure_file(pause_file)
-    if not content:
-        return False, None
-
-    try:
-        pause_until = ensure_naive_datetime(datetime.fromisoformat(content))
-        if datetime.now() < pause_until:
-            return True, pause_until
-        # Expired, clean up
-        pause_file.unlink(missing_ok=True)
-        return False, None
-    except ValueError:
-        # Invalid content, clean up
-        logger.warning(f"Invalid pause file content, removing: {content[:50]}")
-        pause_file.unlink(missing_ok=True)
-        return False, None
-
-
-def is_paused() -> bool:
-    """Check if blocking is currently paused."""
-    paused, _ = _get_pause_info()
-    return paused
-
-
-def get_pause_remaining() -> Optional[str]:
-    """
-    Get remaining pause time as human-readable string.
-
-    Returns:
-        Human-readable remaining time, or None if not paused.
-    """
-    paused, pause_until = _get_pause_info()
-    if not paused or pause_until is None:
-        return None
-
-    remaining = pause_until - datetime.now()
-    mins = int(remaining.total_seconds() // 60)
-    return f"{mins} min" if mins > 0 else "< 1 min"
-
-
-def set_pause(minutes: int) -> datetime:
-    """Set pause for specified minutes. Returns the pause end time."""
-    pause_until = datetime.now().replace(microsecond=0) + timedelta(minutes=minutes)
-    write_secure_file(get_pause_file(), pause_until.isoformat())
-    audit_log("PAUSE", f"{minutes} minutes until {pause_until.isoformat()}")
-    return pause_until
-
-
-def clear_pause() -> bool:
-    """Clear pause state. Returns True if was paused."""
-    pause_file = get_pause_file()
-    if pause_file.exists():
-        pause_file.unlink(missing_ok=True)
-        audit_log("RESUME", "Manual resume")
-        return True
-    return False
-
-
-# =============================================================================
 # CLICK CLI
 # =============================================================================
 
@@ -355,27 +315,6 @@ def init(config_dir: Optional[Path], non_interactive: bool) -> None:
 
 
 @main.command()
-@click.argument("minutes", default=DEFAULT_PAUSE_MINUTES, type=click.IntRange(min=1))
-def pause(minutes: int) -> None:
-    """Pause blocking for MINUTES (default: 30)."""
-    require_pin_verification("pause")
-
-    set_pause(minutes)
-    pause_until = datetime.now() + timedelta(minutes=minutes)
-    console.print(f"\n  [yellow]Blocking paused for {minutes} minutes[/yellow]")
-    console.print(f"  Resumes at: [bold]{pause_until.strftime('%H:%M')}[/bold]\n")
-
-
-@main.command()
-def resume() -> None:
-    """Resume blocking immediately."""
-    if clear_pause():
-        console.print("\n  [green]Blocking resumed[/green]\n")
-    else:
-        console.print("\n  [yellow]Not currently paused[/yellow]\n")
-
-
-@main.command()
 @click.argument("domain", shell_complete=complete_blocklist_domains)
 @click.option(
     "--config-dir",
@@ -447,10 +386,14 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
             config["api_key"], config["profile_id"], config["timeout"], config["retries"]
         )
 
-        if client.unblock(domain):
-            audit_log("UNBLOCK", domain)
-            send_notification(EventType.UNBLOCK, domain, config)
-            console.print(f"\n  [green]Unblocked: {domain}[/green]\n")
+        success, was_removed = client.unblock(domain)
+        if success:
+            if was_removed:
+                audit_log("UNBLOCK", domain)
+                send_notification(EventType.UNBLOCK, domain, config)
+                console.print(f"\n  [green]Unblocked: {domain}[/green]\n")
+            else:
+                console.print(f"\n  [yellow]Domain not in denylist: {domain}[/yellow]\n")
         else:
             console.print(f"\n  [red]Error: Failed to unblock '{domain}'[/red]\n", highlight=False)
             sys.exit(1)
@@ -507,7 +450,8 @@ def _sync_denylist(
             if dry_run:
                 console.print(f"  [yellow]Would BLOCK: {domain}[/yellow]")
             else:
-                if client.block(domain):
+                success, was_added = client.block(domain)
+                if success and was_added:
                     audit_log("BLOCK", domain)
                     nm.queue(EventType.BLOCK, domain)
                     blocked_count += 1
@@ -594,7 +538,8 @@ def _handle_unblock(
         console.print(f"  [green]Would UNBLOCK: {domain}[/green]")
         return False
     else:
-        if client.unblock(domain):
+        success, was_removed = client.unblock(domain)
+        if success and was_removed:
             audit_log("UNBLOCK", domain)
             nm.queue(EventType.UNBLOCK, domain)
             return True
@@ -652,7 +597,8 @@ def _sync_allowlist(
             if dry_run:
                 console.print(f"  [green]Would ADD to allowlist: {domain}[/green]")
             else:
-                if client.allow(domain):
+                success, was_added = client.allow(domain)
+                if success and was_added:
                     audit_log("ALLOW", domain)
                     nm.queue(EventType.ALLOW, domain)
                     allowed_count += 1
@@ -662,7 +608,8 @@ def _sync_allowlist(
             if dry_run:
                 console.print(f"  [yellow]Would REMOVE from allowlist: {domain}[/yellow]")
             else:
-                if client.disallow(domain):
+                success, was_removed = client.disallow(domain)
+                if success and was_removed:
                     audit_log("DISALLOW", domain)
                     nm.queue(EventType.DISALLOW, domain)
                     disallowed_count += 1
@@ -928,12 +875,6 @@ def sync_impl(
     """
     setup_logging(verbose)
 
-    # Check pause state
-    if is_paused():
-        remaining = get_pause_remaining()
-        click.echo(f"  Paused ({remaining} remaining), skipping sync")
-        return
-
     # Check panic mode - blocks continue, unblocks and allowlist changes skipped
     from .panic import is_panic_mode
 
@@ -1189,11 +1130,6 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
         else:
             console.print("  Scheduler  [red]NOT RUNNING[/red]")
 
-        # Pause state (only show if active)
-        if is_paused():
-            remaining = get_pause_remaining()
-            console.print(f"  Pause      [yellow]ACTIVE ({remaining})[/yellow]")
-
         # Check for updates (unless disabled)
         if not no_update_check:
             update_info = check_for_update(__version__)
@@ -1382,10 +1318,14 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
                 f"  [yellow]Warning: '{domain}' is currently blocked in denylist[/yellow]"
             )
 
-        if client.allow(domain):
-            audit_log("ALLOW", domain)
-            send_notification(EventType.ALLOW, domain, config)
-            console.print(f"\n  [green]Added to allowlist: {domain}[/green]\n")
+        success, was_added = client.allow(domain)
+        if success:
+            if was_added:
+                audit_log("ALLOW", domain)
+                send_notification(EventType.ALLOW, domain, config)
+                console.print(f"\n  [green]Added to allowlist: {domain}[/green]\n")
+            else:
+                console.print(f"\n  [yellow]Already in allowlist: {domain}[/yellow]\n")
         else:
             console.print("\n  [red]Error: Failed to add to allowlist[/red]\n", highlight=False)
             sys.exit(1)
@@ -1421,10 +1361,14 @@ def disallow(domain: str, config_dir: Optional[Path]) -> None:
             config["api_key"], config["profile_id"], config["timeout"], config["retries"]
         )
 
-        if client.disallow(domain):
-            audit_log("DISALLOW", domain)
-            send_notification(EventType.DISALLOW, domain, config)
-            console.print(f"\n  [green]Removed from allowlist: {domain}[/green]\n")
+        success, was_removed = client.disallow(domain)
+        if success:
+            if was_removed:
+                audit_log("DISALLOW", domain)
+                send_notification(EventType.DISALLOW, domain, config)
+                console.print(f"\n  [green]Removed from allowlist: {domain}[/green]\n")
+            else:
+                console.print(f"\n  [yellow]Not in allowlist: {domain}[/yellow]\n")
         else:
             console.print(
                 "\n  [red]Error: Failed to remove from allowlist[/red]\n", highlight=False
@@ -2152,6 +2096,9 @@ def completion(shell: str) -> None:
 
 # Register config command group
 register_config(main)
+
+# Register alias command group
+register_alias(main)
 
 # Register nextdns command group
 register_nextdns(main)

@@ -141,7 +141,7 @@ class DiscordAdapter(NotificationAdapter):
         except requests.exceptions.RequestException as e:
             logger.warning(f"Discord notification failed: {e}")
         except Exception as e:
-            logger.error(f"Unexpected Discord error: {type(e).__name__}: {e}")
+            logger.error(f"Unexpected Discord error: {type(e).__name__}: {e}", exc_info=True)
 
         return False
 
@@ -257,7 +257,7 @@ class TelegramAdapter(NotificationAdapter):
             logger.debug(f"Telegram notification sent with {len(batch.events)} events")
             return True
         except Exception as e:
-            logger.warning(f"Telegram notification failed: {e}")
+            logger.warning(f"Telegram notification failed: {e}", exc_info=True)
             return False
 
     def format_batch(self, batch: BatchedNotification) -> str:
@@ -306,7 +306,7 @@ class SlackAdapter(NotificationAdapter):
             logger.debug(f"Slack notification sent with {len(batch.events)} events")
             return True
         except Exception as e:
-            logger.warning(f"Slack notification failed: {e}")
+            logger.warning(f"Slack notification failed: {e}", exc_info=True)
             return False
 
     def format_batch(self, batch: BatchedNotification) -> dict[str, Any]:
@@ -367,20 +367,52 @@ class NtfyAdapter(NotificationAdapter):
             logger.debug(f"Ntfy notification sent with {len(batch.events)} events")
             return True
         except Exception as e:
-            logger.warning(f"Ntfy notification failed: {e}")
+            logger.warning(f"Ntfy notification failed: {e}", exc_info=True)
             return False
 
     def format_batch(self, batch: BatchedNotification) -> str:
         """Format batch for Ntfy simple text."""
-        # Simple text summary
+        # Handle special event types first
+        if any(e.event_type == EventType.TEST for e in batch.events):
+            return "Test notification from NextDNS Blocker"
+
+        if any(e.event_type == EventType.PANIC for e in batch.events):
+            panic_event = next(e for e in batch.events if e.event_type == EventType.PANIC)
+            duration = panic_event.metadata.get("duration", "")
+            if duration:
+                return f"PANIC MODE ACTIVATED - Duration: {duration}"
+            return "PANIC MODE ACTIVATED"
+
+        # Count events by type
         blocked = len([e for e in batch.events if e.event_type == EventType.BLOCK])
         unblocked = len([e for e in batch.events if e.event_type == EventType.UNBLOCK])
+        allowed = len([e for e in batch.events if e.event_type == EventType.ALLOW])
+        disallowed = len([e for e in batch.events if e.event_type == EventType.DISALLOW])
+        pending = len([e for e in batch.events if e.event_type == EventType.PENDING])
+        cancelled = len([e for e in batch.events if e.event_type == EventType.CANCEL_PENDING])
+        pc_activated = len([e for e in batch.events if e.event_type == EventType.PC_ACTIVATE])
+        pc_deactivated = len([e for e in batch.events if e.event_type == EventType.PC_DEACTIVATE])
+        errors = len([e for e in batch.events if e.event_type == EventType.ERROR])
 
         parts = []
         if blocked:
             parts.append(f"Blocked: {blocked}")
         if unblocked:
             parts.append(f"Unblocked: {unblocked}")
+        if allowed:
+            parts.append(f"Allowed: {allowed}")
+        if disallowed:
+            parts.append(f"Disallowed: {disallowed}")
+        if pending:
+            parts.append(f"Pending: {pending}")
+        if cancelled:
+            parts.append(f"Cancelled: {cancelled}")
+        if pc_activated:
+            parts.append(f"PC Activated: {pc_activated}")
+        if pc_deactivated:
+            parts.append(f"PC Deactivated: {pc_deactivated}")
+        if errors:
+            parts.append(f"Errors: {errors}")
 
         return " | ".join(parts) if parts else ""
 

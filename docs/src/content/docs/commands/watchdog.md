@@ -8,7 +8,7 @@ The `watchdog` command group manages automatic synchronization using your platfo
 ## Overview
 
 The watchdog:
-- Runs `config sync` every 2 minutes
+- Runs `config push` every 2 minutes
 - Uses platform-native schedulers (launchd, cron, Task Scheduler)
 - Restores itself if removed
 - Can be temporarily disabled
@@ -191,7 +191,7 @@ Use 'watchdog enable' to re-enable early
 ### Sync Job
 
 Runs every 2 minutes:
-1. Executes `nextdns-blocker config sync`
+1. Executes `nextdns-blocker config push`
 2. Logs output to `cron.log`
 3. Handles errors gracefully
 
@@ -248,7 +248,7 @@ Jobs are added to your user's crontab:
 crontab -l
 
 # Expected entries
-*/2 * * * * /path/to/nextdns-blocker config sync >> ~/.local/share/nextdns-blocker/logs/cron.log 2>&1
+*/2 * * * * /path/to/nextdns-blocker config push >> ~/.local/share/nextdns-blocker/logs/cron.log 2>&1
 */5 * * * * /path/to/nextdns-blocker watchdog check >> ~/.local/share/nextdns-blocker/logs/wd.log 2>&1
 ```
 
@@ -292,7 +292,7 @@ schtasks /run /tn "NextDNS-Blocker-Sync"
 
 2. Test sync manually:
    ```bash
-   nextdns-blocker config sync --verbose
+   nextdns-blocker config push --verbose
    ```
 
 3. Check scheduler service:

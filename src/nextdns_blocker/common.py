@@ -322,22 +322,62 @@ def ensure_naive_datetime(dt: datetime) -> datetime:
 # =============================================================================
 
 
-def validate_domain(domain: str) -> bool:
+def validate_domain(domain: str, allow_wildcards: bool = False) -> bool:
     """
-    Validate a domain name according to RFC 1035.
+    Validate a domain name according to RFC 1123.
+
+    Performs comprehensive validation including:
+    - Total length (max 253 characters)
+    - Label length (1-63 characters each)
+    - Valid characters (alphanumeric and hyphens)
+    - No leading/trailing hyphens in labels
+    - TLD cannot be all numeric
+    - Optional wildcard support (*.example.com)
 
     Args:
         domain: Domain name to validate
+        allow_wildcards: If True, allows wildcard prefix (*.example.com)
 
     Returns:
         True if valid, False otherwise
     """
-    if not domain or len(domain) > MAX_DOMAIN_LENGTH:
+    if not domain:
         return False
+
+    # Handle wildcard domains
+    if allow_wildcards and domain.startswith("*."):
+        domain = domain[2:]  # Remove wildcard prefix for validation
+
+    # Check total length
+    if len(domain) > MAX_DOMAIN_LENGTH:
+        return False
+
     # Reject trailing dots (FQDN notation not supported)
     if domain.endswith("."):
         return False
-    return DOMAIN_PATTERN.match(domain) is not None
+
+    # Split into labels
+    labels = domain.split(".")
+
+    # Must have at least 2 labels (domain.tld)
+    if len(labels) < 2:
+        return False
+
+    # Validate each label length (RFC 1123: 1-63 characters)
+    for label in labels:
+        if not (1 <= len(label) <= MAX_LABEL_LENGTH):
+            return False
+
+    # Use the full pattern match for character validation
+    # DOMAIN_PATTERN validates: alphanumeric, hyphens, no leading/trailing hyphens
+    if not DOMAIN_PATTERN.match(domain):
+        return False
+
+    # TLD cannot be all numeric (e.g., reject "example.123")
+    if labels[-1].isdigit():
+        return False
+
+    return True
 
 
 def is_subdomain(child: str, parent: str) -> bool:

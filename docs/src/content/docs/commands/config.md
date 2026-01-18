@@ -13,7 +13,7 @@ The `config` command group provides subcommands for viewing, editing, and valida
 | `edit` | Open config in your editor |
 | `validate` | Validate configuration syntax |
 | `set` | Set configuration values |
-| `sync` | Synchronize domain states based on schedules |
+| `push` | Synchronize domain states based on schedules |
 | `diff` | Show differences between local and remote NextDNS |
 | `pull` | Fetch domains from NextDNS and update local config |
 
@@ -92,7 +92,7 @@ export EDITOR=vim
 Changes take effect on the next sync (within 2 minutes) or immediately if you run:
 
 ```bash
-nextdns-blocker config sync
+nextdns-blocker config push
 ```
 
 ## config validate
@@ -194,14 +194,14 @@ nextdns-blocker config set timezone UTC
 
 See [Timezone Configuration](/configuration/timezone/) for more details.
 
-## config sync
+## config push
 
 The primary command for synchronizing domain states based on configured schedules.
 
 ### Usage
 
 ```bash
-nextdns-blocker config sync [OPTIONS]
+nextdns-blocker config push [OPTIONS]
 ```
 
 ### Options
@@ -215,17 +215,17 @@ nextdns-blocker config sync [OPTIONS]
 ### Examples
 
 ```bash
-# Basic sync
-nextdns-blocker config sync
+# Basic push
+nextdns-blocker config push
 
 # Preview changes
-nextdns-blocker config sync --dry-run
+nextdns-blocker config push --dry-run
 
 # Verbose output
-nextdns-blocker config sync -v
+nextdns-blocker config push -v
 ```
 
-See [sync command reference](/commands/sync/) for complete documentation.
+See [push command reference](/commands/sync/) for complete documentation.
 
 ## config diff
 
@@ -372,7 +372,7 @@ nextdns-blocker config pull -y
   Warning: 3 blocklist domains exist locally but not in remote
 
   Config updated
-  Run 'ndb config sync' to apply changes to NextDNS
+  Run 'ndb config push' to apply changes to NextDNS
 ```
 
 ### Protection
@@ -470,7 +470,7 @@ Or set the `$EDITOR` environment variable in your shell profile.
 Force a sync:
 
 ```bash
-nextdns-blocker config sync
+nextdns-blocker config push
 ```
 
 Or check for validation errors:

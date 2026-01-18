@@ -177,7 +177,7 @@ Variables can also be set in your shell environment:
 
 ```bash
 export NEXTDNS_API_KEY=your_key
-nextdns-blocker config sync
+nextdns-blocker config push
 ```
 
 Priority order:

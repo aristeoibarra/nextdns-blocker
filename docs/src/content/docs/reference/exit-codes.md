@@ -24,7 +24,7 @@ NextDNS Blocker uses standard exit codes to indicate success or failure, enablin
 Command completed without errors.
 
 ```bash
-nextdns-blocker sync
+nextdns-blocker config push
 echo $?  # Returns: 0
 ```
 
@@ -54,7 +54,7 @@ Common causes:
 
 ```bash
 # With invalid config
-nextdns-blocker sync
+nextdns-blocker config push
 echo $?  # Returns: 2
 ```
 
@@ -71,7 +71,7 @@ Common causes:
 
 ```bash
 # With wrong API key
-nextdns-blocker sync
+nextdns-blocker config push
 echo $?  # Returns: 3
 ```
 
@@ -103,7 +103,7 @@ Common causes:
 ```bash
 # With read-only config
 chmod 000 ~/.config/nextdns-blocker/config.json
-nextdns-blocker sync
+nextdns-blocker config push
 echo $?  # Returns: 5
 ```
 
@@ -112,7 +112,7 @@ echo $?  # Returns: 5
 User pressed Ctrl+C during execution.
 
 ```bash
-nextdns-blocker config sync  # Press Ctrl+C
+nextdns-blocker config push  # Press Ctrl+C
 echo $?  # Returns: 130
 ```
 
@@ -123,7 +123,7 @@ echo $?  # Returns: 130
 ```bash
 #!/bin/bash
 
-nextdns-blocker config sync
+nextdns-blocker config push
 exit_code=$?
 
 case $exit_code in
@@ -149,10 +149,10 @@ esac
 
 ```bash
 # Only proceed if sync succeeds
-nextdns-blocker config sync && echo "Sync complete"
+nextdns-blocker config push && echo "Sync complete"
 
 # Handle failure
-nextdns-blocker config sync || echo "Sync failed"
+nextdns-blocker config push || echo "Sync failed"
 ```
 
 ### In CI/CD
@@ -160,7 +160,7 @@ nextdns-blocker config sync || echo "Sync failed"
 ```yaml
 # GitHub Actions example
 - name: Sync domains
-  run: nextdns-blocker config sync
+  run: nextdns-blocker config push
   continue-on-error: false  # Fail job on non-zero exit
 ```
 
@@ -168,7 +168,7 @@ nextdns-blocker config sync || echo "Sync failed"
 
 ```bash
 # Log exit code
-*/2 * * * * nextdns-blocker config sync; echo "Exit: $?" >> /tmp/sync.log
+*/2 * * * * nextdns-blocker config push; echo "Exit: $?" >> /tmp/sync.log
 ```
 
 ## Command-Specific Behavior
@@ -244,7 +244,7 @@ max_attempts=3
 attempt=1
 
 while [ $attempt -le $max_attempts ]; do
-    nextdns-blocker sync
+    nextdns-blocker config push
     if [ $? -eq 0 ]; then
         exit 0
     fi
@@ -263,7 +263,7 @@ exit 1
 #!/bin/bash
 # sync-notify.sh
 
-nextdns-blocker sync
+nextdns-blocker config push
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then

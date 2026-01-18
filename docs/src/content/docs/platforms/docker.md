@@ -122,7 +122,7 @@ docker compose ps
 docker compose exec nextdns-blocker nextdns-blocker status
 
 # Manual sync
-docker compose exec nextdns-blocker nextdns-blocker config sync -v
+docker compose exec nextdns-blocker nextdns-blocker config push -v
 
 # View config
 docker compose exec nextdns-blocker nextdns-blocker config show
@@ -164,7 +164,7 @@ RUN mkdir -p /app/data
 RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
 
 # Add cron job
-RUN echo "*/2 * * * * nextdns-blocker config sync >> /app/data/cron.log 2>&1" | crontab -
+RUN echo "*/2 * * * * nextdns-blocker config push >> /app/data/cron.log 2>&1" | crontab -
 
 # Start cron in foreground
 CMD ["cron", "-f"]
@@ -176,7 +176,7 @@ CMD ["cron", "-f"]
 
 The `nextdns-data` volume persists:
 - Logs (`/app/data/logs/`)
-- State files (`.paused`, `.panic`)
+- State files (`.panic`)
 - Pending actions (`pending.json`)
 
 ### Config as Read-Only
@@ -307,7 +307,7 @@ docker compose exec nextdns-blocker ps aux | grep cron
 docker compose exec nextdns-blocker cat /app/data/cron.log
 
 # Run sync manually
-docker compose exec nextdns-blocker nextdns-blocker config sync -v
+docker compose exec nextdns-blocker nextdns-blocker config push -v
 ```
 
 ### Config Changes Not Applied

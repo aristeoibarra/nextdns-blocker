@@ -152,7 +152,7 @@ crontab -l
 
 Expected entries:
 ```
-*/2 * * * * /home/user/.local/bin/nextdns-blocker config sync >> /home/user/.local/share/nextdns-blocker/logs/cron.log 2>&1
+*/2 * * * * /home/user/.local/bin/nextdns-blocker config push >> /home/user/.local/share/nextdns-blocker/logs/cron.log 2>&1
 */5 * * * * /home/user/.local/bin/nextdns-blocker watchdog check >> /home/user/.local/share/nextdns-blocker/logs/wd.log 2>&1
 ```
 
@@ -366,7 +366,7 @@ grep CRON /var/log/syslog
 crontab -l
 
 # Test manual execution
-nextdns-blocker config sync --verbose
+nextdns-blocker config push --verbose
 ```
 
 ### Permission Denied
@@ -417,7 +417,7 @@ systemctl --user status nextdns-blocker-sync.service
 journalctl --user -u nextdns-blocker-sync.service -n 50
 
 # Test manually
-~/.local/bin/nextdns-blocker config sync --verbose
+~/.local/bin/nextdns-blocker config push --verbose
 ```
 
 ### User Services Not Running After Reboot

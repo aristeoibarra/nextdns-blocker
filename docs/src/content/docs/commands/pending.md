@@ -260,7 +260,7 @@ Manual cleanup:
 
 ```bash
 # Force cleanup by triggering sync
-nextdns-blocker sync
+nextdns-blocker config push
 ```
 
 ## Troubleshooting
@@ -284,7 +284,7 @@ nextdns-blocker sync
 
 4. Force sync:
    ```bash
-   nextdns-blocker config sync --verbose
+   nextdns-blocker config push --verbose
    ```
 
 ### Cannot cancel action

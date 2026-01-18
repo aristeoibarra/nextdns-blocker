@@ -2,7 +2,7 @@
 
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -10,13 +10,7 @@ import pytest
 import responses
 from click.testing import CliRunner
 
-from nextdns_blocker.cli import (
-    clear_pause,
-    get_pause_remaining,
-    is_paused,
-    main,
-    set_pause,
-)
+from nextdns_blocker.cli import main
 from nextdns_blocker.client import API_URL, NextDNSClient
 from nextdns_blocker.common import (
     audit_log,
@@ -40,19 +34,10 @@ def runner():
 
 @pytest.fixture
 def temp_log_dir():
-    """Create temporary log directory for pause file tests."""
+    """Create temporary log directory for tests."""
     with tempfile.TemporaryDirectory() as tmpdir:
         log_dir = Path(tmpdir)
         yield log_dir
-
-
-@pytest.fixture
-def mock_pause_file(temp_log_dir):
-    """Mock the pause file location by patching the getter function."""
-    pause_file = temp_log_dir / ".paused"
-    with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
-        with patch("nextdns_blocker.cli.get_log_dir", return_value=temp_log_dir):
-            yield pause_file
 
 
 @pytest.fixture
@@ -61,122 +46,11 @@ def mock_client():
     return MagicMock(spec=NextDNSClient)
 
 
-class TestPauseFunctions:
-    """Tests for pause/resume functionality."""
-
-    def test_is_paused_no_file(self, mock_pause_file):
-        """Test is_paused returns False when no pause file exists."""
-        assert is_paused() is False
-
-    def test_is_paused_active(self, mock_pause_file):
-        """Test is_paused returns True when pause is active."""
-        future_time = datetime.now() + timedelta(minutes=30)
-        mock_pause_file.write_text(future_time.isoformat())
-        assert is_paused() is True
-
-    def test_is_paused_expired(self, mock_pause_file):
-        """Test is_paused returns False and cleans up when pause expired."""
-        past_time = datetime.now() - timedelta(minutes=5)
-        mock_pause_file.write_text(past_time.isoformat())
-        assert is_paused() is False
-        assert not mock_pause_file.exists()
-
-    def test_get_pause_remaining_no_file(self, mock_pause_file):
-        """Test get_pause_remaining returns None when no pause file."""
-        assert get_pause_remaining() is None
-
-    def test_get_pause_remaining_active(self, mock_pause_file):
-        """Test get_pause_remaining returns time string when paused."""
-        future_time = datetime.now() + timedelta(minutes=15)
-        mock_pause_file.write_text(future_time.isoformat())
-        remaining = get_pause_remaining()
-        assert remaining is not None
-        assert "min" in remaining
-
-    def test_get_pause_remaining_less_than_minute(self, mock_pause_file):
-        """Test get_pause_remaining shows '< 1 min' for short remaining time."""
-        future_time = datetime.now() + timedelta(seconds=30)
-        mock_pause_file.write_text(future_time.isoformat())
-        remaining = get_pause_remaining()
-        assert remaining == "< 1 min"
-
-    def test_set_pause(self, mock_pause_file):
-        """Test set_pause creates pause file correctly."""
-        with patch("nextdns_blocker.cli.audit_log"):
-            pause_until = set_pause(30)
-        assert mock_pause_file.exists()
-        assert pause_until > datetime.now()
-
-    def test_clear_pause_when_paused(self, mock_pause_file):
-        """Test clear_pause removes pause file."""
-        future_time = datetime.now() + timedelta(minutes=30)
-        mock_pause_file.write_text(future_time.isoformat())
-        with patch("nextdns_blocker.cli.audit_log"):
-            result = clear_pause()
-        assert result is True
-        assert not mock_pause_file.exists()
-
-    def test_clear_pause_when_not_paused(self, mock_pause_file):
-        """Test clear_pause returns False when not paused."""
-        with patch("nextdns_blocker.cli.audit_log"):
-            result = clear_pause()
-        assert result is False
-
-
-class TestPauseCommand:
-    """Tests for pause CLI command."""
-
-    def test_pause_default(self, runner, mock_pause_file):
-        """Test pause command with default duration."""
-        with patch("nextdns_blocker.cli.audit_log"):
-            result = runner.invoke(main, ["pause"])
-        assert result.exit_code == 0
-        assert "30 minutes" in result.output
-
-    def test_pause_custom_duration(self, runner, mock_pause_file):
-        """Test pause command with custom duration."""
-        with patch("nextdns_blocker.cli.audit_log"):
-            result = runner.invoke(main, ["pause", "60"])
-        assert result.exit_code == 0
-        assert "60 minutes" in result.output
-
-    def test_pause_invalid_minutes(self, runner):
-        """Test pause with invalid minutes."""
-        result = runner.invoke(main, ["pause", "abc"])
-        assert result.exit_code == 2
-        assert "not a valid integer" in result.output
-
-    def test_pause_negative_minutes(self, runner):
-        """Test pause with negative minutes."""
-        result = runner.invoke(main, ["pause", "-5"])
-        assert result.exit_code == 2
-
-
-class TestResumeCommand:
-    """Tests for resume CLI command."""
-
-    def test_resume_when_paused(self, runner, mock_pause_file):
-        """Test resume command when system is paused."""
-        future_time = datetime.now() + timedelta(minutes=30)
-        mock_pause_file.write_text(future_time.isoformat())
-        with patch("nextdns_blocker.cli.audit_log"):
-            result = runner.invoke(main, ["resume"])
-        assert result.exit_code == 0
-        assert "resumed" in result.output
-
-    def test_resume_when_not_paused(self, runner, mock_pause_file):
-        """Test resume command when system is not paused."""
-        with patch("nextdns_blocker.cli.audit_log"):
-            result = runner.invoke(main, ["resume"])
-        assert result.exit_code == 0
-        assert "not" in result.output.lower() and "paused" in result.output.lower()
-
-
 class TestUnblockCommand:
     """Tests for unblock CLI command."""
 
     @responses.activate
-    def test_unblock_success(self, runner, mock_pause_file, tmp_path):
+    def test_unblock_success(self, runner, tmp_path):
         """Test successful unblock command."""
         responses.add(
             responses.GET,
@@ -204,7 +78,7 @@ class TestUnblockCommand:
         assert result.exit_code == 0
         assert "Unblocked" in result.output
 
-    def test_unblock_invalid_domain(self, runner, mock_pause_file, tmp_path):
+    def test_unblock_invalid_domain(self, runner, tmp_path):
         """Test unblock command fails for invalid domain."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
@@ -228,20 +102,7 @@ class TestSyncCommand:
     """Tests for sync CLI command."""
 
     @responses.activate
-    def test_sync_skips_when_paused(self, runner, mock_pause_file, tmp_path):
-        """Test sync skips execution when paused."""
-        future_time = datetime.now() + timedelta(minutes=30)
-        mock_pause_file.write_text(future_time.isoformat())
-
-        env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-
-        result = runner.invoke(main, ["config", "sync", "--config-dir", str(tmp_path)])
-        assert result.exit_code == 0
-        assert "Paused" in result.output or "paused" in result.output.lower()
-
-    @responses.activate
-    def test_sync_dry_run(self, runner, mock_pause_file, tmp_path):
+    def test_sync_dry_run(self, runner, tmp_path):
         """Test sync with dry-run flag."""
         responses.add(
             responses.GET,
@@ -262,7 +123,7 @@ class TestSyncCommand:
         assert "DRY RUN" in result.output
 
     @responses.activate
-    def test_sync_verbose(self, runner, mock_pause_file, tmp_path):
+    def test_sync_verbose(self, runner, tmp_path):
         """Test sync with verbose flag."""
         responses.add(
             responses.GET,
@@ -282,7 +143,7 @@ class TestSyncCommand:
         assert result.exit_code == 0
 
     @responses.activate
-    def test_sync_blocks_domain(self, runner, mock_pause_file, tmp_path):
+    def test_sync_blocks_domain(self, runner, tmp_path):
         """Test sync blocks domains that should be blocked."""
         responses.add(
             responses.GET,
@@ -314,7 +175,7 @@ class TestStatusCommand:
     """Tests for status CLI command."""
 
     @responses.activate
-    def test_status_shows_domains(self, runner, mock_pause_file, tmp_path):
+    def test_status_shows_domains(self, runner, tmp_path):
         """Test status command shows domains."""
         responses.add(
             responses.GET,
@@ -341,32 +202,7 @@ class TestStatusCommand:
         # New UX shows summary counts, not individual domains
         assert "blocked" in result.output.lower()
 
-    def test_status_shows_pause_state(self, runner, mock_pause_file, tmp_path):
-        """Test status command shows pause state."""
-        future_time = datetime.now() + timedelta(minutes=30)
-        mock_pause_file.write_text(future_time.isoformat())
-
-        with patch("nextdns_blocker.cli.load_config") as mock_config:
-            with patch("nextdns_blocker.cli.load_domains") as mock_domains:
-                with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
-                    mock_config.return_value = {
-                        "api_key": "test",
-                        "profile_id": "testprofile",
-                        "timeout": 10,
-                        "retries": 3,
-                        "timezone": "UTC",
-                        "script_dir": str(tmp_path),
-                    }
-                    mock_domains.return_value = ([], [])
-                    mock_client = MagicMock()
-                    mock_client_cls.return_value = mock_client
-
-                    result = runner.invoke(main, ["status"])
-
-        assert result.exit_code == 0
-        assert "ACTIVE" in result.output or "Pause" in result.output
-
-    def test_status_shows_scheduler_status_macos(self, runner, mock_pause_file, tmp_path):
+    def test_status_shows_scheduler_status_macos(self, runner, tmp_path):
         """Test status command shows scheduler status on macOS."""
         with patch("nextdns_blocker.cli.load_config") as mock_config:
             with patch("nextdns_blocker.cli.load_domains") as mock_domains:
@@ -392,7 +228,7 @@ class TestStatusCommand:
         assert "Scheduler" in result.output
         assert "running" in result.output.lower()
 
-    def test_status_shows_scheduler_not_running(self, runner, mock_pause_file, tmp_path):
+    def test_status_shows_scheduler_not_running(self, runner, tmp_path):
         """Test status command shows scheduler not running."""
         with patch("nextdns_blocker.cli.load_config") as mock_config:
             with patch("nextdns_blocker.cli.load_domains") as mock_domains:
@@ -422,7 +258,7 @@ class TestHealthCommand:
     """Tests for health CLI command."""
 
     @patch("nextdns_blocker.cli.NextDNSClient")
-    def test_health_all_ok(self, mock_client_cls, runner, mock_pause_file, tmp_path):
+    def test_health_all_ok(self, mock_client_cls, runner, tmp_path):
         """Test health command when everything is healthy."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
@@ -434,14 +270,14 @@ class TestHealthCommand:
         mock_client = mock_client_cls.return_value
         mock_client.get_denylist.return_value = []  # Successful API call
 
-        with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
+        with patch("nextdns_blocker.cli.get_log_dir", return_value=tmp_path):
             result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "HEALTHY" in result.output
 
     @patch("nextdns_blocker.cli.NextDNSClient")
-    def test_health_api_failure(self, mock_client_cls, runner, mock_pause_file, tmp_path):
+    def test_health_api_failure(self, mock_client_cls, runner, tmp_path):
         """Test health command when API fails."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=badkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
@@ -453,7 +289,7 @@ class TestHealthCommand:
         mock_client = mock_client_cls.return_value
         mock_client.get_denylist.return_value = None  # API failure
 
-        with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
+        with patch("nextdns_blocker.cli.get_log_dir", return_value=tmp_path):
             result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
 
         # API failure causes exit code 1
@@ -475,7 +311,6 @@ class TestStatsCommand:
 
     def test_stats_with_audit_data(self, runner, temp_log_dir):
         """Test stats with audit log data."""
-        from datetime import datetime
 
         audit_file = temp_log_dir / "audit.log"
         now = datetime.now().isoformat()
@@ -605,21 +440,21 @@ class TestAllowCommand:
 
     @patch("nextdns_blocker.cli.NextDNSClient")
     @patch("nextdns_blocker.cli.audit_log")
-    def test_allow_success(self, mock_audit, mock_client_cls, runner, mock_pause_file, tmp_path):
+    def test_allow_success(self, mock_audit, mock_client_cls, runner, tmp_path):
         """Test successful allow command."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
         mock_client = mock_client_cls.return_value
         mock_client.is_blocked.return_value = False
-        mock_client.allow.return_value = True
+        mock_client.allow.return_value = (True, True)  # (success, was_added)
 
         result = runner.invoke(main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "allowlist" in result.output.lower()
 
-    def test_allow_invalid_domain(self, runner, mock_pause_file, tmp_path):
+    def test_allow_invalid_domain(self, runner, tmp_path):
         """Test allow with invalid domain."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
@@ -633,7 +468,7 @@ class TestDisallowCommand:
     """Tests for disallow CLI command."""
 
     @responses.activate
-    def test_disallow_success(self, runner, mock_pause_file, tmp_path):
+    def test_disallow_success(self, runner, tmp_path):
         """Test successful disallow command."""
         responses.add(
             responses.GET,
@@ -659,7 +494,7 @@ class TestDisallowCommand:
         assert result.exit_code == 0
         assert "allowlist" in result.output.lower()
 
-    def test_disallow_invalid_domain(self, runner, mock_pause_file, tmp_path):
+    def test_disallow_invalid_domain(self, runner, tmp_path):
         """Test disallow with invalid domain."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
@@ -840,15 +675,6 @@ class TestSetupLogging:
             assert final_count == initial_count
         finally:
             self._cleanup_handlers(root_logger)
-
-
-class TestPauseInfoEdgeCases:
-    """Tests for _get_pause_info edge cases."""
-
-    def test_pause_info_invalid_format(self, mock_pause_file):
-        """Should return not paused for invalid date format."""
-        mock_pause_file.write_text("invalid-date-format")
-        assert is_paused() is False
 
 
 class TestUpdateCommandEdgeCases:
@@ -1047,7 +873,7 @@ class TestSyncCommandEdgeCases:
     """Additional tests for sync command edge cases."""
 
     @responses.activate
-    def test_sync_sends_discord_notification(self, runner, mock_pause_file, tmp_path):
+    def test_sync_sends_discord_notification(self, runner, tmp_path):
         """Should send Discord notification when configured."""
         responses.add(
             responses.GET,
@@ -1088,7 +914,7 @@ class TestSyncCommandEdgeCases:
 class TestHealthCommandEdgeCases:
     """Additional tests for health command edge cases."""
 
-    def test_health_config_error(self, runner, mock_pause_file, tmp_path):
+    def test_health_config_error(self, runner, tmp_path):
         """Should handle configuration error."""
         # Missing .env file
         result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
@@ -1096,7 +922,7 @@ class TestHealthCommandEdgeCases:
         assert result.exit_code == 1
 
     @patch("nextdns_blocker.cli.NextDNSClient")
-    def test_health_missing_domains_file(self, mock_client_cls, runner, mock_pause_file, tmp_path):
+    def test_health_missing_domains_file(self, mock_client_cls, runner, tmp_path):
         """Should show warning for missing config.json."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
@@ -1105,7 +931,7 @@ class TestHealthCommandEdgeCases:
         mock_client = mock_client_cls.return_value
         mock_client.get_denylist.return_value = []
 
-        with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
+        with patch("nextdns_blocker.cli.get_log_dir", return_value=tmp_path):
             result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
 
         # Should fail due to missing config.json
@@ -1115,14 +941,14 @@ class TestHealthCommandEdgeCases:
 class TestStatusCommandEdgeCases:
     """Additional tests for status command edge cases."""
 
-    def test_status_config_error(self, runner, mock_pause_file, tmp_path):
+    def test_status_config_error(self, runner, tmp_path):
         """Should handle configuration error."""
         result = runner.invoke(main, ["status", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 1
 
     @responses.activate
-    def test_status_with_protected_domains(self, runner, mock_pause_file, tmp_path):
+    def test_status_with_protected_domains(self, runner, tmp_path):
         """Should show protected domains in status."""
         responses.add(
             responses.GET,

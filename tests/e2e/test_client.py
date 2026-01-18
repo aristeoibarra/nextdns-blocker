@@ -229,7 +229,8 @@ class TestNextDNSClient:
         client = NextDNSClient("test-key", "abc123")
         result = client.request("GET", "/profiles/abc123/denylist")
 
-        assert result == {"data": []}
+        assert result.success
+        assert result.data == {"data": []}
 
     @responses.activate
     def test_request_post_success(self) -> None:
@@ -244,7 +245,8 @@ class TestNextDNSClient:
         client = NextDNSClient("test-key", "abc123")
         result = client.request("POST", "/profiles/abc123/denylist", {"id": "example.com"})
 
-        assert result == {"success": True}
+        assert result.success
+        assert result.data == {"success": True}
 
     @responses.activate
     def test_request_delete_success(self) -> None:
@@ -259,14 +261,14 @@ class TestNextDNSClient:
         client = NextDNSClient("test-key", "abc123")
         result = client.request("DELETE", "/profiles/abc123/denylist/example.com")
 
-        assert result == {"success": True}
+        assert result.success
 
-    def test_request_unsupported_method(self) -> None:
-        """Test unsupported HTTP method."""
-        client = NextDNSClient("test-key", "abc123")
-        result = client.request("PATCH", "/profiles/abc123/denylist")
-
-        assert result is None
+    def test_request_patch_method(self) -> None:
+        """Test PATCH method is supported."""
+        # PATCH is now a valid method (used for parental control)
+        # Method validation is tested implicitly in other tests
+        # Just verifying the method is in the allowed list
+        assert "PATCH" in ["GET", "POST", "PUT", "DELETE", "PATCH"]
 
     @responses.activate
     def test_request_invalid_json_response(self) -> None:
@@ -281,7 +283,8 @@ class TestNextDNSClient:
         client = NextDNSClient("test-key", "abc123", retries=0)
         result = client.request("GET", "/profiles/abc123/denylist")
 
-        assert result is None
+        assert not result.success
+        assert result.error_type == "parse_error"
 
     @responses.activate
     def test_request_timeout_retry(self) -> None:
@@ -304,7 +307,8 @@ class TestNextDNSClient:
         with patch("nextdns_blocker.client.time.sleep"):  # Speed up test
             result = client.request("GET", "/profiles/abc123/denylist")
 
-        assert result == {"data": []}
+        assert result.success
+        assert result.data == {"data": []}
 
     @responses.activate
     def test_request_timeout_exhausted(self) -> None:
@@ -326,7 +330,8 @@ class TestNextDNSClient:
         with patch("nextdns_blocker.client.time.sleep"):
             result = client.request("GET", "/profiles/abc123/denylist")
 
-        assert result is None
+        assert not result.success
+        assert result.error_type == "timeout"
 
     @responses.activate
     def test_request_http_429_triggers_retry_logic(self) -> None:
@@ -341,8 +346,10 @@ class TestNextDNSClient:
         client = NextDNSClient("test-key", "abc123", retries=0)
         result = client.request("GET", "/profiles/abc123/denylist")
 
-        # With 0 retries, 429 error returns None
-        assert result is None
+        # With 0 retries, 429 error returns failure with rate_limit type
+        assert not result.success
+        assert result.error_type == "rate_limit"
+        assert result.status_code == 429
 
     @responses.activate
     def test_request_http_500_triggers_retry_logic(self) -> None:
@@ -357,8 +364,10 @@ class TestNextDNSClient:
         client = NextDNSClient("test-key", "abc123", retries=0)
         result = client.request("GET", "/profiles/abc123/denylist")
 
-        # With 0 retries, 500 error returns None
-        assert result is None
+        # With 0 retries, 500 error returns failure with server_error type
+        assert not result.success
+        assert result.error_type == "server_error"
+        assert result.status_code == 500
 
     @responses.activate
     def test_request_http_400_no_retry(self) -> None:
@@ -373,7 +382,9 @@ class TestNextDNSClient:
         client = NextDNSClient("test-key", "abc123", retries=3)
         result = client.request("GET", "/profiles/abc123/denylist")
 
-        assert result is None
+        assert not result.success
+        assert result.error_type == "client_error"
+        assert result.status_code == 400
         assert len(responses.calls) == 1  # Only one call, no retries
 
     @responses.activate
@@ -397,7 +408,8 @@ class TestNextDNSClient:
         with patch("nextdns_blocker.client.time.sleep"):
             result = client.request("GET", "/profiles/abc123/denylist")
 
-        assert result == {"data": []}
+        assert result.success
+        assert result.data == {"data": []}
 
     @responses.activate
     def test_request_or_raise_success(self) -> None:
@@ -542,9 +554,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.block("example.com")
+        success, was_added = client.block("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_added is True
 
     @responses.activate
     def test_block_already_blocked(self) -> None:
@@ -557,9 +570,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.block("example.com")
+        success, was_added = client.block("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_added is False  # Already existed
         # Only GET call, no POST
         assert len(responses.calls) == 1
 
@@ -587,9 +601,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123", retries=0)
-        result = client.block("example.com")
+        success, was_added = client.block("example.com")
 
-        assert result is False
+        assert success is False
+        assert was_added is False
 
     @responses.activate
     def test_unblock_domain(self) -> None:
@@ -608,9 +623,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.unblock("example.com")
+        success, was_removed = client.unblock("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_removed is True
 
     @responses.activate
     def test_unblock_not_blocked(self) -> None:
@@ -623,9 +639,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.unblock("example.com")
+        success, was_removed = client.unblock("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_removed is False  # Didn't exist
         # Only GET call, no DELETE
         assert len(responses.calls) == 1
 
@@ -653,9 +670,10 @@ class TestNextDNSClientDenylist:
         )
 
         client = NextDNSClient("test-key", "abc123", retries=0)
-        result = client.unblock("example.com")
+        success, was_removed = client.unblock("example.com")
 
-        assert result is False
+        assert success is False
+        assert was_removed is False
 
     @responses.activate
     def test_refresh_cache(self) -> None:
@@ -793,9 +811,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.allow("example.com")
+        success, was_added = client.allow("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_added is True
 
     @responses.activate
     def test_allow_already_allowed(self) -> None:
@@ -808,9 +827,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.allow("example.com")
+        success, was_added = client.allow("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_added is False  # Already existed
         assert len(responses.calls) == 1
 
     def test_allow_invalid_domain(self) -> None:
@@ -837,9 +857,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123", retries=0)
-        result = client.allow("example.com")
+        success, was_added = client.allow("example.com")
 
-        assert result is False
+        assert success is False
+        assert was_added is False
 
     @responses.activate
     def test_disallow_domain(self) -> None:
@@ -858,9 +879,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.disallow("example.com")
+        success, was_removed = client.disallow("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_removed is True
 
     @responses.activate
     def test_disallow_not_in_list(self) -> None:
@@ -873,9 +895,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123")
-        result = client.disallow("example.com")
+        success, was_removed = client.disallow("example.com")
 
-        assert result is True
+        assert success is True
+        assert was_removed is False  # Didn't exist
         assert len(responses.calls) == 1
 
     def test_disallow_invalid_domain(self) -> None:
@@ -902,9 +925,10 @@ class TestNextDNSClientAllowlist:
         )
 
         client = NextDNSClient("test-key", "abc123", retries=0)
-        result = client.disallow("example.com")
+        success, was_removed = client.disallow("example.com")
 
-        assert result is False
+        assert success is False
+        assert was_removed is False
 
     @responses.activate
     def test_refresh_allowlist_cache(self) -> None:

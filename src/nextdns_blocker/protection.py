@@ -6,14 +6,31 @@ This module provides:
 - Auto-panic mode for scheduled protection periods
 """
 
+import contextlib
 import json
 import logging
+import os
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from uuid import uuid4
 
-from .common import audit_log, get_log_dir, read_secure_file, write_secure_file
+from .common import (
+    SECURE_FILE_MODE,
+    _lock_file,
+    _unlock_file,
+    audit_log,
+    ensure_naive_datetime,
+    get_log_dir,
+    read_secure_file,
+    write_secure_file,
+)
+from .types import (
+    ItemType,
+    UnlockRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,22 +46,67 @@ def get_unlock_requests_file() -> Path:
     return get_log_dir() / "unlock_requests.json"
 
 
-def _load_unlock_requests() -> list[dict[str, Any]]:
-    """Load pending unlock requests from file."""
+def _get_unlock_requests_lock_file() -> Path:
+    """Get the lock file path for unlock requests."""
+    return get_log_dir() / ".unlock_requests.lock"
+
+
+UNLOCK_REQUESTS_LOCK_TIMEOUT = 10.0  # Maximum time to wait for file lock
+
+
+@contextmanager
+def _unlock_requests_file_lock() -> Generator[None, None, None]:
+    """
+    Context manager for atomic unlock requests file operations.
+
+    Uses a separate lock file to ensure read-modify-write operations
+    are atomic across multiple processes.
+
+    Raises:
+        TimeoutError: If lock cannot be acquired within timeout
+        OSError: If file operations fail
+    """
+    lock_file = _get_unlock_requests_lock_file()
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+
+    fd = os.open(lock_file, os.O_RDWR | os.O_CREAT, SECURE_FILE_MODE)
+    fd_closed = False
+    try:
+        f = os.fdopen(fd, "r+")
+        fd_closed = True
+        try:
+            _lock_file(f, exclusive=True, timeout=UNLOCK_REQUESTS_LOCK_TIMEOUT)
+            try:
+                yield
+            finally:
+                _unlock_file(f)
+        finally:
+            f.close()
+    except OSError:
+        if not fd_closed:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+        raise
+
+
+def _load_unlock_requests() -> list[UnlockRequest]:
+    """Load pending unlock requests from file (internal, caller must hold lock)."""
     requests_file = get_unlock_requests_file()
     content = read_secure_file(requests_file)
     if not content:
         return []
     try:
         data = json.loads(content)
-        return data if isinstance(data, list) else []
+        if isinstance(data, list):
+            return cast(list[UnlockRequest], data)
+        return []
     except json.JSONDecodeError:
         logger.warning("Invalid unlock requests file, resetting")
         return []
 
 
-def _save_unlock_requests(requests: list[dict[str, Any]]) -> None:
-    """Save unlock requests to file."""
+def _save_unlock_requests(requests: list[UnlockRequest]) -> None:
+    """Save unlock requests to file (internal, caller must hold lock)."""
     write_secure_file(get_unlock_requests_file(), json.dumps(requests, indent=2))
 
 
@@ -97,7 +159,8 @@ def get_locked_ids(config: dict[str, Any], item_type: str) -> set[str]:
         for cat in config.get("categories", []):
             if is_locked(cat):
                 for domain in cat.get("domains", []):
-                    locked.add(domain)
+                    if isinstance(domain, str):
+                        locked.add(domain)
 
     return locked
 
@@ -149,7 +212,7 @@ def validate_no_locked_weakening(
 
     Weakening includes:
     - Changing locked: true to locked: false
-    - Changing unblock_delay: "never" to something else
+    - Changing unblock_delay: "never" to something else (ANY other value)
     - Removing the locked field entirely
 
     Args:
@@ -162,8 +225,16 @@ def validate_no_locked_weakening(
     errors = []
 
     # Check nextdns.categories
-    old_categories = {c["id"]: c for c in old_config.get("nextdns", {}).get("categories", [])}
-    new_categories = {c["id"]: c for c in new_config.get("nextdns", {}).get("categories", [])}
+    old_categories = {
+        c["id"]: c
+        for c in old_config.get("nextdns", {}).get("categories", [])
+        if isinstance(c, dict) and "id" in c
+    }
+    new_categories = {
+        c["id"]: c
+        for c in new_config.get("nextdns", {}).get("categories", [])
+        if isinstance(c, dict) and "id" in c
+    }
 
     for cat_id, old_cat in old_categories.items():
         if not is_locked(old_cat):
@@ -173,10 +244,28 @@ def validate_no_locked_weakening(
             errors.append(
                 f"Cannot weaken protection for category '{cat_id}'. It is marked as locked."
             )
+        # Check if unblock_delay was weakened from "never" to something else
+        if new_cat:
+            old_delay = old_cat.get("unblock_delay")
+            new_delay = new_cat.get("unblock_delay")
+            if old_delay == "never" and new_delay != "never":
+                errors.append(
+                    f"Cannot change unblock_delay for category '{cat_id}' from 'never' to '{new_delay}'. "
+                    f"Use 'ndb protection unlock-request {cat_id}' to request modification "
+                    f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+                )
 
     # Check nextdns.services
-    old_services = {s["id"]: s for s in old_config.get("nextdns", {}).get("services", [])}
-    new_services = {s["id"]: s for s in new_config.get("nextdns", {}).get("services", [])}
+    old_services = {
+        s["id"]: s
+        for s in old_config.get("nextdns", {}).get("services", [])
+        if isinstance(s, dict) and "id" in s
+    }
+    new_services = {
+        s["id"]: s
+        for s in new_config.get("nextdns", {}).get("services", [])
+        if isinstance(s, dict) and "id" in s
+    }
 
     for svc_id, old_svc in old_services.items():
         if not is_locked(old_svc):
@@ -186,6 +275,131 @@ def validate_no_locked_weakening(
             errors.append(
                 f"Cannot weaken protection for service '{svc_id}'. It is marked as locked."
             )
+        # Check if unblock_delay was weakened from "never" to something else
+        if new_svc:
+            old_delay = old_svc.get("unblock_delay")
+            new_delay = new_svc.get("unblock_delay")
+            if old_delay == "never" and new_delay != "never":
+                errors.append(
+                    f"Cannot change unblock_delay for service '{svc_id}' from 'never' to '{new_delay}'. "
+                    f"Use 'ndb protection unlock-request {svc_id}' to request modification "
+                    f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+                )
+
+    # Check blocklist domains for unblock_delay weakening
+    old_blocklist = {
+        d.get("domain"): d for d in old_config.get("blocklist", []) if isinstance(d, dict)
+    }
+    new_blocklist = {
+        d.get("domain"): d for d in new_config.get("blocklist", []) if isinstance(d, dict)
+    }
+
+    for domain, old_entry in old_blocklist.items():
+        if not domain:
+            continue
+        old_delay = old_entry.get("unblock_delay")
+        if old_delay != "never":
+            continue
+        new_entry = new_blocklist.get(domain)
+        if new_entry:
+            new_delay = new_entry.get("unblock_delay")
+            if new_delay != "never":
+                errors.append(
+                    f"Cannot change unblock_delay for domain '{domain}' from 'never' to '{new_delay}'. "
+                    f"Use 'ndb protection unlock-request {domain}' to request modification "
+                    f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+                )
+
+    return errors
+
+
+def validate_no_auto_panic_weakening(
+    old_config: dict[str, Any], new_config: dict[str, Any]
+) -> list[str]:
+    """Validate that auto-panic settings are not being weakened when cannot_disable is true.
+
+    Protected changes when cannot_disable=true:
+    - Changing enabled: true to enabled: false
+    - Changing cannot_disable: true to cannot_disable: false
+    - Removing auto_panic section entirely
+    - Modifying schedule to reduce coverage
+
+    Args:
+        old_config: Current configuration
+        new_config: Proposed new configuration
+
+    Returns:
+        List of error messages for auto-panic being weakened
+    """
+    errors: list[str] = []
+
+    old_protection = old_config.get("protection", {})
+    old_auto_panic = old_protection.get("auto_panic", {})
+
+    # Only enforce if cannot_disable is currently true
+    if not old_auto_panic.get("cannot_disable", False):
+        return errors
+
+    new_protection = new_config.get("protection", {})
+    new_auto_panic = new_protection.get("auto_panic", {})
+
+    # Check if auto_panic section was removed entirely
+    if "auto_panic" not in new_protection and "auto_panic" in old_protection:
+        errors.append(
+            "Cannot remove auto_panic section. It has 'cannot_disable: true'. "
+            f"Use 'ndb protection unlock-request auto_panic' to request modification "
+            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+        )
+        return errors
+
+    # Check if enabled was changed from true to false
+    if old_auto_panic.get("enabled", False) and not new_auto_panic.get("enabled", True):
+        errors.append(
+            "Cannot disable auto_panic. It has 'cannot_disable: true'. "
+            f"Use 'ndb protection unlock-request auto_panic' to request modification "
+            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+        )
+
+    # Check if cannot_disable was changed from true to false
+    if old_auto_panic.get("cannot_disable", False) and not new_auto_panic.get(
+        "cannot_disable", False
+    ):
+        errors.append(
+            "Cannot change 'cannot_disable' from true to false. "
+            f"Use 'ndb protection unlock-request auto_panic' to request modification "
+            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+        )
+
+    # Check if schedule was weakened (reduced coverage)
+    old_schedule = old_auto_panic.get("schedule", {})
+    new_schedule = new_auto_panic.get("schedule", {})
+
+    if old_schedule and new_schedule:
+        # Check if start time was made later (less coverage)
+        old_start = old_schedule.get("start", "23:00")
+        new_start = new_schedule.get("start", "23:00")
+        # Check if end time was made earlier (less coverage)
+        old_end = old_schedule.get("end", "06:00")
+        new_end = new_schedule.get("end", "06:00")
+
+        if old_start != new_start or old_end != new_end:
+            errors.append(
+                "Cannot modify auto_panic schedule. It has 'cannot_disable: true'. "
+                f"Use 'ndb protection unlock-request auto_panic' to request modification "
+                f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+            )
+
+    # Check if days were reduced
+    old_days = set(old_auto_panic.get("days", []))
+    new_days = set(new_auto_panic.get("days", []))
+
+    if old_days and new_days and not old_days.issubset(new_days):
+        # Some days were removed
+        errors.append(
+            "Cannot reduce auto_panic active days. It has 'cannot_disable: true'. "
+            f"Use 'ndb protection unlock-request auto_panic' to request modification "
+            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+        )
 
     return errors
 
@@ -195,7 +409,7 @@ def create_unlock_request(
     item_id: str,
     delay_hours: int = DEFAULT_UNLOCK_DELAY_HOURS,
     reason: Optional[str] = None,
-) -> dict[str, Any]:
+) -> UnlockRequest:
     """Create a pending unlock request.
 
     Args:
@@ -213,9 +427,9 @@ def create_unlock_request(
     request_id = str(uuid4())[:12]
     execute_at = datetime.now() + timedelta(hours=delay_hours)
 
-    request = {
+    request: UnlockRequest = {
         "id": request_id,
-        "item_type": item_type,
+        "item_type": cast(ItemType, item_type),
         "item_id": item_id,
         "created_at": datetime.now().isoformat(),
         "execute_at": execute_at.isoformat(),
@@ -224,9 +438,11 @@ def create_unlock_request(
         "status": "pending",
     }
 
-    requests = _load_unlock_requests()
-    requests.append(request)
-    _save_unlock_requests(requests)
+    # Use file lock for atomic read-modify-write
+    with _unlock_requests_file_lock():
+        requests = _load_unlock_requests()
+        requests.append(request)
+        _save_unlock_requests(requests)
 
     audit_log("UNLOCK_REQUEST", f"{item_type}:{item_id} scheduled for {execute_at.isoformat()}")
 
@@ -242,37 +458,42 @@ def cancel_unlock_request(request_id: str) -> bool:
     Returns:
         True if request was found and cancelled
     """
-    requests = _load_unlock_requests()
+    # Use file lock for atomic read-modify-write
+    with _unlock_requests_file_lock():
+        requests = _load_unlock_requests()
 
-    for i, req in enumerate(requests):
-        if req["id"].startswith(request_id) and req["status"] == "pending":
-            requests[i]["status"] = "cancelled"
-            requests[i]["cancelled_at"] = datetime.now().isoformat()
-            _save_unlock_requests(requests)
-            audit_log("UNLOCK_CANCEL", f"{req['item_type']}:{req['item_id']}")
-            return True
+        for i, req in enumerate(requests):
+            if req["id"].startswith(request_id) and req["status"] == "pending":
+                requests[i]["status"] = "cancelled"
+                requests[i]["cancelled_at"] = datetime.now().isoformat()
+                _save_unlock_requests(requests)
+                audit_log("UNLOCK_CANCEL", f"{req['item_type']}:{req['item_id']}")
+                return True
 
     return False
 
 
-def get_pending_unlock_requests() -> list[dict[str, Any]]:
+def get_pending_unlock_requests() -> list[UnlockRequest]:
     """Get all pending unlock requests."""
     requests = _load_unlock_requests()
     return [r for r in requests if r["status"] == "pending"]
 
 
-def get_executable_unlock_requests() -> list[dict[str, Any]]:
+def get_executable_unlock_requests() -> list[UnlockRequest]:
     """Get unlock requests that are ready to execute."""
     now = datetime.now()
     requests = _load_unlock_requests()
 
-    executable = []
+    executable: list[UnlockRequest] = []
     for req in requests:
         if req["status"] != "pending":
             continue
-        execute_at = datetime.fromisoformat(req["execute_at"])
-        if now >= execute_at:
-            executable.append(req)
+        try:
+            execute_at = datetime.fromisoformat(req["execute_at"])
+            if now >= execute_at:
+                executable.append(req)
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Invalid unlock request {req.get('id', 'unknown')}: {e}")
 
     return executable
 
@@ -287,57 +508,71 @@ def execute_unlock_request(request_id: str, config_path: Path) -> bool:
     Returns:
         True if successfully executed
     """
-    requests = _load_unlock_requests()
+    # Use file lock for atomic read-modify-write of unlock requests
+    with _unlock_requests_file_lock():
+        requests = _load_unlock_requests()
 
-    request = None
-    for req in requests:
-        if req["id"] == request_id and req["status"] == "pending":
-            request = req
-            break
-
-    if not request:
-        return False
-
-    # Check if delay has passed
-    execute_at = datetime.fromisoformat(request["execute_at"])
-    if datetime.now() < execute_at:
-        logger.warning(f"Request {request_id} not yet executable")
-        return False
-
-    # Load config and remove the locked item
-    try:
-        with open(config_path, encoding="utf-8") as f:
-            config = json.load(f)
-
-        item_type = request["item_type"]
-        item_id = request["item_id"]
-
-        if item_type == "category":
-            categories = config.get("nextdns", {}).get("categories", [])
-            config["nextdns"]["categories"] = [c for c in categories if c.get("id") != item_id]
-        elif item_type == "service":
-            services = config.get("nextdns", {}).get("services", [])
-            config["nextdns"]["services"] = [s for s in services if s.get("id") != item_id]
-
-        # Write updated config
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
-
-        # Mark request as executed
-        for i, req in enumerate(requests):
-            if req["id"] == request_id:
-                requests[i]["status"] = "executed"
-                requests[i]["executed_at"] = datetime.now().isoformat()
+        request = None
+        for req in requests:
+            if req["id"] == request_id and req["status"] == "pending":
+                request = req
                 break
 
-        _save_unlock_requests(requests)
-        audit_log("UNLOCK_EXECUTE", f"{item_type}:{item_id}")
+        if not request:
+            return False
 
-        return True
+        # Check if delay has passed
+        try:
+            execute_at = ensure_naive_datetime(datetime.fromisoformat(request["execute_at"]))
+        except (ValueError, KeyError) as e:
+            logger.error(f"Invalid execute_at in request {request_id}: {e}")
+            return False
 
-    except (json.JSONDecodeError, OSError) as e:
-        logger.error(f"Failed to execute unlock request: {e}")
-        return False
+        if datetime.now() < execute_at:
+            logger.warning(f"Request {request_id} not yet executable")
+            return False
+
+        # Load config and remove the locked item
+        try:
+            with open(config_path, encoding="utf-8") as f:
+                config = json.load(f)
+
+            item_type = request["item_type"]
+            item_id = request["item_id"]
+
+            if item_type == "category":
+                categories = config.get("nextdns", {}).get("categories", [])
+                config["nextdns"]["categories"] = [c for c in categories if c.get("id") != item_id]
+            elif item_type == "service":
+                services = config.get("nextdns", {}).get("services", [])
+                config["nextdns"]["services"] = [s for s in services if s.get("id") != item_id]
+            elif item_type == "auto_panic":
+                # Disable the cannot_disable flag to allow modifications
+                protection = config.get("protection", {})
+                auto_panic = protection.get("auto_panic", {})
+                if auto_panic:
+                    auto_panic["cannot_disable"] = False
+                    config["protection"]["auto_panic"] = auto_panic
+
+            # Write updated config
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+
+            # Mark request as executed
+            for i, req in enumerate(requests):
+                if req["id"] == request_id:
+                    requests[i]["status"] = "executed"
+                    requests[i]["executed_at"] = datetime.now().isoformat()
+                    break
+
+            _save_unlock_requests(requests)
+            audit_log("UNLOCK_EXECUTE", f"{item_type}:{item_id}")
+
+            return True
+
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(f"Failed to execute unlock request: {e}")
+            return False
 
 
 # =============================================================================
@@ -676,7 +911,7 @@ def remove_pin(current_pin: str, force: bool = False) -> bool:
     return True
 
 
-def get_pin_removal_request() -> Optional[dict[str, Any]]:
+def get_pin_removal_request() -> Optional[UnlockRequest]:
     """Get pending PIN removal request if exists."""
     pending = get_pending_unlock_requests()
     for req in pending:
@@ -899,3 +1134,164 @@ def can_execute_dangerous_command(command_name: str) -> tuple[bool, str]:
                 return False, "pin_required"
 
     return True, "ok"
+
+
+# =============================================================================
+# CANNOT_DISABLE STATE PERSISTENCE
+# =============================================================================
+
+
+def get_cannot_disable_lock_file() -> Path:
+    """Get the cannot_disable lock file path."""
+    return get_log_dir() / ".cannot_disable_lock"
+
+
+def persist_cannot_disable_state(enabled: bool) -> None:
+    """
+    Persist the cannot_disable state to a secure file.
+
+    This provides an additional layer of protection against config.json edits.
+    Even if a user modifies config.json, this lock file will preserve the
+    original cannot_disable state.
+
+    Args:
+        enabled: Whether cannot_disable is enabled
+    """
+    lock_file = get_cannot_disable_lock_file()
+    if enabled:
+        write_secure_file(lock_file, "true")
+        audit_log("CANNOT_DISABLE_LOCK", "Locked cannot_disable state")
+    else:
+        # Only remove if explicitly set to false after proper unlock request
+        if lock_file.exists():
+            lock_file.unlink(missing_ok=True)
+            audit_log("CANNOT_DISABLE_UNLOCK", "Unlocked cannot_disable state")
+
+
+def is_cannot_disable_locked() -> bool:
+    """
+    Check if cannot_disable is locked via the persistent lock file.
+
+    This function checks the lock file rather than config.json to prevent
+    bypass via config.json edits.
+
+    Returns:
+        True if cannot_disable is persistently locked
+    """
+    lock_file = get_cannot_disable_lock_file()
+    content = read_secure_file(lock_file)
+    return content == "true"
+
+
+def sync_cannot_disable_from_config(config: dict[str, Any]) -> None:
+    """
+    Sync the cannot_disable lock state from config.
+
+    Called during init or when config is validated. If config has
+    cannot_disable: true, this creates the lock file. The lock file
+    can only be removed through the proper unlock request process.
+
+    Args:
+        config: The full configuration dictionary
+    """
+    protection = config.get("protection", {})
+    auto_panic = protection.get("auto_panic", {})
+
+    if auto_panic.get("cannot_disable", False):
+        persist_cannot_disable_state(True)
+
+
+# =============================================================================
+# ALLOWLIST PANIC MODE VALIDATION
+# =============================================================================
+
+
+def validate_no_allowlist_bypass_during_panic(
+    old_config: dict[str, Any], new_config: dict[str, Any]
+) -> list[str]:
+    """
+    Validate that allowlist is not being modified during panic mode.
+
+    Since allowlist has highest priority in NextDNS and can bypass all blocks,
+    modifications to allowlist during panic mode are forbidden.
+
+    Args:
+        old_config: Current configuration
+        new_config: Proposed new configuration
+
+    Returns:
+        List of error messages for forbidden allowlist modifications
+    """
+    from .panic import is_panic_mode
+
+    if not is_panic_mode():
+        return []
+
+    errors = []
+
+    # Get old and new allowlists
+    old_allowlist = set()
+    for item in old_config.get("allowlist", []):
+        if isinstance(item, str):
+            old_allowlist.add(item)
+        elif isinstance(item, dict):
+            old_allowlist.add(item.get("domain", ""))
+
+    new_allowlist = set()
+    for item in new_config.get("allowlist", []):
+        if isinstance(item, str):
+            new_allowlist.add(item)
+        elif isinstance(item, dict):
+            new_allowlist.add(item.get("domain", ""))
+
+    # Check for added domains
+    added = new_allowlist - old_allowlist
+    if added:
+        for domain in added:
+            if domain:
+                errors.append(
+                    f"Cannot add '{domain}' to allowlist during panic mode. "
+                    f"Allowlist modifications are blocked to prevent bypassing protection."
+                )
+
+    return errors
+
+
+def get_all_config_validation_errors(
+    old_config: dict[str, Any], new_config: dict[str, Any]
+) -> list[str]:
+    """
+    Run all protection validation checks on a config change.
+
+    This is a convenience function that runs all validation checks
+    and returns a combined list of errors.
+
+    Args:
+        old_config: Current configuration
+        new_config: Proposed new configuration
+
+    Returns:
+        Combined list of all validation errors
+    """
+    errors = []
+
+    # Run all validators
+    errors.extend(validate_no_locked_removal(old_config, new_config))
+    errors.extend(validate_no_locked_weakening(old_config, new_config))
+    errors.extend(validate_no_auto_panic_weakening(old_config, new_config))
+    errors.extend(validate_no_allowlist_bypass_during_panic(old_config, new_config))
+
+    # Check persistent cannot_disable lock
+    if is_cannot_disable_locked():
+        new_protection = new_config.get("protection", {})
+        new_auto_panic = new_protection.get("auto_panic", {})
+
+        # If lock file exists but config shows cannot_disable=false, block the change
+        if not new_auto_panic.get("cannot_disable", True):
+            errors.append(
+                "Cannot change 'cannot_disable' - it is persistently locked. "
+                f"Use 'ndb protection unlock-request auto_panic' to request modification "
+                f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
+            )
+
+    return errors

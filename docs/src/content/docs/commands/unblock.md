@@ -145,20 +145,17 @@ Unblocking is separate from schedules:
 If you unblock a domain:
 - It's removed from the denylist
 - Next sync (within 2 min) will re-block it if outside schedule
-- For longer access, pause blocking or edit the schedule
+- For longer access, add to allowlist or edit the schedule
 
 ### Keeping Domain Unblocked
 
 To prevent re-blocking after unblock:
 
 ```bash
-# Option 1: Pause all blocking
-nextdns-blocker pause 60
-
-# Option 2: Add to allowlist
+# Option 1: Add to allowlist
 nextdns-blocker allow reddit.com
 
-# Option 3: Edit schedule to include current time
+# Option 2: Edit schedule to include current time
 nextdns-blocker config edit
 ```
 
@@ -223,5 +220,5 @@ nextdns-blocker status | grep <domain>
 
 3. Force sync:
    ```bash
-   nextdns-blocker sync
+   nextdns-blocker config push
    ```

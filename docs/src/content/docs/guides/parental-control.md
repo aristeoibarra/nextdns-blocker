@@ -437,5 +437,5 @@ If legitimate need, adjust schedule:
 ```bash
 nextdns-blocker config edit
 # Increase hours, save
-nextdns-blocker sync
+nextdns-blocker config push
 ```

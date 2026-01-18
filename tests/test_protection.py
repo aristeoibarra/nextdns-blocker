@@ -600,3 +600,211 @@ class TestRemovePin:
         assert result is True
         # PIN should still be enabled (waiting for delay)
         assert protection.is_pin_enabled() is True
+
+
+class TestValidateNoAutoPanicWeakening:
+    """Tests for validate_no_auto_panic_weakening function."""
+
+    def test_no_weakening_when_cannot_disable_false(self):
+        """Should allow changes when cannot_disable is False."""
+        old_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": False,
+                    "schedule": {"start": "23:00", "end": "06:00"},
+                }
+            }
+        }
+        new_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": False,  # Changed
+                    "cannot_disable": False,
+                }
+            }
+        }
+        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
+        assert errors == []
+
+    def test_block_disable_when_cannot_disable_true(self):
+        """Should block disabling auto_panic when cannot_disable is True."""
+        old_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": True,
+                }
+            }
+        }
+        new_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": False,  # Trying to disable
+                    "cannot_disable": True,
+                }
+            }
+        }
+        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
+        assert len(errors) == 1
+        assert "Cannot disable auto_panic" in errors[0]
+
+    def test_block_removing_cannot_disable(self):
+        """Should block changing cannot_disable from true to false."""
+        old_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": True,
+                }
+            }
+        }
+        new_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": False,  # Trying to weaken
+                }
+            }
+        }
+        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
+        assert len(errors) == 1
+        assert "cannot_disable" in errors[0]
+
+    def test_block_removing_auto_panic_section(self):
+        """Should block removing auto_panic section entirely."""
+        old_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": True,
+                }
+            }
+        }
+        new_config = {"protection": {}}  # auto_panic removed
+        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
+        assert len(errors) == 1
+        assert "Cannot remove auto_panic section" in errors[0]
+
+    def test_block_schedule_modification(self):
+        """Should block modifying schedule when cannot_disable is True."""
+        old_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": True,
+                    "schedule": {"start": "22:00", "end": "07:00"},
+                }
+            }
+        }
+        new_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": True,
+                    "schedule": {"start": "23:00", "end": "06:00"},  # Modified
+                }
+            }
+        }
+        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
+        assert len(errors) == 1
+        assert "Cannot modify auto_panic schedule" in errors[0]
+
+    def test_block_days_reduction(self):
+        """Should block reducing active days when cannot_disable is True."""
+        old_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": True,
+                    "days": ["monday", "tuesday", "wednesday"],
+                }
+            }
+        }
+        new_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": True,
+                    "days": ["monday"],  # Reduced
+                }
+            }
+        }
+        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
+        assert len(errors) == 1
+        assert "Cannot reduce auto_panic active days" in errors[0]
+
+    def test_allow_no_changes(self):
+        """Should allow when no changes are made."""
+        config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": True,
+                    "schedule": {"start": "23:00", "end": "06:00"},
+                }
+            }
+        }
+        errors = protection.validate_no_auto_panic_weakening(config, config)
+        assert errors == []
+
+    def test_allow_when_no_auto_panic_config(self):
+        """Should allow when there's no auto_panic in old config."""
+        old_config = {"protection": {}}
+        new_config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": True,
+                }
+            }
+        }
+        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
+        assert errors == []
+
+
+class TestExecuteUnlockRequestAutoPanic:
+    """Tests for execute_unlock_request with auto_panic type."""
+
+    @pytest.fixture
+    def mock_log_dir(self, tmp_path):
+        """Mock the log directory."""
+        with patch.object(protection, "get_log_dir", return_value=tmp_path):
+            yield tmp_path
+
+    def test_execute_auto_panic_unlock(self, mock_log_dir, tmp_path):
+        """Should set cannot_disable to False when executing auto_panic unlock."""
+        # Create config file with cannot_disable: true
+        config_path = tmp_path / "config.json"
+        config = {
+            "protection": {
+                "auto_panic": {
+                    "enabled": True,
+                    "cannot_disable": True,
+                    "schedule": {"start": "23:00", "end": "06:00"},
+                }
+            }
+        }
+        config_path.write_text(json.dumps(config))
+
+        # Create a request for auto_panic
+        with patch.object(protection, "audit_log"):
+            request = protection.create_unlock_request("auto_panic", "protection", 24)
+
+        # Modify execute_at to be in the past
+        requests = protection._load_unlock_requests()
+        requests[0]["execute_at"] = (datetime.now() - timedelta(hours=1)).isoformat()
+        protection._save_unlock_requests(requests)
+
+        # Execute
+        with patch.object(protection, "audit_log"):
+            result = protection.execute_unlock_request(request["id"], config_path)
+
+        assert result is True
+
+        # Verify cannot_disable was set to False
+        new_config = json.loads(config_path.read_text())
+        assert new_config["protection"]["auto_panic"]["cannot_disable"] is False
+        # Other settings should remain unchanged
+        assert new_config["protection"]["auto_panic"]["enabled"] is True
+        assert new_config["protection"]["auto_panic"]["schedule"]["start"] == "23:00"

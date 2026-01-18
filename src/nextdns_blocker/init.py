@@ -17,10 +17,11 @@ from .config import DEFAULT_TIMEOUT, get_config_dir
 from .platform_utils import (
     get_executable_args,
     get_executable_path,
+    has_systemd,
     is_macos,
     is_windows,
 )
-from .watchdog import _build_task_command
+from .watchdog import _build_task_command, _install_systemd_timers
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +90,8 @@ def detect_system_timezone() -> str:
 
     Attempts detection in order:
     1. TZ environment variable
-    2. /etc/localtime symlink (macOS/Linux)
-    3. Windows tzutil command
+    2. tzlocal library (cross-platform, handles all Windows timezones)
+    3. /etc/localtime symlink (macOS/Linux fallback)
     4. Falls back to UTC
 
     Returns:
@@ -105,7 +106,24 @@ def detect_system_timezone() -> str:
         except KeyError:
             logger.debug(f"TZ environment variable '{tz_env}' is not a valid timezone")
 
-    # Try reading /etc/localtime symlink (macOS/Linux)
+    # Try tzlocal library (cross-platform, handles all Windows timezones)
+    try:
+        from tzlocal import get_localzone
+
+        tz = get_localzone()
+        tz_name = str(tz)
+        # Validate the timezone name
+        try:
+            ZoneInfo(tz_name)
+            return tz_name
+        except KeyError:
+            logger.debug(f"tzlocal returned invalid timezone: {tz_name}")
+    except ImportError:
+        logger.debug("tzlocal library not available")
+    except Exception as e:
+        logger.debug(f"tzlocal detection failed: {e}")
+
+    # Fallback: Try reading /etc/localtime symlink (macOS/Linux)
     if not is_windows():
         try:
             localtime = Path("/etc/localtime")
@@ -123,47 +141,6 @@ def detect_system_timezone() -> str:
                             # Continue to try next marker or fallback
         except OSError as e:
             logger.debug(f"Could not read /etc/localtime symlink: {e}")
-
-    # Try Windows tzutil command
-    if is_windows():
-        try:
-            result = subprocess.run(
-                ["tzutil", "/g"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            windows_tz = result.stdout.strip()
-            # Map common Windows timezone names to IANA
-            windows_to_iana = {
-                "Pacific Standard Time": "America/Los_Angeles",
-                "Mountain Standard Time": "America/Denver",
-                "Central Standard Time": "America/Chicago",
-                "Eastern Standard Time": "America/New_York",
-                "Central Standard Time (Mexico)": "America/Mexico_City",
-                "US Eastern Standard Time": "America/Indianapolis",
-                "Atlantic Standard Time": "America/Halifax",
-                "UTC": "UTC",
-                "GMT Standard Time": "Europe/London",
-                "W. Europe Standard Time": "Europe/Berlin",
-                "Romance Standard Time": "Europe/Paris",
-                "Central European Standard Time": "Europe/Warsaw",
-                "E. Europe Standard Time": "Europe/Bucharest",
-                "Russian Standard Time": "Europe/Moscow",
-                "China Standard Time": "Asia/Shanghai",
-                "Tokyo Standard Time": "Asia/Tokyo",
-                "Korea Standard Time": "Asia/Seoul",
-                "India Standard Time": "Asia/Kolkata",
-                "AUS Eastern Standard Time": "Australia/Sydney",
-                "E. Australia Standard Time": "Australia/Brisbane",
-                "New Zealand Standard Time": "Pacific/Auckland",
-            }
-            if windows_tz in windows_to_iana:
-                return windows_to_iana[windows_tz]
-            else:
-                logger.debug(f"Windows timezone '{windows_tz}' has no IANA mapping")
-        except (subprocess.SubprocessError, OSError) as e:
-            logger.debug(f"Could not detect Windows timezone: {e}")
 
     return "UTC"
 
@@ -240,7 +217,7 @@ def create_config_file(config_dir: Path, timezone: str) -> Path:
 
 def install_scheduling() -> tuple[bool, str]:
     """
-    Install scheduling jobs (launchd on macOS, cron on Linux, Task Scheduler on Windows).
+    Install scheduling jobs (launchd on macOS, systemd/cron on Linux, Task Scheduler on Windows).
 
     Returns:
         Tuple of (success, message)
@@ -250,7 +227,23 @@ def install_scheduling() -> tuple[bool, str]:
     elif is_windows():
         return _install_windows_task()
     else:
+        # Linux: prefer systemd if available, fall back to cron
+        if has_systemd():
+            return _install_systemd()
         return _install_cron()
+
+
+def _install_systemd() -> tuple[bool, str]:
+    """Install systemd user timers for Linux."""
+    try:
+        _install_systemd_timers()
+        return True, "systemd timers installed (sync: 2 min, watchdog: 1 min)"
+    except SystemExit:
+        # _install_systemd_timers() calls sys.exit(1) on failure
+        return False, "failed to install systemd timers"
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.error(f"Failed to install systemd timers: {e}")
+        return False, f"failed to install systemd timers: {e}"
 
 
 def _install_launchd() -> tuple[bool, str]:

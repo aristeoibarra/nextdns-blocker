@@ -241,7 +241,7 @@ After modifying the allowlist, DNS changes may take time to propagate:
 
 ```bash
 # Force sync
-nextdns-blocker sync
+nextdns-blocker config push
 
 # Clear local DNS cache
 # macOS
@@ -269,7 +269,7 @@ Both methods work because allowlist has highest priority.
 
 1. **Verify sync completed:**
    ```bash
-   nextdns-blocker sync
+   nextdns-blocker config push
    nextdns-blocker status
    ```
 
