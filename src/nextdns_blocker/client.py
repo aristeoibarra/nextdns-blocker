@@ -1,12 +1,15 @@
 """NextDNS API client with caching and rate limiting."""
 
+import contextlib
 import json
 import logging
 import os
 import random
+import re
 import threading
 import time
 from collections import deque
+from dataclasses import dataclass
 from typing import Any, Optional
 
 import requests
@@ -14,6 +17,97 @@ import requests
 from .common import safe_int, validate_domain
 from .config import DEFAULT_RETRIES, DEFAULT_TIMEOUT
 from .exceptions import APIError, DomainValidationError
+
+# =============================================================================
+# API RESULT CLASS
+# =============================================================================
+
+
+@dataclass
+class APIRequestResult:
+    """Result of an API request with error context.
+
+    This class provides structured error information instead of just returning
+    None on failure, enabling better debugging and smarter retry logic.
+
+    Attributes:
+        success: Whether the request completed successfully
+        data: Response data if successful, None otherwise
+        error_type: Type of error (empty string if successful)
+        error_msg: Human-readable error message
+        status_code: HTTP status code if available
+        retry_after: Seconds to wait before retrying (for rate limiting)
+    """
+
+    success: bool
+    data: Optional[dict[str, Any]] = None
+    error_type: str = ""
+    error_msg: str = ""
+    status_code: Optional[int] = None
+    retry_after: Optional[int] = None
+
+    # Error type constants
+    TIMEOUT = "timeout"
+    CONNECTION = "connection"
+    AUTH = "auth"
+    RATE_LIMIT = "rate_limit"
+    SERVER_ERROR = "server_error"
+    CLIENT_ERROR = "client_error"
+    PARSE_ERROR = "parse_error"
+    UNKNOWN = "unknown"
+
+    @classmethod
+    def ok(cls, data: Optional[dict[str, Any]] = None) -> "APIRequestResult":
+        """Create a successful result."""
+        return cls(success=True, data=data or {"success": True})
+
+    @classmethod
+    def timeout(cls, msg: str = "Request timed out") -> "APIRequestResult":
+        """Create a timeout error result."""
+        return cls(success=False, error_type=cls.TIMEOUT, error_msg=msg)
+
+    @classmethod
+    def connection_error(cls, msg: str = "Connection failed") -> "APIRequestResult":
+        """Create a connection error result."""
+        return cls(success=False, error_type=cls.CONNECTION, error_msg=msg)
+
+    @classmethod
+    def http_error(
+        cls, status_code: int, msg: str, retry_after: Optional[int] = None
+    ) -> "APIRequestResult":
+        """Create an HTTP error result with appropriate error type."""
+        if status_code == 401 or status_code == 403:
+            error_type = cls.AUTH
+        elif status_code == 429:
+            error_type = cls.RATE_LIMIT
+        elif 500 <= status_code < 600:
+            error_type = cls.SERVER_ERROR
+        else:
+            error_type = cls.CLIENT_ERROR
+
+        return cls(
+            success=False,
+            error_type=error_type,
+            error_msg=msg,
+            status_code=status_code,
+            retry_after=retry_after,
+        )
+
+    @classmethod
+    def parse_error(cls, msg: str = "Invalid JSON response") -> "APIRequestResult":
+        """Create a parse error result."""
+        return cls(success=False, error_type=cls.PARSE_ERROR, error_msg=msg)
+
+    @property
+    def is_retryable(self) -> bool:
+        """Check if this error type is typically retryable."""
+        return self.error_type in (
+            self.TIMEOUT,
+            self.CONNECTION,
+            self.RATE_LIMIT,
+            self.SERVER_ERROR,
+        )
+
 
 # =============================================================================
 # CONSTANTS
@@ -342,7 +436,7 @@ class NextDNSClient:
 
     def request(
         self, method: str, endpoint: str, data: Optional[dict[str, Any]] = None
-    ) -> Optional[dict[str, Any]]:
+    ) -> APIRequestResult:
         """
         Make an HTTP request to the NextDNS API with retry logic and exponential backoff.
 
@@ -352,7 +446,7 @@ class NextDNSClient:
             data: Optional request body for POST requests
 
         Returns:
-            Response JSON as dict, or None if request failed
+            APIRequestResult with success status and data or error details
         """
         url = f"{API_URL}{endpoint}"
 
@@ -363,6 +457,8 @@ class NextDNSClient:
             raise ValueError(
                 f"Unsupported HTTP method: {method}. Valid methods: {', '.join(valid_methods)}"
             )
+
+        last_error: Optional[APIRequestResult] = None
 
         for attempt in range(self.retries + 1):
             # Apply rate limiting
@@ -385,7 +481,7 @@ class NextDNSClient:
                 if not response.text or not response.text.strip():
                     # 204 No Content is explicitly expected to be empty
                     if response.status_code == 204:
-                        return {"success": True}
+                        return APIRequestResult.ok()
                     # For other success codes, log but still treat as success
                     # since raise_for_status() already validated the status
                     if response.status_code in (200, 201, 202):
@@ -393,23 +489,24 @@ class NextDNSClient:
                             f"Empty response body for {method} {endpoint} "
                             f"(status: {response.status_code})"
                         )
-                        return {"success": True}
+                        return APIRequestResult.ok()
                     # Unexpected empty response for other status codes
                     logger.warning(
                         f"Unexpected empty response for {method} {endpoint} "
                         f"(status: {response.status_code})"
                     )
-                    return {"success": True}
+                    return APIRequestResult.ok()
 
                 # Parse JSON with error handling
                 try:
-                    result: dict[str, Any] = response.json()
-                    return result
+                    result_data: dict[str, Any] = response.json()
+                    return APIRequestResult.ok(result_data)
                 except json.JSONDecodeError as e:
                     logger.error(f"Invalid JSON response for {method} {endpoint}: {e}")
-                    return None
+                    return APIRequestResult.parse_error(f"Invalid JSON: {e}")
 
             except requests.exceptions.Timeout:
+                last_error = APIRequestResult.timeout(f"Request timed out after {self.timeout}s")
                 if attempt < self.retries:
                     backoff = self._calculate_backoff(attempt)
                     logger.warning(
@@ -419,11 +516,33 @@ class NextDNSClient:
                     time.sleep(backoff)
                     continue
                 logger.error(f"API timeout after {self.retries} retries: {method} {endpoint}")
-                return None
+                return last_error
+
             except requests.exceptions.HTTPError as e:
-                # Retry on 429 (rate limit) and 5xx errors
                 # Use getattr for safer access in case response is malformed
-                status_code = getattr(e.response, "status_code", 0) if e.response else 0
+                status_code = 0
+                if e.response is not None:
+                    status_code = getattr(e.response, "status_code", 0)
+                # Fallback: extract status code from error message (e.g., "429 Client Error")
+                if status_code == 0:
+                    match = re.search(r"^(\d{3})\s", str(e))
+                    if match:
+                        status_code = int(match.group(1))
+                retry_after = None
+                if status_code == 429 and e.response:
+                    # Try to get Retry-After header
+                    retry_after_str = e.response.headers.get("Retry-After")
+                    if retry_after_str:
+                        with contextlib.suppress(ValueError):
+                            retry_after = int(retry_after_str)
+
+                last_error = APIRequestResult.http_error(
+                    status_code=status_code,
+                    msg=str(e),
+                    retry_after=retry_after,
+                )
+
+                # Retry on 429 (rate limit) and 5xx errors
                 if status_code == 429 or (500 <= status_code < 600):
                     if attempt < self.retries:
                         backoff = self._calculate_backoff(attempt)
@@ -434,8 +553,10 @@ class NextDNSClient:
                         time.sleep(backoff)
                         continue
                 logger.error(f"API HTTP error for {method} {endpoint}: {e}")
-                return None
+                return last_error
+
             except requests.exceptions.RequestException as e:
+                last_error = APIRequestResult.connection_error(str(e))
                 if attempt < self.retries:
                     backoff = self._calculate_backoff(attempt)
                     logger.warning(
@@ -445,9 +566,12 @@ class NextDNSClient:
                     time.sleep(backoff)
                     continue
                 logger.error(f"API request error for {method} {endpoint}: {e}")
-                return None
+                return last_error
 
-        return None
+        # Should not reach here, but return last error if we do
+        return last_error or APIRequestResult(
+            success=False, error_type=APIRequestResult.UNKNOWN, error_msg="Unknown error"
+        )
 
     def request_or_raise(
         self, method: str, endpoint: str, data: Optional[dict[str, Any]] = None
@@ -456,7 +580,7 @@ class NextDNSClient:
         Make an HTTP request to the NextDNS API, raising APIError on failure.
 
         This is an alternative to request() that raises an exception instead
-        of returning None on failure, useful when errors should be propagated.
+        of returning an error result, useful when errors should be propagated.
 
         Args:
             method: HTTP method (GET, POST, DELETE)
@@ -470,9 +594,12 @@ class NextDNSClient:
             APIError: If the request fails after all retries
         """
         result = self.request(method, endpoint, data)
-        if result is None:
-            raise APIError(f"API request failed: {method} {endpoint}")
-        return result
+        if not result.success:
+            raise APIError(
+                f"API request failed: {method} {endpoint} - "
+                f"{result.error_type}: {result.error_msg}"
+            )
+        return result.data or {"success": True}
 
     # -------------------------------------------------------------------------
     # DENYLIST METHODS
@@ -496,11 +623,11 @@ class NextDNSClient:
                 return cached
 
         result = self.request("GET", f"/profiles/{self.profile_id}/denylist")
-        if result is None:
-            logger.warning("Failed to fetch denylist from API")
+        if not result.success:
+            logger.warning(f"Failed to fetch denylist from API: {result.error_msg}")
             return None
 
-        data: list[dict[str, Any]] = result.get("data", [])
+        data: list[dict[str, Any]] = (result.data or {}).get("data", [])
         self._cache.set(data)
         return data
 
@@ -569,13 +696,13 @@ class NextDNSClient:
             "POST", f"/profiles/{self.profile_id}/denylist", {"id": domain, "active": True}
         )
 
-        if result is not None:
+        if result.success:
             # Optimistic cache update
             self._cache.add_domain(domain)
             logger.info(f"Blocked: {domain}")
             return (True, True)  # Success and was added
 
-        logger.error(f"Failed to block: {domain}")
+        logger.error(f"Failed to block: {domain} - {result.error_msg}")
         return (False, False)  # Failed
 
     def unblock(self, domain: str) -> tuple[bool, bool]:
@@ -602,13 +729,13 @@ class NextDNSClient:
 
         result = self.request("DELETE", f"/profiles/{self.profile_id}/denylist/{domain}")
 
-        if result is not None:
+        if result.success:
             # Optimistic cache update
             self._cache.remove_domain(domain)
             logger.info(f"Unblocked: {domain}")
             return (True, True)  # Success and was removed
 
-        logger.error(f"Failed to unblock: {domain}")
+        logger.error(f"Failed to unblock: {domain} - {result.error_msg}")
         return (False, False)  # Failed
 
     def refresh_cache(self) -> bool:
@@ -642,11 +769,11 @@ class NextDNSClient:
                 return cached
 
         result = self.request("GET", f"/profiles/{self.profile_id}/allowlist")
-        if result is None:
-            logger.warning("Failed to fetch allowlist from API")
+        if not result.success:
+            logger.warning(f"Failed to fetch allowlist from API: {result.error_msg}")
             return None
 
-        data: list[dict[str, Any]] = result.get("data", [])
+        data: list[dict[str, Any]] = (result.data or {}).get("data", [])
         self._allowlist_cache.set(data)
         return data
 
@@ -713,12 +840,12 @@ class NextDNSClient:
             "POST", f"/profiles/{self.profile_id}/allowlist", {"id": domain, "active": True}
         )
 
-        if result is not None:
+        if result.success:
             self._allowlist_cache.add_domain(domain)
             logger.info(f"Added to allowlist: {domain}")
             return (True, True)  # Success and was added
 
-        logger.error(f"Failed to add to allowlist: {domain}")
+        logger.error(f"Failed to add to allowlist: {domain} - {result.error_msg}")
         return (False, False)  # Failed
 
     def disallow(self, domain: str) -> tuple[bool, bool]:
@@ -745,12 +872,12 @@ class NextDNSClient:
 
         result = self.request("DELETE", f"/profiles/{self.profile_id}/allowlist/{domain}")
 
-        if result is not None:
+        if result.success:
             self._allowlist_cache.remove_domain(domain)
             logger.info(f"Removed from allowlist: {domain}")
             return (True, True)  # Success and was removed
 
-        logger.error(f"Failed to remove from allowlist: {domain}")
+        logger.error(f"Failed to remove from allowlist: {domain} - {result.error_msg}")
         return (False, False)  # Failed
 
     def refresh_allowlist_cache(self) -> bool:
@@ -781,11 +908,11 @@ class NextDNSClient:
             - services: list of active service objects
         """
         result = self.request("GET", f"/profiles/{self.profile_id}/parentalControl")
-        if result is None:
-            logger.warning("Failed to fetch parental control config from API")
+        if not result.success:
+            logger.warning(f"Failed to fetch parental control config from API: {result.error_msg}")
             return None
         # API returns {"data": {...}}, unwrap it
-        data: dict[str, Any] = result.get("data", result)
+        data: dict[str, Any] = (result.data or {}).get("data", result.data or {})
         return data
 
     def update_parental_control(
@@ -822,11 +949,11 @@ class NextDNSClient:
 
         result = self.request("PATCH", f"/profiles/{self.profile_id}/parentalControl", data)
 
-        if result is not None:
+        if result.success:
             logger.info(f"Updated parental control settings: {list(data.keys())}")
             return True
 
-        logger.error("Failed to update parental control settings")
+        logger.error(f"Failed to update parental control settings: {result.error_msg}")
         return False
 
     def get_parental_control_categories(self) -> Optional[list[dict[str, Any]]]:
@@ -933,12 +1060,14 @@ class NextDNSClient:
             {"active": active},
         )
 
-        if result is not None:
+        if result.success:
             status = "activated" if active else "deactivated"
             logger.info(f"Parental control category {status}: {category_id}")
             return True
 
-        logger.error(f"Failed to update parental control category: {category_id}")
+        logger.error(
+            f"Failed to update parental control category: {category_id} - {result.error_msg}"
+        )
         return False
 
     def remove_category(self, category_id: str) -> bool:
@@ -960,11 +1089,13 @@ class NextDNSClient:
             {"active": False},
         )
 
-        if result is not None:
+        if result.success:
             logger.info(f"Deactivated parental control category: {category_id}")
             return True
 
-        logger.error(f"Failed to deactivate parental control category: {category_id}")
+        logger.error(
+            f"Failed to deactivate parental control category: {category_id} - {result.error_msg}"
+        )
         return False
 
     def add_service(self, service_id: str, active: bool = True) -> bool:
@@ -987,12 +1118,12 @@ class NextDNSClient:
             {"id": service_id, "active": active},
         )
 
-        if result is not None:
+        if result.success:
             status = "activated" if active else "deactivated"
             logger.info(f"Parental control service {status}: {service_id}")
             return True
 
-        logger.error(f"Failed to add parental control service: {service_id}")
+        logger.error(f"Failed to add parental control service: {service_id} - {result.error_msg}")
         return False
 
     def remove_service(self, service_id: str) -> bool:
@@ -1012,11 +1143,13 @@ class NextDNSClient:
             f"/profiles/{self.profile_id}/parentalControl/services/{service_id}",
         )
 
-        if result is not None:
+        if result.success:
             logger.info(f"Removed parental control service: {service_id}")
             return True
 
-        logger.error(f"Failed to remove parental control service: {service_id}")
+        logger.error(
+            f"Failed to remove parental control service: {service_id} - {result.error_msg}"
+        )
         return False
 
     def activate_category(self, category_id: str) -> bool:
@@ -1037,10 +1170,12 @@ class NextDNSClient:
             f"/profiles/{self.profile_id}/parentalControl/categories/{category_id}",
             {"active": True},
         )
-        if result is not None:
+        if result.success:
             logger.info(f"Parental control category activated: {category_id}")
             return True
-        logger.error(f"Failed to activate parental control category: {category_id}")
+        logger.error(
+            f"Failed to activate parental control category: {category_id} - {result.error_msg}"
+        )
         return False
 
     def deactivate_category(self, category_id: str) -> bool:
@@ -1061,10 +1196,12 @@ class NextDNSClient:
             f"/profiles/{self.profile_id}/parentalControl/categories/{category_id}",
             {"active": False},
         )
-        if result is not None:
+        if result.success:
             logger.info(f"Parental control category deactivated: {category_id}")
             return True
-        logger.error(f"Failed to deactivate parental control category: {category_id}")
+        logger.error(
+            f"Failed to deactivate parental control category: {category_id} - {result.error_msg}"
+        )
         return False
 
     def activate_service(self, service_id: str) -> bool:
@@ -1086,7 +1223,7 @@ class NextDNSClient:
             f"/profiles/{self.profile_id}/parentalControl/services/{service_id}",
             {"active": True},
         )
-        if result is not None:
+        if result.success:
             logger.info(f"Parental control service activated: {service_id}")
             return True
 
@@ -1097,11 +1234,13 @@ class NextDNSClient:
             f"/profiles/{self.profile_id}/parentalControl/services",
             {"id": service_id, "active": True},
         )
-        if result is not None:
+        if result.success:
             logger.info(f"Parental control service added and activated: {service_id}")
             return True
 
-        logger.error(f"Failed to activate parental control service: {service_id}")
+        logger.error(
+            f"Failed to activate parental control service: {service_id} - {result.error_msg}"
+        )
         return False
 
     def deactivate_service(self, service_id: str) -> bool:
@@ -1122,8 +1261,10 @@ class NextDNSClient:
             f"/profiles/{self.profile_id}/parentalControl/services/{service_id}",
             {"active": False},
         )
-        if result is not None:
+        if result.success:
             logger.info(f"Parental control service deactivated: {service_id}")
             return True
-        logger.error(f"Failed to deactivate parental control service: {service_id}")
+        logger.error(
+            f"Failed to deactivate parental control service: {service_id} - {result.error_msg}"
+        )
         return False
