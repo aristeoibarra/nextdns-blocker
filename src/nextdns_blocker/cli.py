@@ -71,11 +71,51 @@ def get_app_log_file() -> Path:
     return get_log_dir() / "app.log"
 
 
+class SecretsRedactionFilter(logging.Filter):
+    """Filter that redacts sensitive information from log messages."""
+
+    # Patterns for secrets that should be redacted
+    SECRET_PATTERNS = [
+        (re.compile(r"X-Api-Key:\s*[a-zA-Z0-9_-]{8,}"), "X-Api-Key: [REDACTED]"),
+        (
+            re.compile(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?[a-zA-Z0-9_-]{8,}['\"]?", re.IGNORECASE),
+            "api_key: [REDACTED]",
+        ),
+        (
+            re.compile(r"https://discord\.com/api/webhooks/\d+/[a-zA-Z0-9_.-]+"),
+            "https://discord.com/api/webhooks/[REDACTED]",
+        ),
+        (re.compile(r"\d+:[a-zA-Z0-9_-]{35,}"), "[TELEGRAM_TOKEN_REDACTED]"),  # Telegram bot token
+        (
+            re.compile(r"https://hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[a-zA-Z0-9]+"),
+            "https://hooks.slack.com/services/[REDACTED]",
+        ),
+    ]
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Redact secrets from log record message."""
+        if record.msg:
+            msg = str(record.msg)
+            for pattern, replacement in self.SECRET_PATTERNS:
+                msg = pattern.sub(replacement, msg)
+            record.msg = msg
+        if record.args:
+            args = []
+            for arg in record.args:
+                if isinstance(arg, str):
+                    for pattern, replacement in self.SECRET_PATTERNS:
+                        arg = pattern.sub(replacement, arg)
+                args.append(arg)
+            record.args = tuple(args)
+        return True
+
+
 def setup_logging(verbose: bool = False) -> None:
     """Setup logging configuration.
 
     This function configures logging with both file and console handlers.
     It avoids adding duplicate handlers if called multiple times.
+    Includes a secrets redaction filter to prevent leaking sensitive data.
 
     Args:
         verbose: If True, sets log level to DEBUG; otherwise INFO.
@@ -93,14 +133,19 @@ def setup_logging(verbose: bool = False) -> None:
     root_logger.setLevel(level)
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
-    # File handler
+    # Create secrets redaction filter
+    secrets_filter = SecretsRedactionFilter()
+
+    # File handler with secrets redaction
     file_handler = logging.FileHandler(get_app_log_file())
     file_handler.setFormatter(formatter)
+    file_handler.addFilter(secrets_filter)
     root_logger.addHandler(file_handler)
 
-    # Console handler
+    # Console handler with secrets redaction
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
+    console_handler.addFilter(secrets_filter)
     root_logger.addHandler(console_handler)
 
 

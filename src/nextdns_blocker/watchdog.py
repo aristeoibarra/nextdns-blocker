@@ -1460,8 +1460,8 @@ def _process_pending_actions() -> None:
         if not isinstance(action_id, str) or not action_id:
             logger.warning(f"Skipping action with invalid id: {action}")
             continue
-        if action_type is None:
-            logger.warning(f"Skipping action with missing type: {action}")
+        if not isinstance(action_type, str) or not action_type:
+            logger.warning(f"Skipping action with invalid or missing type: {action}")
             continue
 
         if action_type == "unblock":

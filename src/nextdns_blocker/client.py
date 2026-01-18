@@ -497,6 +497,7 @@ class NextDNSClient:
                     headers=self._get_headers(),
                     json=data if method_upper in ("POST", "PUT", "PATCH") else None,
                     timeout=self.timeout,
+                    verify=True,  # Explicitly enable SSL/TLS certificate verification
                 )
 
                 response.raise_for_status()

@@ -110,11 +110,15 @@ echo "  [5/7] config"
 # Check if already initialized
 if [ -f "$CONFIG_DIR/.env" ]; then
     echo "         using existing: $CONFIG_DIR/.env"
+    # Ensure secure permissions on .env file (owner read/write only)
+    chmod 600 "$CONFIG_DIR/.env" 2>/dev/null || true
     # shellcheck source=/dev/null
     source "$CONFIG_DIR/.env"
 elif [ -f "$SCRIPT_DIR/.env" ]; then
     echo "         copying: $SCRIPT_DIR/.env -> $CONFIG_DIR/.env"
     cp "$SCRIPT_DIR/.env" "$CONFIG_DIR/.env"
+    # Ensure secure permissions on .env file (owner read/write only)
+    chmod 600 "$CONFIG_DIR/.env"
     # shellcheck source=/dev/null
     source "$CONFIG_DIR/.env"
 else
@@ -143,8 +147,8 @@ if [ -z "$NEXTDNS_API_KEY" ] || [ -z "$NEXTDNS_PROFILE_ID" ]; then
 fi
 
 API_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-    -H "X-Api-Key: $NEXTDNS_API_KEY" \
-    "https://api.nextdns.io/profiles/$NEXTDNS_PROFILE_ID")
+    -H "X-Api-Key: ${NEXTDNS_API_KEY}" \
+    "https://api.nextdns.io/profiles/${NEXTDNS_PROFILE_ID}")
 
 if [ "$API_RESPONSE" != "200" ]; then
     echo "  error: API validation failed (HTTP $API_RESPONSE)"

@@ -262,7 +262,7 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
     Get the configuration directory path.
 
     Resolution order:
-    1. Override path if provided
+    1. Override path if provided (validated to prevent path traversal)
     2. Current working directory if .env AND config.json exist
     3. XDG config directory (~/.config/nextdns-blocker on Linux,
        ~/Library/Application Support/nextdns-blocker on macOS)
@@ -272,9 +272,37 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
 
     Returns:
         Path to the configuration directory
+
+    Raises:
+        ConfigurationError: If override path is invalid or outside allowed directories
     """
     if override:
-        return Path(override)
+        override_path = Path(override)
+        # Resolve to absolute path and validate
+        try:
+            resolved = override_path.resolve()
+        except (OSError, RuntimeError) as e:
+            raise ConfigurationError(f"Invalid config path: {e}")
+
+        # Security: Ensure the path is within user's home directory or standard config locations
+        import tempfile
+
+        home = Path.home().resolve()
+        allowed_roots = [
+            home,
+            Path("/tmp").resolve(),  # Allow temp directories for testing  # nosec B108
+            Path(tempfile.gettempdir()).resolve(),  # System temp dir (e.g., /var/folders on macOS)
+        ]
+
+        # Check if resolved path is within allowed directories
+        is_allowed = any(resolved == root or root in resolved.parents for root in allowed_roots)
+
+        if not is_allowed:
+            raise ConfigurationError(
+                f"Config path must be within home directory or /tmp: {resolved}"
+            )
+
+        return resolved
 
     # Require .env AND config.json to use CWD (fixes #124)
     # This avoids false positives from unrelated .env files
@@ -1286,7 +1314,11 @@ def load_nextdns_config(script_dir: str) -> Optional[dict[str, Any]]:
     try:
         with open(config_file, encoding="utf-8") as f:
             config = json.load(f)
-    except (json.JSONDecodeError, OSError):
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid JSON in {config_file}: {e}")
+        return None
+    except OSError as e:
+        logger.warning(f"Cannot read {config_file}: {e}")
         return None
 
     if not isinstance(config, dict):

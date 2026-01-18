@@ -6,19 +6,30 @@ This module provides:
 - Auto-panic mode for scheduled protection periods
 """
 
+import contextlib
 import json
 import logging
+import os
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from uuid import uuid4
 
 from .common import (
+    SECURE_FILE_MODE,
+    _lock_file,
+    _unlock_file,
     audit_log,
     ensure_naive_datetime,
     get_log_dir,
     read_secure_file,
     write_secure_file,
+)
+from .types import (
+    ItemType,
+    UnlockRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,22 +46,67 @@ def get_unlock_requests_file() -> Path:
     return get_log_dir() / "unlock_requests.json"
 
 
-def _load_unlock_requests() -> list[dict[str, Any]]:
-    """Load pending unlock requests from file."""
+def _get_unlock_requests_lock_file() -> Path:
+    """Get the lock file path for unlock requests."""
+    return get_log_dir() / ".unlock_requests.lock"
+
+
+UNLOCK_REQUESTS_LOCK_TIMEOUT = 10.0  # Maximum time to wait for file lock
+
+
+@contextmanager
+def _unlock_requests_file_lock() -> Generator[None, None, None]:
+    """
+    Context manager for atomic unlock requests file operations.
+
+    Uses a separate lock file to ensure read-modify-write operations
+    are atomic across multiple processes.
+
+    Raises:
+        TimeoutError: If lock cannot be acquired within timeout
+        OSError: If file operations fail
+    """
+    lock_file = _get_unlock_requests_lock_file()
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+
+    fd = os.open(lock_file, os.O_RDWR | os.O_CREAT, SECURE_FILE_MODE)
+    fd_closed = False
+    try:
+        f = os.fdopen(fd, "r+")
+        fd_closed = True
+        try:
+            _lock_file(f, exclusive=True, timeout=UNLOCK_REQUESTS_LOCK_TIMEOUT)
+            try:
+                yield
+            finally:
+                _unlock_file(f)
+        finally:
+            f.close()
+    except OSError:
+        if not fd_closed:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+        raise
+
+
+def _load_unlock_requests() -> list[UnlockRequest]:
+    """Load pending unlock requests from file (internal, caller must hold lock)."""
     requests_file = get_unlock_requests_file()
     content = read_secure_file(requests_file)
     if not content:
         return []
     try:
         data = json.loads(content)
-        return data if isinstance(data, list) else []
+        if isinstance(data, list):
+            return cast(list[UnlockRequest], data)
+        return []
     except json.JSONDecodeError:
         logger.warning("Invalid unlock requests file, resetting")
         return []
 
 
-def _save_unlock_requests(requests: list[dict[str, Any]]) -> None:
-    """Save unlock requests to file."""
+def _save_unlock_requests(requests: list[UnlockRequest]) -> None:
+    """Save unlock requests to file (internal, caller must hold lock)."""
     write_secure_file(get_unlock_requests_file(), json.dumps(requests, indent=2))
 
 
@@ -353,7 +409,7 @@ def create_unlock_request(
     item_id: str,
     delay_hours: int = DEFAULT_UNLOCK_DELAY_HOURS,
     reason: Optional[str] = None,
-) -> dict[str, Any]:
+) -> UnlockRequest:
     """Create a pending unlock request.
 
     Args:
@@ -371,9 +427,9 @@ def create_unlock_request(
     request_id = str(uuid4())[:12]
     execute_at = datetime.now() + timedelta(hours=delay_hours)
 
-    request = {
+    request: UnlockRequest = {
         "id": request_id,
-        "item_type": item_type,
+        "item_type": cast(ItemType, item_type),
         "item_id": item_id,
         "created_at": datetime.now().isoformat(),
         "execute_at": execute_at.isoformat(),
@@ -382,9 +438,11 @@ def create_unlock_request(
         "status": "pending",
     }
 
-    requests = _load_unlock_requests()
-    requests.append(request)
-    _save_unlock_requests(requests)
+    # Use file lock for atomic read-modify-write
+    with _unlock_requests_file_lock():
+        requests = _load_unlock_requests()
+        requests.append(request)
+        _save_unlock_requests(requests)
 
     audit_log("UNLOCK_REQUEST", f"{item_type}:{item_id} scheduled for {execute_at.isoformat()}")
 
@@ -400,37 +458,42 @@ def cancel_unlock_request(request_id: str) -> bool:
     Returns:
         True if request was found and cancelled
     """
-    requests = _load_unlock_requests()
+    # Use file lock for atomic read-modify-write
+    with _unlock_requests_file_lock():
+        requests = _load_unlock_requests()
 
-    for i, req in enumerate(requests):
-        if req["id"].startswith(request_id) and req["status"] == "pending":
-            requests[i]["status"] = "cancelled"
-            requests[i]["cancelled_at"] = datetime.now().isoformat()
-            _save_unlock_requests(requests)
-            audit_log("UNLOCK_CANCEL", f"{req['item_type']}:{req['item_id']}")
-            return True
+        for i, req in enumerate(requests):
+            if req["id"].startswith(request_id) and req["status"] == "pending":
+                requests[i]["status"] = "cancelled"
+                requests[i]["cancelled_at"] = datetime.now().isoformat()
+                _save_unlock_requests(requests)
+                audit_log("UNLOCK_CANCEL", f"{req['item_type']}:{req['item_id']}")
+                return True
 
     return False
 
 
-def get_pending_unlock_requests() -> list[dict[str, Any]]:
+def get_pending_unlock_requests() -> list[UnlockRequest]:
     """Get all pending unlock requests."""
     requests = _load_unlock_requests()
     return [r for r in requests if r["status"] == "pending"]
 
 
-def get_executable_unlock_requests() -> list[dict[str, Any]]:
+def get_executable_unlock_requests() -> list[UnlockRequest]:
     """Get unlock requests that are ready to execute."""
     now = datetime.now()
     requests = _load_unlock_requests()
 
-    executable = []
+    executable: list[UnlockRequest] = []
     for req in requests:
         if req["status"] != "pending":
             continue
-        execute_at = datetime.fromisoformat(req["execute_at"])
-        if now >= execute_at:
-            executable.append(req)
+        try:
+            execute_at = datetime.fromisoformat(req["execute_at"])
+            if now >= execute_at:
+                executable.append(req)
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Invalid unlock request {req.get('id', 'unknown')}: {e}")
 
     return executable
 
@@ -445,64 +508,71 @@ def execute_unlock_request(request_id: str, config_path: Path) -> bool:
     Returns:
         True if successfully executed
     """
-    requests = _load_unlock_requests()
+    # Use file lock for atomic read-modify-write of unlock requests
+    with _unlock_requests_file_lock():
+        requests = _load_unlock_requests()
 
-    request = None
-    for req in requests:
-        if req["id"] == request_id and req["status"] == "pending":
-            request = req
-            break
-
-    if not request:
-        return False
-
-    # Check if delay has passed
-    execute_at = ensure_naive_datetime(datetime.fromisoformat(request["execute_at"]))
-    if datetime.now() < execute_at:
-        logger.warning(f"Request {request_id} not yet executable")
-        return False
-
-    # Load config and remove the locked item
-    try:
-        with open(config_path, encoding="utf-8") as f:
-            config = json.load(f)
-
-        item_type = request["item_type"]
-        item_id = request["item_id"]
-
-        if item_type == "category":
-            categories = config.get("nextdns", {}).get("categories", [])
-            config["nextdns"]["categories"] = [c for c in categories if c.get("id") != item_id]
-        elif item_type == "service":
-            services = config.get("nextdns", {}).get("services", [])
-            config["nextdns"]["services"] = [s for s in services if s.get("id") != item_id]
-        elif item_type == "auto_panic":
-            # Disable the cannot_disable flag to allow modifications
-            protection = config.get("protection", {})
-            auto_panic = protection.get("auto_panic", {})
-            if auto_panic:
-                auto_panic["cannot_disable"] = False
-                config["protection"]["auto_panic"] = auto_panic
-
-        # Write updated config
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
-
-        # Mark request as executed
-        for i, req in enumerate(requests):
-            if req["id"] == request_id:
-                requests[i]["status"] = "executed"
-                requests[i]["executed_at"] = datetime.now().isoformat()
+        request = None
+        for req in requests:
+            if req["id"] == request_id and req["status"] == "pending":
+                request = req
                 break
 
-        _save_unlock_requests(requests)
-        audit_log("UNLOCK_EXECUTE", f"{item_type}:{item_id}")
+        if not request:
+            return False
 
-        return True
+        # Check if delay has passed
+        try:
+            execute_at = ensure_naive_datetime(datetime.fromisoformat(request["execute_at"]))
+        except (ValueError, KeyError) as e:
+            logger.error(f"Invalid execute_at in request {request_id}: {e}")
+            return False
 
-    except (json.JSONDecodeError, OSError) as e:
-        logger.error(f"Failed to execute unlock request: {e}")
-        return False
+        if datetime.now() < execute_at:
+            logger.warning(f"Request {request_id} not yet executable")
+            return False
+
+        # Load config and remove the locked item
+        try:
+            with open(config_path, encoding="utf-8") as f:
+                config = json.load(f)
+
+            item_type = request["item_type"]
+            item_id = request["item_id"]
+
+            if item_type == "category":
+                categories = config.get("nextdns", {}).get("categories", [])
+                config["nextdns"]["categories"] = [c for c in categories if c.get("id") != item_id]
+            elif item_type == "service":
+                services = config.get("nextdns", {}).get("services", [])
+                config["nextdns"]["services"] = [s for s in services if s.get("id") != item_id]
+            elif item_type == "auto_panic":
+                # Disable the cannot_disable flag to allow modifications
+                protection = config.get("protection", {})
+                auto_panic = protection.get("auto_panic", {})
+                if auto_panic:
+                    auto_panic["cannot_disable"] = False
+                    config["protection"]["auto_panic"] = auto_panic
+
+            # Write updated config
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+
+            # Mark request as executed
+            for i, req in enumerate(requests):
+                if req["id"] == request_id:
+                    requests[i]["status"] = "executed"
+                    requests[i]["executed_at"] = datetime.now().isoformat()
+                    break
+
+            _save_unlock_requests(requests)
+            audit_log("UNLOCK_EXECUTE", f"{item_type}:{item_id}")
+
+            return True
+
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(f"Failed to execute unlock request: {e}")
+            return False
 
 
 # =============================================================================
@@ -841,7 +911,7 @@ def remove_pin(current_pin: str, force: bool = False) -> bool:
     return True
 
 
-def get_pin_removal_request() -> Optional[dict[str, Any]]:
+def get_pin_removal_request() -> Optional[UnlockRequest]:
     """Get pending PIN removal request if exists."""
     pending = get_pending_unlock_requests()
     for req in pending:
