@@ -163,14 +163,13 @@ nextdns-blocker/
 │       ├── init.py           # Interactive setup wizard
 │       ├── scheduler.py      # Schedule evaluation logic
 │       └── watchdog.py       # Cron protection
-├── tests/                    # Test suite (379 tests)
+├── tests/                    # Test suite
 │   ├── conftest.py           # Shared pytest fixtures
 │   ├── test_allowlist.py     # Allowlist feature tests
 │   ├── test_cli_commands.py  # CLI command tests
 │   ├── test_client.py        # API client tests
 │   ├── test_config_loading.py # Config loading tests
 │   ├── test_init.py          # Init wizard tests
-│   ├── test_pause_protected.py # Pause/protected domain tests
 │   ├── test_remote_domains.py # Remote domains tests
 │   ├── test_schedule.py      # Schedule logic tests
 │   ├── test_validation.py    # Input validation tests

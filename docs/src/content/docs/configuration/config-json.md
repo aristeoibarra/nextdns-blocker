@@ -517,5 +517,5 @@ notepad %APPDATA%\nextdns-blocker\config.json
 Changes take effect on next sync (within 2 minutes) or immediately:
 
 ```bash
-nextdns-blocker config sync
+nextdns-blocker config push
 ```

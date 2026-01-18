@@ -69,7 +69,7 @@ Shell completion works for:
 
 - **Commands**: `nextdns-blocker <TAB>` shows all available commands
 - **Subcommands**: `nextdns-blocker config <TAB>` shows config subcommands
-- **Options**: `nextdns-blocker config sync --<TAB>` shows available flags
+- **Options**: `nextdns-blocker config push --<TAB>` shows available flags
 - **Domains**: `nextdns-blocker unblock <TAB>` shows domains from your blocklist
 - **Allowlist**: `nextdns-blocker disallow <TAB>` shows domains from your allowlist
 
@@ -80,21 +80,21 @@ Shell completion works for:
 ```bash
 $ nextdns-blocker <TAB>
 allow           completion      fix             nextdns         pending         status          update
-category        config          health          panic           resume          sync            validate
-completion      disallow        init            pause           stats           test-notifications  watchdog
+category        config          health          panic           stats           test-notifications  watchdog
+disallow        init
 ```
 
 ### Subcommand Completion
 
 ```bash
 $ nextdns-blocker config <TAB>
-edit      set       show      sync      validate
+edit      set       show      push      validate
 ```
 
 ### Option Completion
 
 ```bash
-$ nextdns-blocker config sync --<TAB>
+$ nextdns-blocker config push --<TAB>
 --config-dir  --dry-run     --help        --verbose
 ```
 

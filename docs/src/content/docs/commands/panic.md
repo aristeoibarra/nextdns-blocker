@@ -257,7 +257,6 @@ Panic mode is based on behavioral psychology research:
 | Feature | Purpose | Can Disable |
 |---------|---------|-------------|
 | Panic mode | Crisis protection | No |
-| Pause | Quick break | Yes |
 | Schedule | Regular access | Via config |
 | Allowlist | Permanent exceptions | Yes |
 
@@ -284,7 +283,7 @@ nextdns-blocker panic status
 Force a sync:
 
 ```bash
-nextdns-blocker config sync
+nextdns-blocker config push
 ```
 
 Check watchdog is running:

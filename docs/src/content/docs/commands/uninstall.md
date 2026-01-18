@@ -132,7 +132,7 @@ nextdns-blocker config edit
 # Remove all entries from blocklist
 
 # Run sync to remove from NextDNS
-nextdns-blocker config sync
+nextdns-blocker config push
 
 # Then uninstall
 nextdns-blocker uninstall

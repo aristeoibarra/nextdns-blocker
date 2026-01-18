@@ -1,18 +1,18 @@
 ---
-title: sync
+title: push
 description: Synchronize domain states based on configured schedules
 ---
 
-:::caution[Command Moved]
-The root `sync` command has been removed. Use `nextdns-blocker config sync` instead.
+:::caution[Command Renamed]
+The `config sync` command has been renamed to `config push` in v7.1.0. The old command still works with a deprecation warning, but new scripts should use `config push`.
 :::
 
-The `config sync` command is the core of NextDNS Blocker. It evaluates each domain against its schedule and updates the NextDNS denylist accordingly.
+The `config push` command is the core of NextDNS Blocker. It evaluates each domain against its schedule and updates the NextDNS denylist accordingly.
 
 ## Usage
 
 ```bash
-nextdns-blocker config sync [OPTIONS]
+nextdns-blocker config push [OPTIONS]
 ```
 
 ## Options
@@ -28,7 +28,7 @@ nextdns-blocker config sync [OPTIONS]
 ### Basic Sync
 
 ```bash
-nextdns-blocker config sync
+nextdns-blocker config push
 ```
 
 Output:
@@ -44,7 +44,7 @@ Sync complete: 1 blocked, 1 unblocked
 Preview what would happen without making changes:
 
 ```bash
-nextdns-blocker config sync --dry-run
+nextdns-blocker config push --dry-run
 ```
 
 Output:
@@ -66,7 +66,7 @@ Summary: 1 would block, 0 would unblock
 Get detailed information about each step:
 
 ```bash
-nextdns-blocker config sync --verbose
+nextdns-blocker config push --verbose
 ```
 
 Output:
@@ -159,7 +159,7 @@ Syncs allowlist entries:
 
 ## Automatic Sync
 
-The watchdog runs `config sync` automatically every 2 minutes:
+The watchdog runs `config push` automatically every 2 minutes:
 
 ```bash
 # Install watchdog
@@ -216,7 +216,7 @@ Built-in rate limiting prevents API abuse:
 
 1. Check dry-run output:
    ```bash
-   nextdns-blocker config sync --dry-run -v
+   nextdns-blocker config push --dry-run -v
    ```
 
 2. Verify timezone:
@@ -246,7 +246,7 @@ Built-in rate limiting prevents API abuse:
 
 2. Check schedule - is it within available hours?
 
-3. Check for pending pause:
+3. Check current status:
    ```bash
    nextdns-blocker status
    ```

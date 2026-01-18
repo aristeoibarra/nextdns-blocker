@@ -10,7 +10,7 @@ Panic mode is an emergency feature that immediately blocks all domains and preve
 Panic mode is designed for crisis moments when you need absolute protection:
 
 - **All domains blocked** regardless of schedule
-- **Dangerous commands hidden** (`unblock`, `pause`, `allow`)
+- **Dangerous commands hidden** (`unblock`, `allow`)
 - **Cannot be disabled** until timer expires
 - **Minimum 15 minutes** to prevent abuse
 
@@ -60,8 +60,6 @@ Expires at: 2024-01-15 15:30:00
 All domains are now blocked.
 The following commands are disabled:
   - unblock
-  - pause
-  - resume
   - allow
   - disallow
 
@@ -85,8 +83,6 @@ These commands become invisible:
 | Command | Why Hidden |
 |---------|------------|
 | `unblock` | Would bypass panic |
-| `pause` | Would pause blocking |
-| `resume` | Not relevant |
 | `allow` | Would create exceptions |
 | `disallow` | Consistency |
 
@@ -100,7 +96,7 @@ nextdns-blocker unblock reddit.com
 ### What Still Works
 
 - `status` - Check current state
-- `config sync` - Runs but only blocks
+- `config push` - Runs but only blocks
 - `config show` - View configuration
 - `watchdog status` - Check automation
 - `panic extend` - Add more time
@@ -123,7 +119,7 @@ Activated: 2024-01-15 14:30:00
 Expires: 2024-01-15 15:30:00
 Remaining: 45 minutes
 
-Hidden commands: unblock, pause, resume, allow, disallow
+Hidden commands: unblock, allow, disallow
 ```
 
 ## Extending Duration
@@ -192,7 +188,6 @@ Contains ISO 8601 expiration timestamp.
 
 15 minutes minimum prevents:
 - Accidental very short panics
-- Using panic as quick pause
 - Abuse of the feature
 
 ## Troubleshooting
@@ -201,7 +196,7 @@ Contains ISO 8601 expiration timestamp.
 
 1. Force sync:
    ```bash
-   nextdns-blocker config sync
+   nextdns-blocker config push
    ```
 
 2. Check watchdog:

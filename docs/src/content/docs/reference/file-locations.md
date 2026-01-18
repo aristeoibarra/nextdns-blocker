@@ -55,7 +55,6 @@ echo $env:APPDATA\nextdns-blocker\
 
 | File | Purpose | Description |
 |------|---------|-------------|
-| `.paused` | Pause state | ISO timestamp when pause expires |
 | `.panic` | Panic state | ISO timestamp when panic expires |
 | `.pin_hash` | PIN protection | Salted hash of PIN (if enabled) |
 | `.pin_session` | PIN session | Session expiration timestamp |
@@ -162,7 +161,7 @@ API_TIMEOUT=10
 }
 ```
 
-### .paused / .panic
+### .panic
 
 Plain text ISO 8601 timestamp:
 ```
@@ -244,7 +243,6 @@ Remove-Item -Recurse "$env:LOCALAPPDATA\nextdns-blocker"
 
 ```bash
 # macOS/Linux
-rm ~/.local/share/nextdns-blocker/.paused
 rm ~/.local/share/nextdns-blocker/.panic
 echo '{"actions":[]}' > ~/.local/share/nextdns-blocker/pending.json
 ```

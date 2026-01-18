@@ -60,10 +60,8 @@ nextdns-blocker <command> --help
 
 | Command | Description |
 |---------|-------------|
-| `config sync` | Synchronize domain states |
+| `config push` | Synchronize domain states |
 | `status` | Show current status |
-| `pause [MIN]` | Pause blocking |
-| `resume` | Resume blocking |
 | `unblock DOMAIN` | Request unblock |
 | `allow DOMAIN` | Add to allowlist |
 | `disallow DOMAIN` | Remove from allowlist |

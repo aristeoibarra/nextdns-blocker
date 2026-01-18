@@ -162,7 +162,7 @@ Use `health` as part of a diagnostic workflow:
 nextdns-blocker health
 
 # If healthy, run sync
-nextdns-blocker config sync
+nextdns-blocker config push
 
 # If degraded, run fix
 nextdns-blocker fix
@@ -176,7 +176,7 @@ Use in scripts to verify system before operations:
 #!/bin/bash
 if nextdns-blocker health > /dev/null 2>&1; then
     echo "System healthy, proceeding..."
-    nextdns-blocker config sync
+    nextdns-blocker config push
 else
     echo "System degraded, please check configuration"
     exit 1

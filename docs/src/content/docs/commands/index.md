@@ -31,7 +31,7 @@ nextdns-blocker [OPTIONS] COMMAND [ARGS]
 
 | Command | Description |
 |---------|-------------|
-| [`config sync`](/commands/sync/) | Synchronize domain states based on schedules |
+| [`config push`](/commands/sync/) | Synchronize domain states based on schedules |
 | [`status`](/commands/status/) | Show current blocking status |
 | [`unblock`](/commands/unblock/) | Request manual domain unblock |
 | [`update`](/commands/update/) | Check for and install updates |
@@ -58,7 +58,7 @@ Manage configuration files.
 | [`config edit`](/commands/config/) | Open config in editor |
 | [`config validate`](/commands/config/) | Validate configuration syntax |
 | [`config set`](/commands/config/) | Set configuration values |
-| [`config sync`](/commands/config/) | Synchronize domain states based on schedules |
+| [`config push`](/commands/config/) | Synchronize domain states based on schedules |
 | [`config diff`](/commands/config/) | Show differences between local and remote |
 | [`config pull`](/commands/config/) | Fetch domains from NextDNS to local config |
 
@@ -212,7 +212,7 @@ nextdns-blocker panic 60
 nextdns-blocker config edit
 
 # Force sync now
-nextdns-blocker config sync
+nextdns-blocker config push
 
 # Check watchdog
 nextdns-blocker watchdog status
@@ -225,10 +225,10 @@ nextdns-blocker watchdog status
 nextdns-blocker config validate
 
 # Preview changes
-nextdns-blocker config sync --dry-run
+nextdns-blocker config push --dry-run
 
 # Verbose output
-nextdns-blocker config sync -v
+nextdns-blocker config push -v
 
 # Run health checks
 nextdns-blocker health

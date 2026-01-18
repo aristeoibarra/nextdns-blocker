@@ -320,10 +320,10 @@ After editing blocklist:
 
 1. Save `config.json`
 2. Wait for auto-sync (within 2 minutes)
-3. Or force sync: `nextdns-blocker config sync`
+3. Or force sync: `nextdns-blocker config push`
 
 Use dry run to preview:
 
 ```bash
-nextdns-blocker config sync --dry-run
+nextdns-blocker config push --dry-run
 ```

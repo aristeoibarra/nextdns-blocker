@@ -20,7 +20,7 @@ nextdns-blocker config validate
 nextdns-blocker watchdog status
 
 # Preview sync behavior
-nextdns-blocker config sync --dry-run --verbose
+nextdns-blocker config push --dry-run --verbose
 ```
 
 ## Common Issues
@@ -35,7 +35,7 @@ nextdns-blocker config sync --dry-run --verbose
 nextdns-blocker status | grep domain.com
 
 # Check schedule evaluation
-nextdns-blocker config sync --dry-run -v | grep -A10 domain.com
+nextdns-blocker config push --dry-run -v | grep -A10 domain.com
 ```
 
 **Common causes and fixes**:
@@ -44,19 +44,13 @@ nextdns-blocker config sync --dry-run -v | grep -A10 domain.com
    - Check current time vs schedule
    - Verify timezone is correct
 
-2. **Pause is active**
-   ```bash
-   nextdns-blocker status | grep Pause
-   nextdns-blocker resume
-   ```
-
-3. **Domain in allowlist**
+2. **Domain in allowlist**
    ```bash
    nextdns-blocker config show | grep -A2 allowlist
    nextdns-blocker disallow domain.com
    ```
 
-4. **DNS cache**
+3. **DNS cache**
    ```bash
    # macOS
    sudo dscacheutil -flushcache
@@ -78,7 +72,7 @@ nextdns-blocker config sync --dry-run -v | grep -A10 domain.com
 
 **Diagnosis**:
 ```bash
-nextdns-blocker config sync --dry-run -v | grep -A10 domain.com
+nextdns-blocker config push --dry-run -v | grep -A10 domain.com
 ```
 
 **Common causes**:
@@ -101,7 +95,7 @@ nextdns-blocker config sync --dry-run -v | grep -A10 domain.com
 
 4. **Sync not running**
    ```bash
-   nextdns-blocker config sync --verbose
+   nextdns-blocker config push --verbose
    ```
 
 ### Watchdog Not Working
@@ -160,7 +154,7 @@ nextdns-blocker watchdog install
 
 **Diagnosis**:
 ```bash
-nextdns-blocker config sync --verbose
+nextdns-blocker config push --verbose
 ```
 
 **Fixes**:
@@ -243,7 +237,7 @@ nextdns-blocker pending show <ID>
 
 4. **Force processing**
    ```bash
-   nextdns-blocker config sync --verbose
+   nextdns-blocker config push --verbose
    ```
 
 ### Wrong Timezone
@@ -298,16 +292,10 @@ tail -f ~/.local/share/nextdns-blocker/logs/app.log
 
 | File | Purpose | Location |
 |------|---------|----------|
-| `.paused` | Pause state | `~/.local/share/nextdns-blocker/` |
 | `.panic` | Panic state | `~/.local/share/nextdns-blocker/` |
 | `pending.json` | Pending actions | `~/.local/share/nextdns-blocker/` |
 
 ### Resetting State
-
-**Clear pause**:
-```bash
-rm ~/.local/share/nextdns-blocker/.paused
-```
 
 **Clear panic** (emergency only):
 ```bash

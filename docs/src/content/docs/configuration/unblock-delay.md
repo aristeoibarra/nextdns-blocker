@@ -308,9 +308,9 @@ Some situations may need immediate access:
 - Schedule misconfiguration
 
 Options:
-1. Use `pause` (affects all domains)
-2. Edit config to temporarily reduce delay
-3. Wait for delay (as designed)
+1. Edit config to temporarily reduce delay
+2. Wait for delay (as designed)
+3. Add domain to allowlist temporarily
 
 ### Preventing Abuse
 
@@ -335,14 +335,14 @@ To make bypass harder:
 
 3. Force sync:
    ```bash
-   nextdns-blocker config sync
+   nextdns-blocker config push
    ```
 
 ### Changed my mind but can't cancel
 
 If action already executed:
 - Re-block via schedule (wait for next sync)
-- Or use `nextdns-blocker config sync` to re-apply rules
+- Or use `nextdns-blocker config push` to re-apply rules
 
 ### Need to change delay for domain
 

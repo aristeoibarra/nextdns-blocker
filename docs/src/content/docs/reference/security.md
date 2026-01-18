@@ -34,7 +34,7 @@ Credentials can be provided via environment for CI/CD:
 ```bash
 export NEXTDNS_API_KEY=your_key
 export NEXTDNS_PROFILE_ID=your_id
-nextdns-blocker config sync
+nextdns-blocker config push
 ```
 
 ## File Permissions
@@ -168,7 +168,6 @@ NextDNS Blocker includes optional PIN protection for sensitive commands, adding 
 
 When PIN is enabled, these commands require verification:
 - `unblock` - Remove domain from denylist
-- `pause` - Pause all blocking
 - `allow` - Add domain to allowlist
 - `config edit` - Edit configuration
 - `config pull` - Pull remote config
@@ -231,7 +230,6 @@ Panic mode intentionally cannot be disabled early:
 
 During panic:
 - `unblock` is hidden
-- `pause` is hidden
 - `allow` is hidden
 - Commands cannot be run directly
 

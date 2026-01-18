@@ -59,14 +59,14 @@ Fish loads completions automatically.
 
 ```bash
 nextdns-blocker <TAB>
-# Shows: sync, status, pause, resume, unblock, config, watchdog, panic, pending, allow, disallow, update, completion
+# Shows: status, unblock, config, watchdog, panic, pending, allow, disallow, update, completion
 ```
 
 ### Subcommands
 
 ```bash
 nextdns-blocker config <TAB>
-# Shows: show, edit, validate, set, sync
+# Shows: show, edit, validate, set, push
 
 nextdns-blocker watchdog <TAB>
 # Shows: status, install, uninstall, enable, disable
@@ -78,7 +78,7 @@ nextdns-blocker pending <TAB>
 ### Options
 
 ```bash
-nextdns-blocker config sync --<TAB>
+nextdns-blocker config push --<TAB>
 # Shows: --dry-run, --verbose, --help
 
 nextdns-blocker --<TAB>

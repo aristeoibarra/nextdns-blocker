@@ -63,7 +63,7 @@ To prevent impulsive unblocking, you can configure delays:
 
 Emergency lockdown that:
 - Immediately blocks all configured domains
-- Hides dangerous commands (`unblock`, `pause`, `allow`)
+- Hides dangerous commands (`unblock`, `allow`)
 - Cannot be disabled until the timer expires
 
 ## Requirements

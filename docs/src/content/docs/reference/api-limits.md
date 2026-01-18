@@ -209,7 +209,7 @@ If NextDNS returns 429:
 ### Verbose Mode
 
 ```bash
-nextdns-blocker config sync --verbose
+nextdns-blocker config push --verbose
 ```
 
 Shows:
@@ -249,7 +249,7 @@ grep "API call" ~/.local/share/nextdns-blocker/logs/app.log | \
 
 2. **Test with dry run**:
    ```bash
-   nextdns-blocker config sync --dry-run
+   nextdns-blocker config push --dry-run
    ```
 
 3. **Check credentials**:

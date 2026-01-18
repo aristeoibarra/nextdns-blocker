@@ -289,15 +289,16 @@ If your guild/clan has scheduled events:
 For unplanned sessions with friends:
 
 ```bash
-# Quick 30-min pause
-nextdns-blocker pause 30
-```
-
-Or use the unblock delay:
-```bash
 # If Discord is blocked, start the delay
 nextdns-blocker unblock discord.com
-# Wait 30 min, then coordinate
+# Wait for delay to complete, then coordinate
+```
+
+Or add to allowlist temporarily:
+```bash
+nextdns-blocker allow discord.com
+# After session:
+nextdns-blocker disallow discord.com
 ```
 
 ## New Game Releases
@@ -366,9 +367,7 @@ More relaxed:
 
 ```bash
 nextdns-blocker config edit
-# Increase hours
-# Or use pause for specific days
-nextdns-blocker pause 480  # 8 hours
+# Increase available hours temporarily
 ```
 
 ### Permanent Changes
@@ -420,11 +419,11 @@ nextdns-blocker config edit
 
 Quick options:
 ```bash
-# Short session
-nextdns-blocker pause 90  # 1.5 hours
+# If discord blocked, start the delay timer
+nextdns-blocker unblock discord.com
 
-# If discord blocked
-nextdns-blocker unblock discord.com  # Start delay timer
+# Or add to allowlist temporarily
+nextdns-blocker allow discord.com
 ```
 
 ### "4h delay is too long"

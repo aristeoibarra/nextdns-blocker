@@ -351,7 +351,7 @@ Shows when each domain will transition.
 ### Dry Run at Specific Time
 
 ```bash
-nextdns-blocker config sync --dry-run --verbose
+nextdns-blocker config push --dry-run --verbose
 ```
 
 Shows detailed schedule evaluation.

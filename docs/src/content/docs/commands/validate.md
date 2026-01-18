@@ -210,7 +210,7 @@ Always validate before deploying configuration changes:
 nextdns-blocker config edit
 
 # Validate before sync
-nextdns-blocker config validate && nextdns-blocker config sync
+nextdns-blocker config validate && nextdns-blocker config push
 ```
 
 ### Automated Testing

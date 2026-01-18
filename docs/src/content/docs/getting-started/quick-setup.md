@@ -150,7 +150,7 @@ nextdns-blocker watchdog status
 Run a manual sync to verify everything works:
 
 ```bash
-nextdns-blocker config sync --verbose
+nextdns-blocker config push --verbose
 ```
 
 You should see output like:

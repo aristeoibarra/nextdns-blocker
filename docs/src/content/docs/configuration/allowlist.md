@@ -300,7 +300,7 @@ This is valid (with a warning):
 
 1. **Force sync:**
    ```bash
-   nextdns-blocker config sync
+   nextdns-blocker config push
    ```
 
 2. **Clear DNS cache:**

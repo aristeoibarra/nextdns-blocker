@@ -131,7 +131,7 @@ NextDNS Blocker can periodically check for updates in the background. This is no
 During normal commands, you might see:
 
 ```
-nextdns-blocker config sync
+nextdns-blocker config push
 
 Syncing domains...
   reddit.com: BLOCKED
@@ -216,7 +216,7 @@ nextdns-blocker --version
 
 # Test functionality
 nextdns-blocker status
-nextdns-blocker config sync --dry-run
+nextdns-blocker config push --dry-run
 ```
 
 ## Rolling Back

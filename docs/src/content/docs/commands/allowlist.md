@@ -545,7 +545,7 @@ This is valid and will show a warning during config load.
 
 3. Force sync:
    ```bash
-   nextdns-blocker config sync
+   nextdns-blocker config push
    ```
 
 ### allow command hidden
@@ -563,7 +563,7 @@ Wait for panic to expire.
 Check for API errors:
 
 ```bash
-nextdns-blocker config sync --verbose
+nextdns-blocker config push --verbose
 ```
 
 Verify credentials:

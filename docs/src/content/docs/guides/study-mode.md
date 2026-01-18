@@ -281,14 +281,14 @@ For Pomodoro-style studying:
 
 ### Quick Break Access
 
-During short breaks, use pause:
+During short breaks, you can temporarily allow a specific site:
 
 ```bash
-# 5-minute break
-nextdns-blocker pause 5
+# Allow site temporarily
+nextdns-blocker allow reddit.com
+# After your break, remove it:
+nextdns-blocker disallow reddit.com
 ```
-
-Sites unblock for 5 minutes, then auto-resume blocking.
 
 ## Subject-Specific Adjustments
 
@@ -382,12 +382,7 @@ Options:
 
 1. **Wait for scheduled time** (builds discipline)
 
-2. **Use pause sparingly**:
-   ```bash
-   nextdns-blocker pause 30
-   ```
-
-3. **Add to allowlist temporarily**:
+2. **Add to allowlist temporarily**:
    ```bash
    nextdns-blocker allow specific-site.com
    # After done:

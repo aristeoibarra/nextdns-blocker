@@ -31,7 +31,6 @@ Allowlist (2 domains):
 System:
   Watchdog: Active (next sync in 1m 23s)
   Panic Mode: Inactive
-  Pause: Inactive
   Pending Actions: 1
 
 Pending:
@@ -78,13 +77,6 @@ For available domains, shows when blocking resumes:
 |--------|---------|
 | Inactive | Normal operation |
 | Active (Xm remaining) | Emergency lockdown active |
-
-### Pause
-
-| Status | Meaning |
-|--------|---------|
-| Inactive | Normal operation |
-| Active (Xm remaining) | Blocking temporarily paused |
 
 ## Pending Actions
 
@@ -138,24 +130,7 @@ Blocklist (3 domains):
   ✗ twitter.com       BLOCKED    (panic mode)
   ✗ youtube.com       BLOCKED    (panic mode)
 
-Commands disabled: unblock, pause, resume, allow, disallow
-```
-
-### During Pause
-
-```
-NextDNS Blocker Status
-━━━━━━━━━━━━━━━━━━━━━━
-
-⏸️  BLOCKING PAUSED
-
-Time: 2024-01-15 14:30:00 America/New_York
-Pause expires: 2024-01-15 15:00:00 (30 minutes remaining)
-
-Blocklist (3 domains):
-  ⏸ reddit.com        PAUSED     (would be blocked)
-  ⏸ twitter.com       PAUSED     (would be blocked)
-  ✓ youtube.com       AVAILABLE  (within schedule)
+Commands disabled: unblock, allow, disallow
 ```
 
 ## Troubleshooting
@@ -165,7 +140,7 @@ Blocklist (3 domains):
 Force a fresh sync:
 
 ```bash
-nextdns-blocker config sync
+nextdns-blocker config push
 nextdns-blocker status
 ```
 
@@ -183,7 +158,7 @@ nextdns-blocker watchdog install
 There might be a sync delay. Run:
 
 ```bash
-nextdns-blocker config sync --verbose
+nextdns-blocker config push --verbose
 ```
 
 Check for API errors in the output.
