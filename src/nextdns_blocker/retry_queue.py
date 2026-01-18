@@ -393,7 +393,9 @@ def process_queue(
 
         except Exception as e:
             # Unexpected error, update for retry
-            logger.error(f"Unexpected error retrying {item.action} {item.domain}: {e}")
+            logger.error(
+                f"Unexpected error retrying {item.action} {item.domain}: {e}", exc_info=True
+            )
             item.update_for_retry()
             item.error_msg = str(e)
             update_item(item)

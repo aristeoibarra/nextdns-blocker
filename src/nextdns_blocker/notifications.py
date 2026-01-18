@@ -257,7 +257,7 @@ class TelegramAdapter(NotificationAdapter):
             logger.debug(f"Telegram notification sent with {len(batch.events)} events")
             return True
         except Exception as e:
-            logger.warning(f"Telegram notification failed: {e}")
+            logger.warning(f"Telegram notification failed: {e}", exc_info=True)
             return False
 
     def format_batch(self, batch: BatchedNotification) -> str:
@@ -306,7 +306,7 @@ class SlackAdapter(NotificationAdapter):
             logger.debug(f"Slack notification sent with {len(batch.events)} events")
             return True
         except Exception as e:
-            logger.warning(f"Slack notification failed: {e}")
+            logger.warning(f"Slack notification failed: {e}", exc_info=True)
             return False
 
     def format_batch(self, batch: BatchedNotification) -> dict[str, Any]:
@@ -367,7 +367,7 @@ class NtfyAdapter(NotificationAdapter):
             logger.debug(f"Ntfy notification sent with {len(batch.events)} events")
             return True
         except Exception as e:
-            logger.warning(f"Ntfy notification failed: {e}")
+            logger.warning(f"Ntfy notification failed: {e}", exc_info=True)
             return False
 
     def format_batch(self, batch: BatchedNotification) -> str:

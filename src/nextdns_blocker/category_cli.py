@@ -70,8 +70,8 @@ def _save_config_file(config_path: Path, config: dict[str, Any]) -> None:
         with contextlib.suppress(OSError):
             temp_path_obj.unlink()
         raise
-    except BaseException:
-        # Also clean up on unexpected exceptions (e.g., KeyboardInterrupt)
+    except KeyboardInterrupt:
+        # Clean up temp file on user interrupt
         with contextlib.suppress(OSError):
             temp_path_obj.unlink()
         raise

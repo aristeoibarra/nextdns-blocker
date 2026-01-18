@@ -97,7 +97,8 @@ def get_locked_ids(config: dict[str, Any], item_type: str) -> set[str]:
         for cat in config.get("categories", []):
             if is_locked(cat):
                 for domain in cat.get("domains", []):
-                    locked.add(domain)
+                    if isinstance(domain, str):
+                        locked.add(domain)
 
     return locked
 
