@@ -6,7 +6,7 @@ FROM python:3.14-alpine
 # Labels
 LABEL maintainer="aristeoibarra"
 LABEL description="NextDNS Domain Blocker with scheduling support"
-LABEL version="7.1.0"
+LABEL version="7.1.1"
 
 # Set working directory
 WORKDIR /app
