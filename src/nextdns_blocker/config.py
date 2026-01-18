@@ -248,7 +248,6 @@ def parse_unblock_delay_seconds(delay: str) -> Optional[int]:
 DEFAULT_TIMEOUT = 10
 DEFAULT_RETRIES = 3
 DEFAULT_TIMEZONE = "UTC"
-DEFAULT_PAUSE_MINUTES = 30
 
 logger = logging.getLogger(__name__)
 

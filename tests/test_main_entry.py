@@ -73,8 +73,6 @@ def test_all_subcommands_available():
         "init",
         "config",  # sync and validate are now under config
         "status",
-        "pause",
-        "resume",
         "unblock",
         "allow",
         "disallow",

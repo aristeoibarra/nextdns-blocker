@@ -586,12 +586,8 @@ class TestSyncWithAllowlist:
             '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
         )
 
-        pause_file = tmp_path / ".paused"
-        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
-            with patch("nextdns_blocker.cli.audit_log"):
-                result = runner.invoke(
-                    main, ["config", "sync", "-v", "--config-dir", str(tmp_path)]
-                )
+        with patch("nextdns_blocker.cli.audit_log"):
+            result = runner.invoke(main, ["config", "sync", "-v", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
 
@@ -618,11 +614,7 @@ class TestSyncWithAllowlist:
             '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
         )
 
-        pause_file = tmp_path / ".paused"
-        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
-            result = runner.invoke(
-                main, ["config", "sync", "--dry-run", "--config-dir", str(tmp_path)]
-            )
+        result = runner.invoke(main, ["config", "sync", "--dry-run", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "DRY RUN" in result.output
@@ -659,9 +651,7 @@ class TestStatusWithAllowlist:
             '{"blocklist": [{"domain": "test.com", "schedule": null}], "allowlist": [{"domain": "aws.amazon.com"}]}'
         )
 
-        pause_file = tmp_path / ".paused"
-        with patch("nextdns_blocker.cli.get_pause_file", return_value=pause_file):
-            result = runner.invoke(main, ["status", "--config-dir", str(tmp_path)])
+        result = runner.invoke(main, ["status", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         # New UX shows allowlist summary, not individual domains

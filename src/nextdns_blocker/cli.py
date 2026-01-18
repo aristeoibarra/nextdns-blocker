@@ -4,7 +4,6 @@ import logging
 import re
 import subprocess
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -17,11 +16,8 @@ from .client import NextDNSClient
 from .common import (
     audit_log,
     ensure_log_dir,
-    ensure_naive_datetime,
     get_log_dir,
-    read_secure_file,
     validate_domain,
-    write_secure_file,
 )
 from .completion import (
     complete_allowlist_domains,
@@ -32,7 +28,6 @@ from .completion import (
     is_completion_installed,
 )
 from .config import (
-    DEFAULT_PAUSE_MINUTES,
     _expand_categories,
     get_config_dir,
     load_config,
@@ -73,11 +68,6 @@ from .watchdog import (
 def get_app_log_file() -> Path:
     """Get the app log file path."""
     return get_log_dir() / "app.log"
-
-
-def get_pause_file() -> Path:
-    """Get the pause state file path."""
-    return get_log_dir() / ".paused"
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -200,82 +190,6 @@ PYPI_PACKAGE_URL = "https://pypi.org/pypi/nextdns-blocker/json"
 
 
 # =============================================================================
-# PAUSE MANAGEMENT
-# =============================================================================
-
-
-def _get_pause_info() -> tuple[bool, Optional[datetime]]:
-    """
-    Get pause state information.
-
-    Returns:
-        Tuple of (is_paused, pause_until_datetime).
-        If not paused or error, returns (False, None).
-
-    Note:
-        Uses missing_ok=True for unlink to handle race conditions where
-        another process may have already cleaned up the file.
-    """
-    pause_file = get_pause_file()
-    content = read_secure_file(pause_file)
-    if not content:
-        return False, None
-
-    try:
-        pause_until = ensure_naive_datetime(datetime.fromisoformat(content))
-        if datetime.now() < pause_until:
-            return True, pause_until
-        # Expired, clean up
-        pause_file.unlink(missing_ok=True)
-        return False, None
-    except ValueError:
-        # Invalid content, clean up
-        logger.warning(f"Invalid pause file content, removing: {content[:50]}")
-        pause_file.unlink(missing_ok=True)
-        return False, None
-
-
-def is_paused() -> bool:
-    """Check if blocking is currently paused."""
-    paused, _ = _get_pause_info()
-    return paused
-
-
-def get_pause_remaining() -> Optional[str]:
-    """
-    Get remaining pause time as human-readable string.
-
-    Returns:
-        Human-readable remaining time, or None if not paused.
-    """
-    paused, pause_until = _get_pause_info()
-    if not paused or pause_until is None:
-        return None
-
-    remaining = pause_until - datetime.now()
-    mins = int(remaining.total_seconds() // 60)
-    return f"{mins} min" if mins > 0 else "< 1 min"
-
-
-def set_pause(minutes: int) -> datetime:
-    """Set pause for specified minutes. Returns the pause end time."""
-    pause_until = datetime.now().replace(microsecond=0) + timedelta(minutes=minutes)
-    write_secure_file(get_pause_file(), pause_until.isoformat())
-    audit_log("PAUSE", f"{minutes} minutes until {pause_until.isoformat()}")
-    return pause_until
-
-
-def clear_pause() -> bool:
-    """Clear pause state. Returns True if was paused."""
-    pause_file = get_pause_file()
-    if pause_file.exists():
-        pause_file.unlink(missing_ok=True)
-        audit_log("RESUME", "Manual resume")
-        return True
-    return False
-
-
-# =============================================================================
 # CLICK CLI
 # =============================================================================
 
@@ -352,27 +266,6 @@ def init(config_dir: Optional[Path], non_interactive: bool) -> None:
 
     if not success:
         sys.exit(1)
-
-
-@main.command()
-@click.argument("minutes", default=DEFAULT_PAUSE_MINUTES, type=click.IntRange(min=1))
-def pause(minutes: int) -> None:
-    """Pause blocking for MINUTES (default: 30)."""
-    require_pin_verification("pause")
-
-    set_pause(minutes)
-    pause_until = datetime.now() + timedelta(minutes=minutes)
-    console.print(f"\n  [yellow]Blocking paused for {minutes} minutes[/yellow]")
-    console.print(f"  Resumes at: [bold]{pause_until.strftime('%H:%M')}[/bold]\n")
-
-
-@main.command()
-def resume() -> None:
-    """Resume blocking immediately."""
-    if clear_pause():
-        console.print("\n  [green]Blocking resumed[/green]\n")
-    else:
-        console.print("\n  [yellow]Not currently paused[/yellow]\n")
 
 
 @main.command()
@@ -936,12 +829,6 @@ def sync_impl(
     """
     setup_logging(verbose)
 
-    # Check pause state
-    if is_paused():
-        remaining = get_pause_remaining()
-        click.echo(f"  Paused ({remaining} remaining), skipping sync")
-        return
-
     # Check panic mode - blocks continue, unblocks and allowlist changes skipped
     from .panic import is_panic_mode
 
@@ -1196,11 +1083,6 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
             console.print("  Scheduler  [green]running[/green]")
         else:
             console.print("  Scheduler  [red]NOT RUNNING[/red]")
-
-        # Pause state (only show if active)
-        if is_paused():
-            remaining = get_pause_remaining()
-            console.print(f"  Pause      [yellow]ACTIVE ({remaining})[/yellow]")
 
         # Check for updates (unless disabled)
         if not no_update_check:
