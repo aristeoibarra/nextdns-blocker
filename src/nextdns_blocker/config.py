@@ -287,12 +287,17 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
         # Security: Ensure the path is within user's home directory or standard config locations
         import tempfile
 
-        home = Path.home().resolve()
-        allowed_roots = [
-            home,
+        allowed_roots: list[Path] = [
             Path("/tmp").resolve(),  # Allow temp directories for testing  # nosec B108
             Path(tempfile.gettempdir()).resolve(),  # System temp dir (e.g., /var/folders on macOS)
         ]
+
+        # Add home directory if available (may fail in some CI environments)
+        try:
+            home = Path.home().resolve()
+            allowed_roots.insert(0, home)
+        except (OSError, RuntimeError):
+            pass  # Home directory not available, continue with temp dirs only
 
         # Check if resolved path is within allowed directories
         is_allowed = any(resolved == root or root in resolved.parents for root in allowed_roots)
@@ -549,9 +554,7 @@ def validate_schedule_or_reference(
             available = (
                 ", ".join(sorted(valid_schedule_names)) if valid_schedule_names else "(none)"
             )
-            return [
-                f"{prefix}: unknown schedule '{schedule}'. " f"Available schedules: {available}"
-            ]
+            return [f"{prefix}: unknown schedule '{schedule}'. Available schedules: {available}"]
         return []
 
     if isinstance(schedule, dict):
@@ -1438,7 +1441,7 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
 
     if not config_file.exists():
         raise ConfigurationError(
-            f"Config file not found: {config_file}\n" "Run 'nextdns-blocker init' to create one."
+            f"Config file not found: {config_file}\nRun 'nextdns-blocker init' to create one."
         )
 
     try:
