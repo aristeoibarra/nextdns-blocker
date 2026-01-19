@@ -802,16 +802,14 @@ class TestNextDNSCLIList:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
         config_file = tmp_path / "config.json"
-        config_file.write_text(
-            """{
+        config_file.write_text("""{
             "blocklist": [],
             "nextdns": {
                 "parental_control": {"safe_search": true},
                 "categories": [{"id": "gambling", "description": "Betting sites"}],
                 "services": [{"id": "tiktok", "description": "Short videos"}]
             }
-        }"""
-        )
+        }""")
 
         result = cli_runner.invoke(nextdns_cli, ["list", "--config-dir", str(tmp_path)])
         assert result.exit_code == 0
