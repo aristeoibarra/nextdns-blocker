@@ -6,17 +6,14 @@ import logging
 import sys
 from io import StringIO
 from pathlib import Path
-from typing import Any, NoReturn, Optional
+from typing import Any, Optional
 
 import click
-import requests
 from rich.console import Console
 from rich.table import Table
 
-from .cli_formatter import CLIOutput as out
-from .client import NextDNSClient
+from .cli_helpers import command_context, handle_error
 from .common import audit_log, validate_domain
-from .config import load_config
 from .notifications import EventType, send_notification
 
 logger = logging.getLogger(__name__)
@@ -24,64 +21,9 @@ logger = logging.getLogger(__name__)
 console = Console(highlight=False)  # Keep for tables
 
 
-def _handle_api_error(e: Exception) -> NoReturn:
-    """Handle API-related errors with specific messages."""
-    if isinstance(e, requests.exceptions.Timeout):
-        out.error("API timeout - please try again")
-    elif isinstance(e, requests.exceptions.ConnectionError):
-        out.error("Connection failed - check your network")
-    elif isinstance(e, requests.exceptions.HTTPError):
-        out.error(f"API error - {e}")
-    elif isinstance(e, PermissionError):
-        out.error("Permission denied accessing config")
-    elif isinstance(e, FileNotFoundError):
-        out.error(f"File not found - {e.filename}")
-    elif isinstance(e, json.JSONDecodeError):
-        out.error(f"Invalid JSON format - {e.msg}")
-    elif isinstance(e, ValueError):
-        out.error(f"Invalid value - {e}")
-    else:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        out.error(str(e))
-    sys.exit(1)
-
-
-def _handle_file_error(e: Exception) -> NoReturn:
-    """Handle file-related errors with specific messages."""
-    if isinstance(e, PermissionError):
-        out.error(f"Permission denied - {e.filename}")
-    elif isinstance(e, FileNotFoundError):
-        out.error(f"File not found - {e.filename}")
-    elif isinstance(e, json.JSONDecodeError):
-        out.error(f"Invalid file format (JSON error: {e.msg})")
-    elif isinstance(e, csv.Error):
-        out.error(f"Invalid CSV format - {e}")
-    elif isinstance(e, UnicodeDecodeError):
-        out.error("File encoding issue - use UTF-8")
-    else:
-        logger.error(f"Unexpected file error: {e}", exc_info=True)
-        out.error(str(e))
-    sys.exit(1)
-
-
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
-
-
-def _get_client(config_dir: Optional[Path] = None) -> NextDNSClient:
-    """Create a NextDNS client from config."""
-    config = load_config(config_dir)
-    return NextDNSClient(config["api_key"], config["profile_id"])
-
-
-def _get_client_and_config(
-    config_dir: Optional[Path] = None,
-) -> tuple[NextDNSClient, dict[str, Any]]:
-    """Create a NextDNS client and return the config for notifications."""
-    config = load_config(config_dir)
-    client = NextDNSClient(config["api_key"], config["profile_id"])
-    return client, config
 
 
 def _export_to_json(domains: list[dict[str, Any]]) -> str:
@@ -192,8 +134,7 @@ def denylist_cli() -> None:
 )
 def denylist_list(config_dir: Optional[Path]) -> None:
     """List all domains in the denylist."""
-    try:
-        client = _get_client(config_dir)
+    with command_context(config_dir, "fetching denylist") as (client, _config):
         domains = client.get_denylist(use_cache=False)
 
         if domains is None:
@@ -215,19 +156,6 @@ def denylist_list(config_dir: Optional[Path]) -> None:
         console.print()
         console.print(table)
         console.print(f"\n  Total: {len(domains)} domains\n")
-
-    except (
-        requests.exceptions.RequestException,
-        PermissionError,
-        FileNotFoundError,
-        json.JSONDecodeError,
-        ValueError,
-    ) as e:
-        _handle_api_error(e)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
-        sys.exit(1)
 
 
 @denylist_cli.command("export")
@@ -251,8 +179,7 @@ def denylist_list(config_dir: Optional[Path]) -> None:
 )
 def denylist_export(output_format: str, output: Optional[Path], config_dir: Optional[Path]) -> None:
     """Export denylist to JSON or CSV file."""
-    try:
-        client = _get_client(config_dir)
+    with command_context(config_dir, "exporting denylist") as (client, _config):
         domains = client.get_denylist(use_cache=False)
 
         if domains is None:
@@ -272,19 +199,6 @@ def denylist_export(output_format: str, output: Optional[Path], config_dir: Opti
 
         audit_log("DENYLIST_EXPORT", f"Exported {len(domains)} domains")
 
-    except (
-        requests.exceptions.RequestException,
-        PermissionError,
-        FileNotFoundError,
-        json.JSONDecodeError,
-        ValueError,
-    ) as e:
-        _handle_api_error(e)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
-        sys.exit(1)
-
 
 @denylist_cli.command("import")
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
@@ -301,39 +215,46 @@ def denylist_import(file: Path, dry_run: bool, config_dir: Optional[Path]) -> No
     """
     try:
         domains, parse_errors = _parse_import_file(file)
+    except (
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        csv.Error,
+        UnicodeDecodeError,
+    ) as e:
+        handle_error(e, "reading import file")
 
-        if parse_errors:
-            for error in parse_errors:
-                console.print(f"  [yellow]Warning: {error}[/yellow]")
+    if parse_errors:
+        for error in parse_errors:
+            console.print(f"  [yellow]Warning: {error}[/yellow]")
 
-        if not domains:
-            console.print("\n  [yellow]No domains found in file[/yellow]\n")
-            return
+    if not domains:
+        console.print("\n  [yellow]No domains found in file[/yellow]\n")
+        return
 
-        valid, invalid = _validate_domains(domains)
+    valid, invalid = _validate_domains(domains)
 
-        if invalid:
-            console.print("\n  [yellow]Invalid domains (skipped):[/yellow]")
-            for error in invalid[:10]:
-                console.print(f"    {error}")
-            if len(invalid) > 10:
-                console.print(f"    ... and {len(invalid) - 10} more")
+    if invalid:
+        console.print("\n  [yellow]Invalid domains (skipped):[/yellow]")
+        for error in invalid[:10]:
+            console.print(f"    {error}")
+        if len(invalid) > 10:
+            console.print(f"    ... and {len(invalid) - 10} more")
 
-        if not valid:
-            console.print("\n  [red]No valid domains to import[/red]\n")
-            sys.exit(1)
+    if not valid:
+        console.print("\n  [red]No valid domains to import[/red]\n")
+        sys.exit(1)
 
-        if dry_run:
-            console.print(f"\n  [cyan]Would import {len(valid)} domains:[/cyan]")
-            for domain in valid[:20]:
-                console.print(f"    {domain}")
-            if len(valid) > 20:
-                console.print(f"    ... and {len(valid) - 20} more")
-            console.print()
-            return
+    if dry_run:
+        console.print(f"\n  [cyan]Would import {len(valid)} domains:[/cyan]")
+        for domain in valid[:20]:
+            console.print(f"    {domain}")
+        if len(valid) > 20:
+            console.print(f"    ... and {len(valid) - 20} more")
+        console.print()
+        return
 
-        client = _get_client(config_dir)
-
+    with command_context(config_dir, "importing to denylist") as (client, _config):
         # Get existing domains to avoid duplicates
         existing = client.get_denylist(use_cache=False) or []
         existing_domains = {d.get("id", "") for d in existing}
@@ -368,19 +289,6 @@ def denylist_import(file: Path, dry_run: bool, config_dir: Optional[Path]) -> No
             f"Added {added}, skipped {skipped}, failed {failed} from {file.name}",
         )
 
-    except (
-        requests.exceptions.RequestException,
-        PermissionError,
-        FileNotFoundError,
-        json.JSONDecodeError,
-        ValueError,
-    ) as e:
-        _handle_api_error(e)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
-        sys.exit(1)
-
 
 @denylist_cli.command("add")
 @click.argument("domains", nargs=-1, required=True)
@@ -394,18 +302,16 @@ def denylist_add(domains: tuple[str, ...], config_dir: Optional[Path]) -> None:
 
     Example: nextdns-blocker denylist add example.com test.org
     """
-    try:
-        valid, invalid = _validate_domains(list(domains))
+    valid, invalid = _validate_domains(list(domains))
 
-        if invalid:
-            console.print("\n  [red]Invalid domains:[/red]")
-            for error in invalid:
-                console.print(f"    {error}")
-            if not valid:
-                sys.exit(1)
+    if invalid:
+        console.print("\n  [red]Invalid domains:[/red]")
+        for error in invalid:
+            console.print(f"    {error}")
+        if not valid:
+            sys.exit(1)
 
-        client, config = _get_client_and_config(config_dir)
-
+    with command_context(config_dir, "adding to denylist") as (client, config):
         added = 0
         skipped = 0
         failed = 0
@@ -445,19 +351,6 @@ def denylist_add(domains: tuple[str, ...], config_dir: Optional[Path]) -> None:
         if failed > 0:
             sys.exit(1)
 
-    except (
-        requests.exceptions.RequestException,
-        PermissionError,
-        FileNotFoundError,
-        json.JSONDecodeError,
-        ValueError,
-    ) as e:
-        _handle_api_error(e)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
-        sys.exit(1)
-
 
 @denylist_cli.command("remove")
 @click.argument("domains", nargs=-1, required=True)
@@ -471,9 +364,7 @@ def denylist_remove(domains: tuple[str, ...], config_dir: Optional[Path]) -> Non
 
     Example: nextdns-blocker denylist remove example.com test.org
     """
-    try:
-        client, config = _get_client_and_config(config_dir)
-
+    with command_context(config_dir, "removing from denylist") as (client, config):
         removed = 0
         not_found = 0
         failed = 0
@@ -510,19 +401,6 @@ def denylist_remove(domains: tuple[str, ...], config_dir: Optional[Path]) -> Non
             for domain in removed_domains:
                 send_notification(EventType.UNBLOCK, domain, config)
 
-    except (
-        requests.exceptions.RequestException,
-        PermissionError,
-        FileNotFoundError,
-        json.JSONDecodeError,
-        ValueError,
-    ) as e:
-        _handle_api_error(e)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
-        sys.exit(1)
-
 
 # =============================================================================
 # ALLOWLIST COMMAND GROUP
@@ -546,8 +424,7 @@ def allowlist_cli() -> None:
 )
 def allowlist_list(config_dir: Optional[Path]) -> None:
     """List all domains in the allowlist."""
-    try:
-        client = _get_client(config_dir)
+    with command_context(config_dir, "fetching allowlist") as (client, _config):
         domains = client.get_allowlist(use_cache=False)
 
         if domains is None:
@@ -569,19 +446,6 @@ def allowlist_list(config_dir: Optional[Path]) -> None:
         console.print()
         console.print(table)
         console.print(f"\n  Total: {len(domains)} domains\n")
-
-    except (
-        requests.exceptions.RequestException,
-        PermissionError,
-        FileNotFoundError,
-        json.JSONDecodeError,
-        ValueError,
-    ) as e:
-        _handle_api_error(e)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
-        sys.exit(1)
 
 
 @allowlist_cli.command("export")
@@ -607,8 +471,7 @@ def allowlist_export(
     output_format: str, output: Optional[Path], config_dir: Optional[Path]
 ) -> None:
     """Export allowlist to JSON or CSV file."""
-    try:
-        client = _get_client(config_dir)
+    with command_context(config_dir, "exporting allowlist") as (client, _config):
         domains = client.get_allowlist(use_cache=False)
 
         if domains is None:
@@ -628,19 +491,6 @@ def allowlist_export(
 
         audit_log("ALLOWLIST_EXPORT", f"Exported {len(domains)} domains")
 
-    except (
-        requests.exceptions.RequestException,
-        PermissionError,
-        FileNotFoundError,
-        json.JSONDecodeError,
-        ValueError,
-    ) as e:
-        _handle_api_error(e)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
-        sys.exit(1)
-
 
 @allowlist_cli.command("import")
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
@@ -657,39 +507,46 @@ def allowlist_import(file: Path, dry_run: bool, config_dir: Optional[Path]) -> N
     """
     try:
         domains, parse_errors = _parse_import_file(file)
+    except (
+        PermissionError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        csv.Error,
+        UnicodeDecodeError,
+    ) as e:
+        handle_error(e, "reading import file")
 
-        if parse_errors:
-            for error in parse_errors:
-                console.print(f"  [yellow]Warning: {error}[/yellow]")
+    if parse_errors:
+        for error in parse_errors:
+            console.print(f"  [yellow]Warning: {error}[/yellow]")
 
-        if not domains:
-            console.print("\n  [yellow]No domains found in file[/yellow]\n")
-            return
+    if not domains:
+        console.print("\n  [yellow]No domains found in file[/yellow]\n")
+        return
 
-        valid, invalid = _validate_domains(domains)
+    valid, invalid = _validate_domains(domains)
 
-        if invalid:
-            console.print("\n  [yellow]Invalid domains (skipped):[/yellow]")
-            for error in invalid[:10]:
-                console.print(f"    {error}")
-            if len(invalid) > 10:
-                console.print(f"    ... and {len(invalid) - 10} more")
+    if invalid:
+        console.print("\n  [yellow]Invalid domains (skipped):[/yellow]")
+        for error in invalid[:10]:
+            console.print(f"    {error}")
+        if len(invalid) > 10:
+            console.print(f"    ... and {len(invalid) - 10} more")
 
-        if not valid:
-            console.print("\n  [red]No valid domains to import[/red]\n")
-            sys.exit(1)
+    if not valid:
+        console.print("\n  [red]No valid domains to import[/red]\n")
+        sys.exit(1)
 
-        if dry_run:
-            console.print(f"\n  [cyan]Would import {len(valid)} domains:[/cyan]")
-            for domain in valid[:20]:
-                console.print(f"    {domain}")
-            if len(valid) > 20:
-                console.print(f"    ... and {len(valid) - 20} more")
-            console.print()
-            return
+    if dry_run:
+        console.print(f"\n  [cyan]Would import {len(valid)} domains:[/cyan]")
+        for domain in valid[:20]:
+            console.print(f"    {domain}")
+        if len(valid) > 20:
+            console.print(f"    ... and {len(valid) - 20} more")
+        console.print()
+        return
 
-        client = _get_client(config_dir)
-
+    with command_context(config_dir, "importing to allowlist") as (client, _config):
         # Get existing domains to avoid duplicates
         existing = client.get_allowlist(use_cache=False) or []
         existing_domains = {d.get("id", "") for d in existing}
@@ -724,19 +581,6 @@ def allowlist_import(file: Path, dry_run: bool, config_dir: Optional[Path]) -> N
             f"Added {added}, skipped {skipped}, failed {failed} from {file.name}",
         )
 
-    except (
-        requests.exceptions.RequestException,
-        PermissionError,
-        FileNotFoundError,
-        json.JSONDecodeError,
-        ValueError,
-    ) as e:
-        _handle_api_error(e)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
-        sys.exit(1)
-
 
 @allowlist_cli.command("add")
 @click.argument("domains", nargs=-1, required=True)
@@ -750,18 +594,16 @@ def allowlist_add(domains: tuple[str, ...], config_dir: Optional[Path]) -> None:
 
     Example: nextdns-blocker allowlist add example.com test.org
     """
-    try:
-        valid, invalid = _validate_domains(list(domains))
+    valid, invalid = _validate_domains(list(domains))
 
-        if invalid:
-            console.print("\n  [red]Invalid domains:[/red]")
-            for error in invalid:
-                console.print(f"    {error}")
-            if not valid:
-                sys.exit(1)
+    if invalid:
+        console.print("\n  [red]Invalid domains:[/red]")
+        for error in invalid:
+            console.print(f"    {error}")
+        if not valid:
+            sys.exit(1)
 
-        client, config = _get_client_and_config(config_dir)
-
+    with command_context(config_dir, "adding to allowlist") as (client, config):
         added = 0
         skipped = 0
         failed = 0
@@ -801,19 +643,6 @@ def allowlist_add(domains: tuple[str, ...], config_dir: Optional[Path]) -> None:
         if failed > 0:
             sys.exit(1)
 
-    except (
-        requests.exceptions.RequestException,
-        PermissionError,
-        FileNotFoundError,
-        json.JSONDecodeError,
-        ValueError,
-    ) as e:
-        _handle_api_error(e)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
-        sys.exit(1)
-
 
 @allowlist_cli.command("remove")
 @click.argument("domains", nargs=-1, required=True)
@@ -827,9 +656,7 @@ def allowlist_remove(domains: tuple[str, ...], config_dir: Optional[Path]) -> No
 
     Example: nextdns-blocker allowlist remove example.com test.org
     """
-    try:
-        client, config = _get_client_and_config(config_dir)
-
+    with command_context(config_dir, "removing from allowlist") as (client, config):
         removed = 0
         not_found = 0
         failed = 0
@@ -865,19 +692,6 @@ def allowlist_remove(domains: tuple[str, ...], config_dir: Optional[Path]) -> No
             # Send notifications for each disallowed domain
             for domain in removed_domains:
                 send_notification(EventType.DISALLOW, domain, config)
-
-    except (
-        requests.exceptions.RequestException,
-        PermissionError,
-        FileNotFoundError,
-        json.JSONDecodeError,
-        ValueError,
-    ) as e:
-        _handle_api_error(e)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        console.print(f"\n  [red]Unexpected error: {e}[/red]\n")
-        sys.exit(1)
 
 
 # =============================================================================
