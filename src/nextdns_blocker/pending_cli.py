@@ -143,14 +143,6 @@ def cmd_show(action_id: str) -> None:
 )
 def cmd_cancel(action_id: str, yes: bool, config_dir: Optional[Path]) -> None:
     """Cancel a pending unblock action."""
-    import sys
-
-    from .panic import is_panic_mode
-
-    # Block cancel during panic mode
-    if is_panic_mode():
-        console.print("\n  [red]Error: Cannot cancel pending actions during panic mode[/red]\n")
-        sys.exit(1)
 
     from .config import load_config
     from .notifications import EventType, send_notification

@@ -258,17 +258,6 @@ nextdns-blocker config show
 }
 ```
 
-## Allowlist During Panic Mode
-
-When panic mode is active:
-
-- `allow` command is **hidden**
-- `disallow` command is **hidden**
-- Scheduled allowlist sync is **completely skipped**
-- Existing allowlist entries remain but aren't updated
-
-This prevents bypassing emergency lockdown via allowlist.
-
 ## Validation Rules
 
 ### No Duplicate Exact Domains
@@ -325,18 +314,3 @@ This is valid (with a warning):
    ```
 
 2. **Verify current time is within schedule**
-
-3. **Check for panic mode:**
-   ```bash
-   nextdns-blocker panic status
-   ```
-
-### allow command hidden
-
-Panic mode is active:
-
-```bash
-nextdns-blocker panic status
-```
-
-Wait for expiration or don't try to bypass emergency protection.

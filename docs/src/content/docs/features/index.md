@@ -45,16 +45,6 @@ Queued operations:
 - Cancel before execution
 - Automatic cleanup
 
-## Safety Features
-
-### [Panic Mode](/features/panic-mode/)
-
-Emergency lockdown:
-- Instant blocking of all domains
-- Hidden dangerous commands
-- Cannot be disabled early
-- Extendable duration
-
 ## Security Features
 
 ### [PIN Protection](/reference/security/)
@@ -71,7 +61,6 @@ Addiction safety features:
 - Locked items cannot be removed immediately
 - Unlock requests require waiting period
 - Pending unlock can be cancelled
-- Auto-panic configuration
 
 ## Communication Features
 
@@ -117,7 +106,6 @@ Track blocking patterns:
 | Schedules | Automatic access control | `config push` |
 | Delays | Impulse protection | `unblock` |
 | Watchdog | Auto-sync | `watchdog install` |
-| Panic Mode | Emergency lockdown | `panic 60` |
 | PIN Protection | Command authentication | `protection pin set` |
 | Notifications | Real-time alerts | (automatic) |
 | Analytics | Usage patterns | `stats` |
@@ -125,14 +113,6 @@ Track blocking patterns:
 | Dry Run | Safe testing | `config push --dry-run` |
 
 ## Feature Interactions
-
-### Panic Mode + Everything
-
-Panic mode overrides all other features:
-- Schedules ignored
-- Unblock delays irrelevant (`unblock` hidden)
-- Allowlist sync skipped
-- Pending actions paused
 
 ### Watchdog + Pending Actions
 
@@ -147,7 +127,6 @@ When PIN is enabled:
 - Sensitive commands require verification
 - Session lasts 30 minutes
 - Lockout after failed attempts
-- Works alongside panic mode
 
 ## Enabling Features
 
@@ -156,7 +135,6 @@ When PIN is enabled:
 | Schedules | Add to `config.json` |
 | Delays | Set `unblock_delay` in config |
 | Watchdog | `watchdog install` |
-| Panic Mode | `panic DURATION` |
 | PIN Protection | `protection pin set` |
 | Notifications | Add to `config.json` |
 | Analytics | Automatic (uses audit log) |

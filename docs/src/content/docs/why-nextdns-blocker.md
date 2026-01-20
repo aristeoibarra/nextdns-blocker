@@ -14,7 +14,6 @@ These are real requests from NextDNS communities (Reddit, Help Center, GitHub):
 | "I want to block YouTube only during work hours" | [Per-domain scheduling](/configuration/schedules/) |
 | "I need multiple recreation windows per day" | [Multiple time_ranges](/configuration/schedules/#multiple-time-ranges) |
 | "I want a delay before I can unblock a site" | [Configurable unblock_delay](/configuration/unblock-delay/) |
-| "I need an emergency button to block everything" | [Panic mode](/features/panic-mode/) |
 | "I want different rules for weekdays vs weekends" | [Day-based scheduling](/configuration/schedules/#different-rules-per-day) |
 | "I want to block gaming category but allow Discord" | [Allowlist priority](/configuration/filtering-priority/) |
 | "I need to know when blocks change" | [Discord notifications](/features/notifications/) |
@@ -30,7 +29,6 @@ These are real requests from NextDNS communities (Reddit, Help Center, GitHub):
 | Hard to bypass | Yes | No | Yes |
 | Automated enforcement | Yes | No | No |
 | Category + exception control | Yes | No | Partial |
-| Emergency lockdown | Yes | No | No |
 
 ## Real Use Cases
 
@@ -104,13 +102,6 @@ See the [Parental Control Guide](/guides/parental-control/) for a complete setup
 
 ### Focus Sessions
 
-Temporary strict blocking during deep work:
-
-```bash
-# Block everything for 2 hours
-nextdns-blocker panic 120
-```
-
 ## What nextdns-blocker Does NOT Do
 
 To set correct expectations:
@@ -131,4 +122,3 @@ Ready to try it?
 Or explore specific features:
 - [Schedules](/configuration/schedules/) - Time-based access control
 - [Unblock Delay](/configuration/unblock-delay/) - Add friction
-- [Panic Mode](/features/panic-mode/) - Emergency lockdown

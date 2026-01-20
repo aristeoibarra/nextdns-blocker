@@ -127,16 +127,6 @@ Output shows 43 services organized by category:
 - Dating (1 service)
 - Other (5 services)
 
-## Panic Mode
-
-During panic mode, these commands are blocked:
-- `add-category`
-- `remove-category`
-- `add-service`
-- `remove-service`
-
-The `list`, `status`, `categories`, and `services` commands remain available.
-
 ## Examples
 
 ### Block TikTok immediately

@@ -122,26 +122,10 @@ class NextDNSConfig(TypedDict, total=False):
 # =============================================================================
 
 
-class AutoPanicSchedule(TypedDict):
-    """Schedule for auto-panic mode."""
-
-    start: str  # HH:MM format
-    end: str  # HH:MM format
-
-
-class AutoPanicConfig(TypedDict, total=False):
-    """Auto-panic mode configuration."""
-
-    enabled: bool
-    schedule: AutoPanicSchedule
-    days: list[DayName]
-    cannot_disable: bool
-
-
 class ProtectionConfig(TypedDict, total=False):
     """Protection settings for addiction safety features."""
 
-    auto_panic: AutoPanicConfig
+    unlock_delay_hours: int
 
 
 # =============================================================================
@@ -254,7 +238,7 @@ class LoadedConfig(TypedDict):
 # =============================================================================
 
 UnlockRequestStatus = Literal["pending", "executed", "cancelled", "expired"]
-ItemType = Literal["category", "service", "domain", "auto_panic", "pin"]
+ItemType = Literal["category", "service", "domain", "pin"]
 
 
 class UnlockRequest(TypedDict, total=False):

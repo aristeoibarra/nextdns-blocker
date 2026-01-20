@@ -175,10 +175,6 @@ When you run `nextdns-blocker config push` (or the watchdog runs it automaticall
 2. **Services** are activated/deactivated based on their schedule
 3. **Global settings** (safe_search, etc.) are applied
 
-During **panic mode**:
-- Activations continue (blocks are maintained)
-- Deactivations are skipped (prevents removing blocks)
-
 ## Example: Complete Configuration
 
 ```json

@@ -23,7 +23,6 @@ from .protection import (
     get_pending_unlock_requests,
     get_pin_removal_request,
     get_pin_session_remaining,
-    is_auto_panic_time,
     is_pin_enabled,
     is_pin_locked_out,
     is_pin_session_valid,
@@ -67,7 +66,6 @@ def protection_status(config_dir: Optional[Path]) -> None:
             full_config = json.load(f)
 
     protection_config = full_config.get("protection", {})
-    auto_panic = protection_config.get("auto_panic", {})
 
     console.print("\n  [bold]Protection Status[/bold]")
     console.print("  [dim]━━━━━━━━━━━━━━━━━━━[/dim]\n")
@@ -88,25 +86,6 @@ def protection_status(config_dir: Optional[Path]) -> None:
     # Unlock delay
     delay = protection_config.get("unlock_delay_hours", DEFAULT_UNLOCK_DELAY_HOURS)
     console.print(f"  Unlock delay: [cyan]{delay}h[/cyan]")
-
-    # Auto-panic status
-    if auto_panic.get("enabled"):
-        schedule = auto_panic.get("schedule", {})
-        start = schedule.get("start", "23:00")
-        end = schedule.get("end", "06:00")
-        cannot_disable = auto_panic.get("cannot_disable", False)
-
-        status = (
-            "[green]ACTIVE NOW[/green]"
-            if is_auto_panic_time(full_config)
-            else "[dim]scheduled[/dim]"
-        )
-        lock_status = "[red]cannot disable[/red]" if cannot_disable else "[dim]can disable[/dim]"
-
-        console.print(f"  Auto-panic: {status} ({start} - {end})")
-        console.print(f"              {lock_status}")
-    else:
-        console.print("  Auto-panic: [dim]disabled[/dim]")
 
     # Locked categories
     console.print("\n  [bold]Locked Items[/bold]")

@@ -97,7 +97,6 @@ class OverallStatistics:
     total_disallows: int = 0
     total_pauses: int = 0
     total_resumes: int = 0
-    total_panic_activations: int = 0
     total_pending_created: int = 0
     total_pending_cancelled: int = 0
     total_pending_executed: int = 0
@@ -431,8 +430,6 @@ class AnalyticsManager:
                 stats.total_pauses += 1
             elif entry.action == "RESUME":
                 stats.total_resumes += 1
-            elif entry.action in ("PC_ACTIVATE", "PANIC_ACTIVATE"):
-                stats.total_panic_activations += 1
             elif entry.action == "PENDING_CREATE":
                 stats.total_pending_created += 1
             elif entry.action == "PENDING_CANCEL":
@@ -490,10 +487,7 @@ class AnalyticsManager:
                         domain = f'"{domain}"'
 
                     f.write(
-                        f"{entry.timestamp.isoformat()},"
-                        f"{entry.action},"
-                        f"{domain},"
-                        f"{entry.prefix}\n"
+                        f"{entry.timestamp.isoformat()},{entry.action},{domain},{entry.prefix}\n"
                     )
 
             logger.info(f"Exported {len(entries)} entries to {output_path}")

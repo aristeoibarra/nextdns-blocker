@@ -241,17 +241,6 @@ nextdns-blocker category add nonexistent test.com
 Error: Category 'nonexistent' not found
 ```
 
-### Panic Mode
-
-Adding domains is blocked during panic mode:
-
-```bash
-nextdns-blocker category add social-media test.com
-```
-```
-Error: Cannot modify categories during panic mode
-```
-
 ## category remove
 
 Remove a domain from a category.
@@ -340,17 +329,6 @@ nextdns-blocker category delete nonexistent
 ```
 ```
 Error: Category 'nonexistent' not found
-```
-
-### Panic Mode
-
-Deleting categories is blocked during panic mode:
-
-```bash
-nextdns-blocker category delete gaming -y
-```
-```
-Error: Cannot modify categories during panic mode
 ```
 
 ## Workflow Examples

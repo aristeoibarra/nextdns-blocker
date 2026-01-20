@@ -267,14 +267,6 @@ Begin with few sites and shorter blocks:
 3. Week 3: Add more sites
 4. Week 4: Increase delays
 
-### Use Panic Mode
-
-When deadline pressure hits:
-
-```bash
-nextdns-blocker panic 120  # 2 hours of focus
-```
-
 ### Review Weekly
 
 Check what's working:

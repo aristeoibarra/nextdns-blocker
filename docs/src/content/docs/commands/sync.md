@@ -171,23 +171,6 @@ nextdns-blocker watchdog status
 
 See [Watchdog](/commands/watchdog/) for details.
 
-## Sync During Panic Mode
-
-When panic mode is active, sync behavior changes:
-- All domains are **blocked** regardless of schedule
-- Unblock actions are skipped
-- Allowlist sync is skipped
-
-This ensures emergency lockdown cannot be bypassed by scheduled unblocks.
-
-## Sync During Auto-Panic
-
-When auto-panic schedule is active:
-- All domains are blocked regardless of their individual schedules
-- Unblock actions are skipped
-- Allowlist sync is skipped
-- This provides additional protection during configured high-risk hours
-
 ## Caching
 
 Sync uses intelligent caching to reduce API calls:

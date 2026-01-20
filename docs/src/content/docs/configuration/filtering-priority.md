@@ -228,13 +228,6 @@ Use scheduled allowlist for temporary unrestricted access:
 
 ## Important Notes
 
-### Allowlist During Panic Mode
-
-When panic mode is active:
-- Allowlist entries **remain in NextDNS** but are **not updated**
-- Scheduled allowlist sync is **completely skipped**
-- This prevents bypassing emergency lockdown via allowlist
-
 ### DNS Cache
 
 After modifying the allowlist, DNS changes may take time to propagate:
@@ -292,11 +285,6 @@ Both methods work because allowlist has highest priority.
    ```
 
 2. **Verify current time is within schedule**
-
-3. **Check for panic mode:**
-   ```bash
-   nextdns-blocker panic status
-   ```
 
 ### Conflicting Rules
 

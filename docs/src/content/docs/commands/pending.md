@@ -209,18 +209,6 @@ nextdns-blocker pending cancel pnd_<TAB>
 3. Will not execute even if time passes
 4. Old cancelled actions are cleaned up daily
 
-## Pending Actions During Panic Mode
-
-When panic mode is active:
-
-- **New pending actions**: Cannot be created (`unblock` is hidden)
-- **Existing pending actions**: Paused (not executed)
-- **Cancellation**: Still possible (cleanup allowed)
-
-After panic expires:
-- Pending actions resume processing
-- Actions past their execute time are processed immediately
-
 ## Storage
 
 Pending actions are stored in:
@@ -277,12 +265,7 @@ nextdns-blocker config push
    nextdns-blocker pending show <ID>
    ```
 
-3. Check for panic mode:
-   ```bash
-   nextdns-blocker panic status
-   ```
-
-4. Force sync:
+3. Force sync:
    ```bash
    nextdns-blocker config push --verbose
    ```

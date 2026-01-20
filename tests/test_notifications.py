@@ -30,7 +30,6 @@ class TestEventType:
         assert EventType.UNBLOCK.value == "unblock"
         assert EventType.PENDING.value == "pending"
         assert EventType.CANCEL_PENDING.value == "cancel_pending"
-        assert EventType.PANIC.value == "panic"
         assert EventType.ALLOW.value == "allow"
         assert EventType.DISALLOW.value == "disallow"
         assert EventType.PC_ACTIVATE.value == "pc_activate"
@@ -229,18 +228,6 @@ class TestMacOSAdapter:
         title, message = adapter.format_batch(batch)
 
         assert "Blocked: 2" in message
-
-    def test_format_batch_panic_mode(self):
-        """Test formatting a panic mode batch."""
-        adapter = MacOSAdapter()
-        batch = BatchedNotification(
-            events=[NotificationEvent(EventType.PANIC, "Emergency")],
-            profile_id="test",
-        )
-
-        title, message = adapter.format_batch(batch)
-
-        assert title == "PANIC MODE"
 
     @patch("subprocess.run")
     def test_send_success(self, mock_run):

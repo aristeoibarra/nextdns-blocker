@@ -28,7 +28,6 @@ class EventType(Enum):
     UNBLOCK = "unblock"
     PENDING = "pending"
     CANCEL_PENDING = "cancel_pending"
-    PANIC = "panic"
     ALLOW = "allow"
     DISALLOW = "disallow"
     PC_ACTIVATE = "pc_activate"
@@ -99,7 +98,6 @@ class DiscordAdapter(NotificationAdapter):
     COLOR_UNBLOCK = 3066993  # Green
     COLOR_PENDING = 16776960  # Yellow
     COLOR_CANCEL = 9807270  # Gray
-    COLOR_PANIC = 9109504  # Dark Red
     COLOR_ALLOW = 3066993  # Green
     COLOR_DISALLOW = 15105570  # Orange
     COLOR_ERROR = 15158332  # Red
@@ -156,7 +154,6 @@ class DiscordAdapter(NotificationAdapter):
         pc_deactivated = [e.domain for e in batch.events if e.event_type == EventType.PC_DEACTIVATE]
         pending = [e.domain for e in batch.events if e.event_type == EventType.PENDING]
         errors = [e.domain for e in batch.events if e.event_type == EventType.ERROR]
-        panic = [e.domain for e in batch.events if e.event_type == EventType.PANIC]
 
         # Build description
         lines: list[str] = []
@@ -188,10 +185,6 @@ class DiscordAdapter(NotificationAdapter):
         if pending:
             domains_str = self._format_domain_list(pending)
             lines.append(f":clock3: **Scheduled ({len(pending)}):** {domains_str}")
-
-        if panic:
-            domains_str = self._format_domain_list(panic)
-            lines.append(f":rotating_light: **PANIC MODE:** {domains_str}")
 
         if errors:
             domains_str = self._format_domain_list(errors)
@@ -376,13 +369,6 @@ class NtfyAdapter(NotificationAdapter):
         if any(e.event_type == EventType.TEST for e in batch.events):
             return "Test notification from NextDNS Blocker"
 
-        if any(e.event_type == EventType.PANIC for e in batch.events):
-            panic_event = next(e for e in batch.events if e.event_type == EventType.PANIC)
-            duration = panic_event.metadata.get("duration", "")
-            if duration:
-                return f"PANIC MODE ACTIVATED - Duration: {duration}"
-            return "PANIC MODE ACTIVATED"
-
         # Count events by type
         blocked = len([e for e in batch.events if e.event_type == EventType.BLOCK])
         unblocked = len([e for e in batch.events if e.event_type == EventType.UNBLOCK])
@@ -486,14 +472,9 @@ class MacOSAdapter(NotificationAdapter):
         disallowed = sum(1 for e in batch.events if e.event_type == EventType.DISALLOW)
         pc_activated = sum(1 for e in batch.events if e.event_type == EventType.PC_ACTIVATE)
         pc_deactivated = sum(1 for e in batch.events if e.event_type == EventType.PC_DEACTIVATE)
-        panic = any(e.event_type == EventType.PANIC for e in batch.events)
 
         title = "NextDNS Blocker Sync"
         parts: list[str] = []
-
-        if panic:
-            title = "PANIC MODE"
-            parts.append("Emergency block activated")
 
         if blocked:
             parts.append(f"Blocked: {blocked}")

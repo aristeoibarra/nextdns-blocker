@@ -176,7 +176,6 @@ CMD ["cron", "-f"]
 
 The `nextdns-data` volume persists:
 - Logs (`/app/data/logs/`)
-- State files (`.panic`)
 - Pending actions (`pending.json`)
 
 ### Config as Read-Only

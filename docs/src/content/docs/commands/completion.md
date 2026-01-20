@@ -80,7 +80,7 @@ Shell completion works for:
 ```bash
 $ nextdns-blocker <TAB>
 allow           completion      fix             nextdns         pending         status          update
-category        config          health          panic           stats           test-notifications  watchdog
+category        config          health          stats           test-notifications  watchdog
 disallow        init
 ```
 

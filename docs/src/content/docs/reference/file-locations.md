@@ -55,7 +55,6 @@ echo $env:APPDATA\nextdns-blocker\
 
 | File | Purpose | Description |
 |------|---------|-------------|
-| `.panic` | Panic state | ISO timestamp when panic expires |
 | `.pin_hash` | PIN protection | Salted hash of PIN (if enabled) |
 | `.pin_session` | PIN session | Session expiration timestamp |
 | `.pin_attempts` | PIN attempts | Failed attempt tracking for lockout |
@@ -161,13 +160,6 @@ API_TIMEOUT=10
 }
 ```
 
-### .panic
-
-Plain text ISO 8601 timestamp:
-```
-2024-01-15T15:30:00
-```
-
 ## XDG Compliance
 
 On Linux, NextDNS Blocker respects XDG environment variables:
@@ -243,6 +235,5 @@ Remove-Item -Recurse "$env:LOCALAPPDATA\nextdns-blocker"
 
 ```bash
 # macOS/Linux
-rm ~/.local/share/nextdns-blocker/.panic
 echo '{"actions":[]}' > ~/.local/share/nextdns-blocker/pending.json
 ```

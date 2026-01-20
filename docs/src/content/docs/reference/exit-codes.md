@@ -199,15 +199,6 @@ nextdns-blocker config push || echo "Sync failed"
 | Pending action created | 0 |
 | Domain not in blocklist | 1 |
 | Protected domain | 1 |
-| Panic mode active | 1 |
-
-### panic
-
-| Scenario | Exit Code |
-|----------|-----------|
-| Panic activated | 0 |
-| Duration too short | 4 |
-| Already in panic | 1 |
 
 ### watchdog install
 

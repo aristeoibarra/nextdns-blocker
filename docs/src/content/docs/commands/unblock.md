@@ -159,24 +159,6 @@ nextdns-blocker allow reddit.com
 nextdns-blocker config edit
 ```
 
-## Unblock During Panic Mode
-
-When panic mode is active:
-- The `unblock` command is **hidden**
-- Running it directly returns an error
-- All domains remain blocked until panic expires
-
-```bash
-# During panic mode
-nextdns-blocker unblock reddit.com
-```
-
-Output:
-```
-Error: Command 'unblock' is not available during panic mode
-Panic mode expires at: 2024-01-15 15:30:00
-```
-
 ## Tab Completion
 
 With shell completion enabled, domain names auto-complete:

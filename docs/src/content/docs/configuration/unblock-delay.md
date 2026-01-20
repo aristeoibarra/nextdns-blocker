@@ -290,14 +290,6 @@ Example:
 - Saturday 10am-10pm: Auto-unblocked by schedule
 - Other times: Manual unblock requires 30-minute wait
 
-## Delays and Panic Mode
-
-During panic mode:
-- All domains blocked regardless of delay
-- `unblock` command hidden
-- Pending actions paused (not executed)
-- After panic: Pending actions resume
-
 ## Bypass Considerations
 
 ### Legitimate Bypasses
@@ -317,7 +309,6 @@ Options:
 To make bypass harder:
 1. Use `"never"` for harmful content
 2. Don't keep delay settings memorized
-3. Consider using panic mode when vulnerable
 
 ## Troubleshooting
 
@@ -328,12 +319,7 @@ To make bypass harder:
    nextdns-blocker watchdog status
    ```
 
-2. Check panic mode:
-   ```bash
-   nextdns-blocker panic status
-   ```
-
-3. Force sync:
+2. Force sync:
    ```bash
    nextdns-blocker config push
    ```

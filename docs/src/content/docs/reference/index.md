@@ -72,8 +72,7 @@ nextdns-blocker <command> --help
 | `watchdog status` | Check watchdog |
 | `watchdog install` | Install watchdog |
 | `watchdog uninstall` | Remove watchdog |
-| `panic DURATION` | Activate panic mode |
-| `panic status` | Check panic mode |
+
 | `pending list` | List pending actions |
 | `pending cancel ID` | Cancel pending action |
 | `update` | Check for updates |

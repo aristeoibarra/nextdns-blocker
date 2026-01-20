@@ -12,7 +12,6 @@ Answers to common questions about NextDNS Blocker.
 NextDNS Blocker is a command-line tool that automates domain blocking using the NextDNS API. It provides:
 - Per-domain scheduling (block during work, allow during breaks)
 - Unblock delays (friction against impulsive access)
-- Emergency panic mode
 - Automatic synchronization
 
 ### How is this different from the NextDNS dashboard?
@@ -21,7 +20,6 @@ The NextDNS dashboard allows manual blocking, but NextDNS Blocker adds:
 - **Automated scheduling**: Domains block/unblock based on time
 - **Watchdog enforcement**: Automatically re-applies rules
 - **Unblock delays**: Creates friction for manual unblocking
-- **Panic mode**: Emergency lockdown feature
 
 ### Is this an official NextDNS product?
 
@@ -163,29 +161,6 @@ nextdns-blocker pending list     # See pending actions
 nextdns-blocker pending cancel ID  # Cancel specific action
 ```
 
-## Panic Mode
-
-### What is panic mode?
-
-Emergency lockdown that:
-- Blocks all domains immediately
-- Hides dangerous commands
-- Cannot be disabled early
-
-### When should I use it?
-
-- Feeling strong urges
-- After a "slip"
-- During vulnerable moments
-- When you need absolute protection
-
-### Can I end panic mode early?
-
-No, by design. Wait for the timer or extend it:
-```bash
-nextdns-blocker panic extend 30  # Add more time
-```
-
 ## Watchdog
 
 ### What is the watchdog?
@@ -220,15 +195,6 @@ nextdns-blocker watchdog uninstall
 3. Check watchdog: Is it running?
 4. Force sync: `nextdns-blocker config push`
 5. Flush DNS cache
-
-### Commands not working
-
-Check if panic mode is active:
-```bash
-nextdns-blocker panic status
-```
-
-Many commands are hidden during panic mode.
 
 ### "API authentication failed"
 

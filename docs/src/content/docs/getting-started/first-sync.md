@@ -177,4 +177,3 @@ Too many API calls. Wait a minute and try again. The tool has built-in rate limi
 - [Configure more domains](/configuration/blocklist/)
 - [Set up unblock delays](/configuration/unblock-delay/)
 - [Enable notifications](/features/notifications/)
-- [Learn about panic mode](/features/panic-mode/)

@@ -932,23 +932,6 @@ class TestNextDNSCLIAddCategorySuccess:
         assert result.exit_code == 1
         assert "Failed" in result.output or "Error" in result.output
 
-    def test_add_category_blocked_during_panic(self, cli_runner, tmp_path):
-        """add-category is blocked during panic mode."""
-        from nextdns_blocker.nextdns_cli import nextdns_cli
-
-        # Create minimal config
-        env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        config_file = tmp_path / "config.json"
-        config_file.write_text('{"blocklist": []}')
-
-        with patch("nextdns_blocker.panic.is_panic_mode", return_value=True):
-            result = cli_runner.invoke(
-                nextdns_cli, ["add-category", "gambling", "--config-dir", str(tmp_path)]
-            )
-            assert result.exit_code == 1
-            assert "panic mode" in result.output
-
 
 class TestNextDNSCLIRemoveCategorySuccess:
     """Tests for nextdns remove-category command success paths."""
@@ -978,23 +961,6 @@ class TestNextDNSCLIRemoveCategorySuccess:
         assert result.exit_code == 0
         assert "Deactivated" in result.output
         assert "gambling" in result.output
-
-    def test_remove_category_blocked_during_panic(self, cli_runner, tmp_path):
-        """remove-category is blocked during panic mode."""
-        from nextdns_blocker.nextdns_cli import nextdns_cli
-
-        # Create minimal config
-        env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        config_file = tmp_path / "config.json"
-        config_file.write_text('{"blocklist": []}')
-
-        with patch("nextdns_blocker.panic.is_panic_mode", return_value=True):
-            result = cli_runner.invoke(
-                nextdns_cli, ["remove-category", "gambling", "--config-dir", str(tmp_path)]
-            )
-            assert result.exit_code == 1
-            assert "panic mode" in result.output
 
 
 class TestNextDNSCLIAddServiceSuccess:
@@ -1032,23 +998,6 @@ class TestNextDNSCLIAddServiceSuccess:
         assert "Activated" in result.output
         assert "tiktok" in result.output
 
-    def test_add_service_blocked_during_panic(self, cli_runner, tmp_path):
-        """add-service is blocked during panic mode."""
-        from nextdns_blocker.nextdns_cli import nextdns_cli
-
-        # Create minimal config
-        env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        config_file = tmp_path / "config.json"
-        config_file.write_text('{"blocklist": []}')
-
-        with patch("nextdns_blocker.panic.is_panic_mode", return_value=True):
-            result = cli_runner.invoke(
-                nextdns_cli, ["add-service", "tiktok", "--config-dir", str(tmp_path)]
-            )
-            assert result.exit_code == 1
-            assert "panic mode" in result.output
-
 
 class TestNextDNSCLIRemoveServiceSuccess:
     """Tests for nextdns remove-service command success paths."""
@@ -1077,23 +1026,6 @@ class TestNextDNSCLIRemoveServiceSuccess:
         assert result.exit_code == 0
         assert "Deactivated" in result.output
         assert "tiktok" in result.output
-
-    def test_remove_service_blocked_during_panic(self, cli_runner, tmp_path):
-        """remove-service is blocked during panic mode."""
-        from nextdns_blocker.nextdns_cli import nextdns_cli
-
-        # Create minimal config
-        env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=testapikey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
-        config_file = tmp_path / "config.json"
-        config_file.write_text('{"blocklist": []}')
-
-        with patch("nextdns_blocker.panic.is_panic_mode", return_value=True):
-            result = cli_runner.invoke(
-                nextdns_cli, ["remove-service", "tiktok", "--config-dir", str(tmp_path)]
-            )
-            assert result.exit_code == 1
-            assert "panic mode" in result.output
 
 
 class TestNextDNSCLIConfigurationErrors:
@@ -1164,7 +1096,6 @@ class TestSyncNextDNSCategories:
                 config,
                 dry_run=False,
                 verbose=False,
-                panic_active=False,
                 nm=nm_mock,
             )
 
@@ -1208,49 +1139,11 @@ class TestSyncNextDNSCategories:
                 config,
                 dry_run=False,
                 verbose=False,
-                panic_active=False,
                 nm=nm_mock,
             )
 
         assert activated == 0
         assert deactivated == 1
-
-    @responses.activate
-    def test_sync_skips_deactivation_during_panic_mode(self):
-        """Sync skips deactivation during panic mode."""
-        from nextdns_blocker.cli import _sync_nextdns_categories
-        from nextdns_blocker.scheduler import ScheduleEvaluator
-
-        client = NextDNSClient("testapikey12345", "testprofile")
-        evaluator = MagicMock(spec=ScheduleEvaluator)
-        evaluator.should_block.return_value = False
-
-        # Mock: category is active
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/testprofile/parentalControl",
-            json={"categories": [{"id": "gambling", "active": True}], "services": []},
-            status=200,
-        )
-
-        categories = [{"id": "gambling", "schedule": {"available_hours": []}}]
-        config = {}
-
-        nm_mock = MagicMock()
-        activated, deactivated = _sync_nextdns_categories(
-            categories,
-            client,
-            evaluator,
-            config,
-            dry_run=False,
-            verbose=False,
-            panic_active=True,
-            nm=nm_mock,
-        )
-
-        # Should not deactivate during panic mode
-        assert activated == 0
-        assert deactivated == 0
 
 
 class TestSyncNextDNSServices:
@@ -1292,7 +1185,6 @@ class TestSyncNextDNSServices:
                 config,
                 dry_run=False,
                 verbose=False,
-                panic_active=False,
                 nm=nm_mock,
             )
 
@@ -1335,49 +1227,11 @@ class TestSyncNextDNSServices:
                 config,
                 dry_run=False,
                 verbose=False,
-                panic_active=False,
                 nm=nm_mock,
             )
 
         assert activated == 0
         assert deactivated == 1
-
-    @responses.activate
-    def test_sync_skips_service_deactivation_during_panic_mode(self):
-        """Sync skips service deactivation during panic mode."""
-        from nextdns_blocker.cli import _sync_nextdns_services
-        from nextdns_blocker.scheduler import ScheduleEvaluator
-
-        client = NextDNSClient("testapikey12345", "testprofile")
-        evaluator = MagicMock(spec=ScheduleEvaluator)
-        evaluator.should_block.return_value = False
-
-        # Mock: service is active
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/testprofile/parentalControl",
-            json={"categories": [], "services": [{"id": "tiktok", "active": True}]},
-            status=200,
-        )
-
-        services = [{"id": "tiktok", "schedule": {"available_hours": []}}]
-        config = {}
-
-        nm_mock = MagicMock()
-        activated, deactivated = _sync_nextdns_services(
-            services,
-            client,
-            evaluator,
-            config,
-            dry_run=False,
-            verbose=False,
-            panic_active=True,
-            nm=nm_mock,
-        )
-
-        # Should not deactivate during panic mode
-        assert activated == 0
-        assert deactivated == 0
 
 
 class TestSyncNextDNSParentalControl:

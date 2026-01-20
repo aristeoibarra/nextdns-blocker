@@ -112,27 +112,6 @@ Monitor status in real-time:
 watch -n 30 nextdns-blocker status
 ```
 
-## Status During Special Modes
-
-### During Panic Mode
-
-```
-NextDNS Blocker Status
-━━━━━━━━━━━━━━━━━━━━━━
-
-⚠️  PANIC MODE ACTIVE - All domains blocked
-
-Time: 2024-01-15 14:30:00 America/New_York
-Panic expires: 2024-01-15 15:30:00 (60 minutes remaining)
-
-Blocklist (3 domains):
-  ✗ reddit.com        BLOCKED    (panic mode)
-  ✗ twitter.com       BLOCKED    (panic mode)
-  ✗ youtube.com       BLOCKED    (panic mode)
-
-Commands disabled: unblock, allow, disallow
-```
-
 ## Troubleshooting
 
 ### Status shows stale data

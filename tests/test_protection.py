@@ -218,86 +218,6 @@ class TestUnlockRequests:
         assert requests == []
 
 
-class TestAutoPanic:
-    """Tests for auto-panic functions."""
-
-    def test_is_auto_panic_time_disabled(self):
-        """Should return False when disabled."""
-        config = {"protection": {"auto_panic": {"enabled": False}}}
-        assert protection.is_auto_panic_time(config) is False
-
-    def test_is_auto_panic_time_no_config(self):
-        """Should return False when no config."""
-        assert protection.is_auto_panic_time({}) is False
-
-    def test_is_auto_panic_time_in_schedule(self):
-        """Should return True when in schedule."""
-        # Test with current time in range
-        now = datetime.now()
-        start = (now - timedelta(hours=1)).strftime("%H:%M")
-        end = (now + timedelta(hours=1)).strftime("%H:%M")
-
-        config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "schedule": {"start": start, "end": end},
-                }
-            }
-        }
-        assert protection.is_auto_panic_time(config) is True
-
-    def test_is_auto_panic_time_outside_schedule(self):
-        """Should return False when outside schedule."""
-        now = datetime.now()
-        start = (now + timedelta(hours=2)).strftime("%H:%M")
-        end = (now + timedelta(hours=4)).strftime("%H:%M")
-
-        config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "schedule": {"start": start, "end": end},
-                }
-            }
-        }
-        assert protection.is_auto_panic_time(config) is False
-
-    def test_is_auto_panic_time_wrong_day(self):
-        """Should return False when not on active day."""
-        now = datetime.now()
-        start = (now - timedelta(hours=1)).strftime("%H:%M")
-        end = (now + timedelta(hours=1)).strftime("%H:%M")
-        # Get a day that is not today
-        wrong_day = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-        wrong_day.remove(
-            ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"][
-                now.weekday()
-            ]
-        )
-
-        config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "schedule": {"start": start, "end": end},
-                    "days": wrong_day[:1],
-                }
-            }
-        }
-        assert protection.is_auto_panic_time(config) is False
-
-    def test_can_disable_auto_panic_true(self):
-        """Should return True when cannot_disable is False."""
-        config = {"protection": {"auto_panic": {"cannot_disable": False}}}
-        assert protection.can_disable_auto_panic(config) is True
-
-    def test_can_disable_auto_panic_false(self):
-        """Should return False when cannot_disable is True."""
-        config = {"protection": {"auto_panic": {"cannot_disable": True}}}
-        assert protection.can_disable_auto_panic(config) is False
-
-
 class TestValidateProtectionConfig:
     """Tests for validate_protection_config function."""
 
@@ -305,12 +225,6 @@ class TestValidateProtectionConfig:
         """Should return no errors for valid config."""
         config = {
             "unlock_delay_hours": 48,
-            "auto_panic": {
-                "enabled": True,
-                "cannot_disable": False,
-                "schedule": {"start": "23:00", "end": "06:00"},
-                "days": ["monday", "tuesday"],
-            },
         }
         errors = protection.validate_protection_config(config)
         assert errors == []
@@ -322,51 +236,10 @@ class TestValidateProtectionConfig:
         assert len(errors) == 1
         assert "unlock_delay_hours" in errors[0]
 
-    def test_invalid_auto_panic_type(self):
-        """Should return error for non-dict auto_panic."""
-        config = {"auto_panic": "invalid"}
-        errors = protection.validate_protection_config(config)
-        assert len(errors) == 1
-
-    def test_invalid_enabled_type(self):
-        """Should return error for non-bool enabled."""
-        config = {"auto_panic": {"enabled": "yes"}}
-        errors = protection.validate_protection_config(config)
-        assert len(errors) == 1
-
-    def test_invalid_schedule_time(self):
-        """Should return error for invalid time format."""
-        config = {"auto_panic": {"schedule": {"start": "25:00"}}}
-        errors = protection.validate_protection_config(config)
-        assert len(errors) == 1
-
-    def test_invalid_day_name(self):
-        """Should return error for invalid day name."""
-        config = {"auto_panic": {"days": ["funday"]}}
-        errors = protection.validate_protection_config(config)
-        assert len(errors) == 1
-
-    def test_non_dict_protection(self):
-        """Should return error for non-dict protection."""
-        errors = protection.validate_protection_config("invalid")
-        assert len(errors) == 1
-
-
-class TestIsValidTime:
-    """Tests for _is_valid_time function."""
-
-    def test_valid_times(self):
-        """Should return True for valid times."""
-        assert protection._is_valid_time("00:00") is True
-        assert protection._is_valid_time("23:59") is True
-        assert protection._is_valid_time("12:30") is True
-
-    def test_invalid_times(self):
-        """Should return False for invalid times."""
-        assert protection._is_valid_time("24:00") is False
-        assert protection._is_valid_time("12:60") is False
-        assert protection._is_valid_time("1:30") is False  # Missing leading zero
-        assert protection._is_valid_time("invalid") is False
+    def test_empty_config(self):
+        """Should return no errors for empty config."""
+        errors = protection.validate_protection_config({})
+        assert errors == []
 
 
 class TestExecuteUnlockRequest:
@@ -425,35 +298,25 @@ class TestExecuteUnlockRequest:
 class TestCanExecuteDangerousCommand:
     """Tests for can_execute_dangerous_command function."""
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=True)
-    def test_blocked_during_panic(self, mock_panic):
-        """Should block dangerous commands during panic mode."""
-        can_exec, reason = protection.can_execute_dangerous_command("unblock")
-        assert can_exec is False
-        assert reason == "panic_mode"
-
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
     @patch.object(protection, "is_pin_enabled", return_value=True)
     @patch.object(protection, "is_pin_locked_out", return_value=True)
-    def test_blocked_during_lockout(self, mock_lockout, mock_pin, mock_panic):
+    def test_blocked_during_lockout(self, mock_lockout, mock_pin):
         """Should block when PIN is locked out."""
         can_exec, reason = protection.can_execute_dangerous_command("unblock")
         assert can_exec is False
         assert reason == "pin_locked_out"
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
     @patch.object(protection, "is_pin_enabled", return_value=True)
     @patch.object(protection, "is_pin_locked_out", return_value=False)
     @patch.object(protection, "is_pin_session_valid", return_value=False)
-    def test_requires_pin(self, mock_session, mock_lockout, mock_pin, mock_panic):
+    def test_requires_pin(self, mock_session, mock_lockout, mock_pin):
         """Should require PIN when no valid session."""
         can_exec, reason = protection.can_execute_dangerous_command("unblock")
         assert can_exec is False
         assert reason == "pin_required"
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
     @patch.object(protection, "is_pin_enabled", return_value=False)
-    def test_allowed_no_protection(self, mock_pin, mock_panic):
+    def test_allowed_no_protection(self, mock_pin):
         """Should allow when no protection enabled."""
         can_exec, reason = protection.can_execute_dangerous_command("unblock")
         assert can_exec is True
@@ -600,211 +463,3 @@ class TestRemovePin:
         assert result is True
         # PIN should still be enabled (waiting for delay)
         assert protection.is_pin_enabled() is True
-
-
-class TestValidateNoAutoPanicWeakening:
-    """Tests for validate_no_auto_panic_weakening function."""
-
-    def test_no_weakening_when_cannot_disable_false(self):
-        """Should allow changes when cannot_disable is False."""
-        old_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": False,
-                    "schedule": {"start": "23:00", "end": "06:00"},
-                }
-            }
-        }
-        new_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": False,  # Changed
-                    "cannot_disable": False,
-                }
-            }
-        }
-        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
-        assert errors == []
-
-    def test_block_disable_when_cannot_disable_true(self):
-        """Should block disabling auto_panic when cannot_disable is True."""
-        old_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": True,
-                }
-            }
-        }
-        new_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": False,  # Trying to disable
-                    "cannot_disable": True,
-                }
-            }
-        }
-        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
-        assert len(errors) == 1
-        assert "Cannot disable auto_panic" in errors[0]
-
-    def test_block_removing_cannot_disable(self):
-        """Should block changing cannot_disable from true to false."""
-        old_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": True,
-                }
-            }
-        }
-        new_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": False,  # Trying to weaken
-                }
-            }
-        }
-        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
-        assert len(errors) == 1
-        assert "cannot_disable" in errors[0]
-
-    def test_block_removing_auto_panic_section(self):
-        """Should block removing auto_panic section entirely."""
-        old_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": True,
-                }
-            }
-        }
-        new_config = {"protection": {}}  # auto_panic removed
-        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
-        assert len(errors) == 1
-        assert "Cannot remove auto_panic section" in errors[0]
-
-    def test_block_schedule_modification(self):
-        """Should block modifying schedule when cannot_disable is True."""
-        old_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": True,
-                    "schedule": {"start": "22:00", "end": "07:00"},
-                }
-            }
-        }
-        new_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": True,
-                    "schedule": {"start": "23:00", "end": "06:00"},  # Modified
-                }
-            }
-        }
-        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
-        assert len(errors) == 1
-        assert "Cannot modify auto_panic schedule" in errors[0]
-
-    def test_block_days_reduction(self):
-        """Should block reducing active days when cannot_disable is True."""
-        old_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": True,
-                    "days": ["monday", "tuesday", "wednesday"],
-                }
-            }
-        }
-        new_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": True,
-                    "days": ["monday"],  # Reduced
-                }
-            }
-        }
-        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
-        assert len(errors) == 1
-        assert "Cannot reduce auto_panic active days" in errors[0]
-
-    def test_allow_no_changes(self):
-        """Should allow when no changes are made."""
-        config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": True,
-                    "schedule": {"start": "23:00", "end": "06:00"},
-                }
-            }
-        }
-        errors = protection.validate_no_auto_panic_weakening(config, config)
-        assert errors == []
-
-    def test_allow_when_no_auto_panic_config(self):
-        """Should allow when there's no auto_panic in old config."""
-        old_config = {"protection": {}}
-        new_config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": True,
-                }
-            }
-        }
-        errors = protection.validate_no_auto_panic_weakening(old_config, new_config)
-        assert errors == []
-
-
-class TestExecuteUnlockRequestAutoPanic:
-    """Tests for execute_unlock_request with auto_panic type."""
-
-    @pytest.fixture
-    def mock_log_dir(self, tmp_path):
-        """Mock the log directory."""
-        with patch.object(protection, "get_log_dir", return_value=tmp_path):
-            yield tmp_path
-
-    def test_execute_auto_panic_unlock(self, mock_log_dir, tmp_path):
-        """Should set cannot_disable to False when executing auto_panic unlock."""
-        # Create config file with cannot_disable: true
-        config_path = tmp_path / "config.json"
-        config = {
-            "protection": {
-                "auto_panic": {
-                    "enabled": True,
-                    "cannot_disable": True,
-                    "schedule": {"start": "23:00", "end": "06:00"},
-                }
-            }
-        }
-        config_path.write_text(json.dumps(config))
-
-        # Create a request for auto_panic
-        with patch.object(protection, "audit_log"):
-            request = protection.create_unlock_request("auto_panic", "protection", 24)
-
-        # Modify execute_at to be in the past
-        requests = protection._load_unlock_requests()
-        requests[0]["execute_at"] = (datetime.now() - timedelta(hours=1)).isoformat()
-        protection._save_unlock_requests(requests)
-
-        # Execute
-        with patch.object(protection, "audit_log"):
-            result = protection.execute_unlock_request(request["id"], config_path)
-
-        assert result is True
-
-        # Verify cannot_disable was set to False
-        new_config = json.loads(config_path.read_text())
-        assert new_config["protection"]["auto_panic"]["cannot_disable"] is False
-        # Other settings should remain unchanged
-        assert new_config["protection"]["auto_panic"]["enabled"] is True
-        assert new_config["protection"]["auto_panic"]["schedule"]["start"] == "23:00"

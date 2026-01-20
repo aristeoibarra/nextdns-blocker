@@ -133,11 +133,6 @@ def _show_overall_summary(manager: AnalyticsManager, days: int) -> None:
         console.print(f"    Pauses: [magenta]{overall.total_pauses}[/magenta]")
         console.print(f"    Resumes: [magenta]{overall.total_resumes}[/magenta]")
 
-    if overall.total_panic_activations > 0:
-        console.print(
-            f"    Panic activations: [red bold]{overall.total_panic_activations}[/red bold]"
-        )
-
     # Effectiveness score
     score = overall.effectiveness_score
     color = _get_effectiveness_color(score)

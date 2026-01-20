@@ -178,23 +178,7 @@ nextdns-blocker pending cancel a1b2c3
 ### Requirements
 
 - Watchdog must be running
-- Panic mode must be inactive
 - Action not cancelled
-
-## Pending Actions During Panic Mode
-
-When panic mode is active:
-
-| Aspect | Behavior |
-|--------|----------|
-| New actions | Cannot create (`unblock` hidden) |
-| Existing actions | Timers continue |
-| Execution | Skipped |
-| Cancellation | Still allowed |
-
-After panic expires:
-- Pending actions resume processing
-- Due actions execute immediately
 
 ## Storage
 
@@ -259,17 +243,12 @@ nextdns-blocker pending cancel pnd_<TAB>
    nextdns-blocker watchdog status
    ```
 
-2. **Check panic mode**:
-   ```bash
-   nextdns-blocker panic status
-   ```
-
-3. **Check action status**:
+2. **Check action status**:
    ```bash
    nextdns-blocker pending show <ID>
    ```
 
-4. **Force sync**:
+3. **Force sync**:
    ```bash
    nextdns-blocker config push --verbose
    ```

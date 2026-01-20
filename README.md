@@ -69,7 +69,6 @@ For complete documentation, visit: **[nextdns-blocker.pages.dev](https://nextdns
 nextdns-blocker config push       # Sync based on schedules
 nextdns-blocker status            # Check current blocking status
 nextdns-blocker unblock <domain>  # Manually unblock a domain
-nextdns-blocker panic <minutes>   # Activate emergency lockdown
 nextdns-blocker watchdog install  # Install automatic sync
 ```
 

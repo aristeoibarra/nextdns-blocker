@@ -70,7 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Resource leak in category_cli**: Proper temp file cleanup
 - **Unblock delay validation**: Block changes from `"never"` to other values
 - **Persist cannot_disable state**: Store in separate lock file to prevent config bypass
-- **Block allowlist during panic**: Prevent modifications when in panic mode
 - **List modification during iteration**: Fixed in `pending.py` and `protection.py`
 
 ### Documentation
@@ -127,9 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Protection module**: Addiction safety features
   - Locked categories/services that cannot be easily removed
   - Unlock request system with configurable delay (default 48h)
-  - Auto-panic mode for scheduled protection periods
   - CLI commands: `protection status/unlock-request/cancel/list`
-  - Integration with sync for auto-panic enforcement
 - **Telegram, Slack, and Ntfy notifications** (#185): Extended notification channels
   - New notification providers beyond Discord
   - Adjusted notification timeout handling
@@ -283,7 +280,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Full command reference for all CLI commands
   - Configuration guides for blocklist, allowlist, categories, and schedules
   - Platform-specific setup guides for macOS, Linux, Windows, and Docker
-  - Feature documentation for panic mode, shell completion, notifications
+  - Feature documentation for shell completion, notifications
   - Use case guides for parental control, productivity, study mode, gaming
 
 ### Changed
@@ -292,9 +289,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - More focused display of essential status information
 - **Documentation domain**: Links updated to new domain (nextdns-blocker.pages.dev)
 - **README simplified**: Streamlined with focus on quick start, detailed docs moved to website
-
-### Fixed
-- **Test patch path**: Corrected `is_panic_mode` patch path in CLI tests
 
 ### Tests
 - Added 367 tests for category CLI functionality
@@ -315,14 +309,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 24-hour cache to minimize network requests
   - `--no-update-check` flag to skip the check
   - Graceful handling of network errors
-- **Panic mode command** (#132): Emergency lockdown functionality
-  - `nextdns-blocker panic <duration>` activates panic mode (minimum 15 minutes)
-  - `nextdns-blocker panic status` shows remaining time
-  - `nextdns-blocker panic extend <duration>` extends the lockdown
-  - Immediately blocks all active domains on activation
-  - Hides dangerous commands (unblock, pause, resume, disallow, allow)
-  - Sync skips unblocks and allowlist operations during panic mode
-  - Discord notifications for panic activation
 - **Allowlist schedule support** (#131): Time-based allowlist entries
   - Add `schedule` field to allowlist entries for dynamic control
   - `null` or missing schedule: always in allowlist (24/7)
@@ -388,7 +374,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 - Add comprehensive docstrings to exception classes
 - Add descriptive docstrings to `DenylistCache`/`AllowlistCache`
-- Document blocklist/allowlist interaction and panic mode behavior in README
+- Document blocklist/allowlist interaction in README
 - Document datetime handling conventions in pending.py
 - Add rate limiting constants documentation
 - Add comments explaining sync order and NextDNS priority rules

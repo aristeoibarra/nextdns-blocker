@@ -199,10 +199,6 @@ echo "NextDNS Blocker completely removed"
 
 This is normal if the watchdog was never installed or was already removed.
 
-### Cannot uninstall during panic mode
-
-If panic mode is active, the `uninstall` command still works. Panic mode state is stored locally and will be removed along with other data.
-
 ## Exit Codes
 
 | Code | Meaning |

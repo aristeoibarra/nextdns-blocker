@@ -364,8 +364,7 @@ Notifications don't include:
 Create different webhooks for different purposes:
 
 1. **#nextdns-alerts** - All sync notifications
-2. **#nextdns-panic** - Only panic mode (urgent)
-3. **#accountability** - Share with accountability partner
+2. **#accountability** - Share with accountability partner
 
 ### Private vs Shared
 

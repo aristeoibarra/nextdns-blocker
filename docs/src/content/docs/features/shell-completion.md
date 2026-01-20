@@ -59,7 +59,7 @@ Fish loads completions automatically.
 
 ```bash
 nextdns-blocker <TAB>
-# Shows: status, unblock, config, watchdog, panic, pending, allow, disallow, update, completion
+# Shows: status, unblock, config, watchdog, pending, allow, disallow, update, completion
 ```
 
 ### Subcommands

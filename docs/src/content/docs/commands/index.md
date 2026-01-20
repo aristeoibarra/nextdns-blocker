@@ -74,16 +74,6 @@ Manage automatic synchronization.
 | [`watchdog enable`](/commands/watchdog/) | Re-enable after disable |
 | [`watchdog disable`](/commands/watchdog/) | Temporarily disable |
 
-### panic
-
-Emergency lockdown mode.
-
-| Subcommand | Description |
-|------------|-------------|
-| [`panic MINUTES`](/commands/panic/) | Activate panic mode |
-| [`panic status`](/commands/panic/) | Check panic mode status |
-| [`panic extend`](/commands/panic/) | Extend panic duration |
-
 ### pending
 
 Manage pending unblock actions.
@@ -200,9 +190,6 @@ nextdns-blocker status
 ```bash
 # Check what's blocked
 nextdns-blocker status
-
-# Emergency mode
-nextdns-blocker panic 60
 ```
 
 ### Management

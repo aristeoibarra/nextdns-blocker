@@ -41,10 +41,6 @@ def mock_config(tmp_path):
         },
         "protection": {
             "unlock_delay_hours": 48,
-            "auto_panic": {
-                "enabled": True,
-                "schedule": {"start": "23:00", "end": "06:00"},
-            },
         },
     }
     config_json.write_text(json.dumps(config))
@@ -75,12 +71,11 @@ class TestProtectionStatus:
         with patch("nextdns_blocker.cli_helpers.load_config") as mock_load:
             mock_load.return_value = {"script_dir": str(mock_config["dir"])}
             with patch("nextdns_blocker.protection_cli.is_pin_enabled", return_value=False):
-                with patch("nextdns_blocker.protection_cli.is_auto_panic_time", return_value=False):
-                    with patch(
-                        "nextdns_blocker.protection_cli.get_pending_unlock_requests",
-                        return_value=[],
-                    ):
-                        result = runner.invoke(protection, ["status"])
+                with patch(
+                    "nextdns_blocker.protection_cli.get_pending_unlock_requests",
+                    return_value=[],
+                ):
+                    result = runner.invoke(protection, ["status"])
 
         assert result.exit_code == 0
         assert "Protection Status" in result.output
@@ -98,13 +93,10 @@ class TestProtectionStatus:
                         return_value="25m 30s",
                     ):
                         with patch(
-                            "nextdns_blocker.protection_cli.is_auto_panic_time", return_value=False
+                            "nextdns_blocker.protection_cli.get_pending_unlock_requests",
+                            return_value=[],
                         ):
-                            with patch(
-                                "nextdns_blocker.protection_cli.get_pending_unlock_requests",
-                                return_value=[],
-                            ):
-                                result = runner.invoke(protection, ["status"])
+                            result = runner.invoke(protection, ["status"])
 
         assert result.exit_code == 0
         assert "enabled" in result.output

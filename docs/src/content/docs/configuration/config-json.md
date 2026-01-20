@@ -196,21 +196,12 @@ Configuration for NextDNS Parental Control categories and services.
 
 ### protection
 
-Addiction protection features including auto-panic and unlock delays.
+Addiction protection features including unlock delays.
 
 ```json
 {
   "protection": {
-    "unlock_delay_hours": 48,
-    "auto_panic": {
-      "enabled": true,
-      "cannot_disable": true,
-      "schedule": {
-        "start": "23:00",
-        "end": "06:00"
-      },
-      "days": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-    }
+    "unlock_delay_hours": 48
   }
 }
 ```
@@ -218,12 +209,6 @@ Addiction protection features including auto-panic and unlock delays.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `unlock_delay_hours` | int | 48 | Default delay for unlock requests (min 24h) |
-| `auto_panic` | object | null | Auto-panic configuration |
-| `auto_panic.enabled` | boolean | false | Enable auto-panic mode |
-| `auto_panic.cannot_disable` | boolean | false | Prevent disabling (requires unlock request) |
-| `auto_panic.schedule.start` | string | "23:00" | Time to start auto-panic (HH:MM) |
-| `auto_panic.schedule.end` | string | "06:00" | Time to end auto-panic (HH:MM) |
-| `auto_panic.days` | array | all days | Days when auto-panic is active |
 
 ## Domain Entry Fields
 

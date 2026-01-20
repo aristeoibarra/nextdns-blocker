@@ -223,17 +223,10 @@ def config_cli() -> None:
 def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
     """Open config file in editor."""
     from .cli import require_pin_verification
-    from .panic import is_panic_mode
     from .protection import (
-        validate_no_auto_panic_weakening,
         validate_no_locked_removal,
         validate_no_locked_weakening,
     )
-
-    # Block config edit during panic mode
-    if is_panic_mode():
-        console.print("\n  [red]Error: Cannot edit config during panic mode[/red]\n")
-        sys.exit(1)
 
     # Require PIN verification
     require_pin_verification("config edit")
@@ -289,7 +282,6 @@ def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
     protection_errors = []
     protection_errors.extend(validate_no_locked_removal(original_config, new_config))
     protection_errors.extend(validate_no_locked_weakening(original_config, new_config))
-    protection_errors.extend(validate_no_auto_panic_weakening(original_config, new_config))
 
     if protection_errors:
         console.print("\n  [red]Protection violation detected![/red]\n")
@@ -979,17 +971,11 @@ def cmd_pull(
         ndb config pull -y             # Skip confirmation
     """
     from .cli import require_pin_verification
-    from .panic import is_panic_mode
 
     config_path = get_config_file_path(config_dir)
 
     if not config_path.exists():
         console.print(f"\n  [red]Error: Config file not found: {config_path}[/red]\n")
-        sys.exit(1)
-
-    # Block during panic mode
-    if is_panic_mode():
-        console.print("\n  [red]Error: Cannot modify config during panic mode[/red]\n")
         sys.exit(1)
 
     # Require PIN for non-dry-run operations

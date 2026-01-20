@@ -451,19 +451,6 @@ nextdns-blocker allow github.com
 nextdns-blocker allow stackoverflow.com
 ```
 
-## Allowlist During Panic Mode
-
-When panic mode is active:
-
-- The `allow` command is **hidden**
-- The `disallow` command is **hidden**
-- Scheduled allowlist sync is **skipped**
-- This prevents bypassing emergency lockdown
-
-After panic expires:
-- Commands become available again
-- Scheduled allowlist syncing resumes
-
 ## Viewing Allowlist
 
 ### Via Status
@@ -547,16 +534,6 @@ This is valid and will show a warning during config load.
    ```bash
    nextdns-blocker config push
    ```
-
-### allow command hidden
-
-Panic mode is active. Check status:
-
-```bash
-nextdns-blocker panic status
-```
-
-Wait for panic to expire.
 
 ### Domain not in allowlist after allow
 

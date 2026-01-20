@@ -201,19 +201,6 @@ Dry run DOES:
 
 ## Dry Run + Other Features
 
-### With Panic Mode
-
-During panic mode, dry run shows:
-```
-DRY RUN - PANIC MODE ACTIVE
-
-All domains would be blocked regardless of schedule.
-
-  reddit.com: Would BLOCK (panic override)
-  twitter.com: Would BLOCK (panic override)
-  youtube.com: Would BLOCK (already blocked)
-```
-
 ### Pending Actions
 
 Dry run shows pending actions that would execute:

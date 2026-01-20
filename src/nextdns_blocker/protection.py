@@ -3,7 +3,6 @@
 This module provides:
 - Locked categories/services that cannot be easily removed
 - Unlock request system with configurable delay
-- Auto-panic mode for scheduled protection periods
 """
 
 import contextlib
@@ -313,97 +312,6 @@ def validate_no_locked_weakening(
     return errors
 
 
-def validate_no_auto_panic_weakening(
-    old_config: dict[str, Any], new_config: dict[str, Any]
-) -> list[str]:
-    """Validate that auto-panic settings are not being weakened when cannot_disable is true.
-
-    Protected changes when cannot_disable=true:
-    - Changing enabled: true to enabled: false
-    - Changing cannot_disable: true to cannot_disable: false
-    - Removing auto_panic section entirely
-    - Modifying schedule to reduce coverage
-
-    Args:
-        old_config: Current configuration
-        new_config: Proposed new configuration
-
-    Returns:
-        List of error messages for auto-panic being weakened
-    """
-    errors: list[str] = []
-
-    old_protection = old_config.get("protection", {})
-    old_auto_panic = old_protection.get("auto_panic", {})
-
-    # Only enforce if cannot_disable is currently true
-    if not old_auto_panic.get("cannot_disable", False):
-        return errors
-
-    new_protection = new_config.get("protection", {})
-    new_auto_panic = new_protection.get("auto_panic", {})
-
-    # Check if auto_panic section was removed entirely
-    if "auto_panic" not in new_protection and "auto_panic" in old_protection:
-        errors.append(
-            "Cannot remove auto_panic section. It has 'cannot_disable: true'. "
-            f"Use 'ndb protection unlock-request auto_panic' to request modification "
-            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
-        )
-        return errors
-
-    # Check if enabled was changed from true to false
-    if old_auto_panic.get("enabled", False) and not new_auto_panic.get("enabled", True):
-        errors.append(
-            "Cannot disable auto_panic. It has 'cannot_disable: true'. "
-            f"Use 'ndb protection unlock-request auto_panic' to request modification "
-            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
-        )
-
-    # Check if cannot_disable was changed from true to false
-    if old_auto_panic.get("cannot_disable", False) and not new_auto_panic.get(
-        "cannot_disable", False
-    ):
-        errors.append(
-            "Cannot change 'cannot_disable' from true to false. "
-            f"Use 'ndb protection unlock-request auto_panic' to request modification "
-            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
-        )
-
-    # Check if schedule was weakened (reduced coverage)
-    old_schedule = old_auto_panic.get("schedule", {})
-    new_schedule = new_auto_panic.get("schedule", {})
-
-    if old_schedule and new_schedule:
-        # Check if start time was made later (less coverage)
-        old_start = old_schedule.get("start", "23:00")
-        new_start = new_schedule.get("start", "23:00")
-        # Check if end time was made earlier (less coverage)
-        old_end = old_schedule.get("end", "06:00")
-        new_end = new_schedule.get("end", "06:00")
-
-        if old_start != new_start or old_end != new_end:
-            errors.append(
-                "Cannot modify auto_panic schedule. It has 'cannot_disable: true'. "
-                f"Use 'ndb protection unlock-request auto_panic' to request modification "
-                f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
-            )
-
-    # Check if days were reduced
-    old_days = set(old_auto_panic.get("days", []))
-    new_days = set(new_auto_panic.get("days", []))
-
-    if old_days and new_days and not old_days.issubset(new_days):
-        # Some days were removed
-        errors.append(
-            "Cannot reduce auto_panic active days. It has 'cannot_disable: true'. "
-            f"Use 'ndb protection unlock-request auto_panic' to request modification "
-            f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
-        )
-
-    return errors
-
-
 def create_unlock_request(
     item_type: str,
     item_id: str,
@@ -546,13 +454,6 @@ def execute_unlock_request(request_id: str, config_path: Path) -> bool:
             elif item_type == "service":
                 services = config.get("nextdns", {}).get("services", [])
                 config["nextdns"]["services"] = [s for s in services if s.get("id") != item_id]
-            elif item_type == "auto_panic":
-                # Disable the cannot_disable flag to allow modifications
-                protection = config.get("protection", {})
-                auto_panic = protection.get("auto_panic", {})
-                if auto_panic:
-                    auto_panic["cannot_disable"] = False
-                    config["protection"]["auto_panic"] = auto_panic
 
             # Write updated config
             with open(config_path, "w", encoding="utf-8") as f:
@@ -573,71 +474,6 @@ def execute_unlock_request(request_id: str, config_path: Path) -> bool:
         except (json.JSONDecodeError, OSError) as e:
             logger.error(f"Failed to execute unlock request: {e}")
             return False
-
-
-# =============================================================================
-# AUTO-PANIC MODE
-# =============================================================================
-
-
-def is_auto_panic_time(config: dict[str, Any]) -> bool:
-    """Check if current time falls within auto-panic schedule.
-
-    Args:
-        config: Config dictionary with protection.auto_panic settings
-
-    Returns:
-        True if auto-panic should be active now
-    """
-    protection = config.get("protection", {})
-    auto_panic = protection.get("auto_panic", {})
-
-    if not auto_panic.get("enabled", False):
-        return False
-
-    schedule = auto_panic.get("schedule", {})
-    start_str = schedule.get("start", "23:00")
-    end_str = schedule.get("end", "06:00")
-
-    # Parse times
-    start_h, start_m = map(int, start_str.split(":"))
-    end_h, end_m = map(int, end_str.split(":"))
-
-    start_mins = start_h * 60 + start_m
-    end_mins = end_h * 60 + end_m
-
-    now = datetime.now()
-    current_mins = now.hour * 60 + now.minute
-
-    # Check if today is in the active days
-    days = auto_panic.get("days", [])
-    day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-    current_day = day_names[now.weekday()]
-
-    if days and current_day not in days:
-        return False
-
-    # Handle overnight ranges (e.g., 23:00 - 06:00)
-    if start_mins > end_mins:
-        # Overnight: active if current >= start OR current < end
-        return current_mins >= start_mins or current_mins < end_mins
-    else:
-        # Same day: active if start <= current < end
-        return start_mins <= current_mins < end_mins
-
-
-def can_disable_auto_panic(config: dict[str, Any]) -> bool:
-    """Check if auto-panic can be disabled.
-
-    Args:
-        config: Config dictionary
-
-    Returns:
-        True if auto-panic can be disabled (cannot_disable is False or not set)
-    """
-    protection = config.get("protection", {})
-    auto_panic = protection.get("auto_panic", {})
-    return not auto_panic.get("cannot_disable", False)
 
 
 def validate_protection_config(protection: dict[str, Any]) -> list[str]:
@@ -662,73 +498,7 @@ def validate_protection_config(protection: dict[str, Any]) -> list[str]:
                 f"protection.unlock_delay_hours must be an integer >= {MIN_UNLOCK_DELAY_HOURS}"
             )
 
-    # Validate auto_panic
-    auto_panic = protection.get("auto_panic")
-    if auto_panic is not None:
-        if not isinstance(auto_panic, dict):
-            errors.append("protection.auto_panic must be an object")
-        else:
-            # Validate enabled
-            if "enabled" in auto_panic and not isinstance(auto_panic["enabled"], bool):
-                errors.append("protection.auto_panic.enabled must be a boolean")
-
-            # Validate cannot_disable
-            if "cannot_disable" in auto_panic and not isinstance(
-                auto_panic["cannot_disable"], bool
-            ):
-                errors.append("protection.auto_panic.cannot_disable must be a boolean")
-
-            # Validate schedule
-            schedule = auto_panic.get("schedule")
-            if schedule is not None:
-                if not isinstance(schedule, dict):
-                    errors.append("protection.auto_panic.schedule must be an object")
-                else:
-                    for key in ["start", "end"]:
-                        time_val = schedule.get(key)
-                        if time_val is not None:
-                            if not isinstance(time_val, str):
-                                errors.append(
-                                    f"protection.auto_panic.schedule.{key} must be a string"
-                                )
-                            elif not _is_valid_time(time_val):
-                                errors.append(
-                                    f"protection.auto_panic.schedule.{key} must be HH:MM format"
-                                )
-
-            # Validate days
-            days = auto_panic.get("days")
-            if days is not None:
-                valid_days = {
-                    "monday",
-                    "tuesday",
-                    "wednesday",
-                    "thursday",
-                    "friday",
-                    "saturday",
-                    "sunday",
-                }
-                if not isinstance(days, list):
-                    errors.append("protection.auto_panic.days must be an array")
-                else:
-                    for day in days:
-                        if day.lower() not in valid_days:
-                            errors.append(f"protection.auto_panic.days: invalid day '{day}'")
-
     return errors
-
-
-def _is_valid_time(time_str: str) -> bool:
-    """Validate HH:MM time format."""
-    import re
-
-    if not re.match(r"^\d{2}:\d{2}$", time_str):
-        return False
-    try:
-        h, m = map(int, time_str.split(":"))
-        return 0 <= h <= 23 and 0 <= m <= 59
-    except ValueError:
-        return False
 
 
 # =============================================================================
@@ -1098,34 +868,24 @@ def get_lockout_remaining() -> Optional[str]:
 # UNIFIED PROTECTION CHECK
 # =============================================================================
 
+# Commands that require PIN protection
+DANGEROUS_COMMANDS = {"unblock", "pause", "edit", "disable"}
+
 
 def can_execute_dangerous_command(command_name: str) -> tuple[bool, str]:
     """
     Unified check for dangerous command execution.
 
-    This function checks all protection layers in order:
-    1. Panic mode (absolute block - commands are hidden)
-    2. PIN protection (requires verification)
+    This function checks PIN protection layer.
 
     Args:
         command_name: Name of the command to check
 
     Returns:
         Tuple of (can_execute, reason)
-        Reasons: "ok", "panic_mode", "pin_required", "pin_locked_out"
+        Reasons: "ok", "pin_required", "pin_locked_out"
     """
-    from .panic import DANGEROUS_COMMANDS, DANGEROUS_SUBCOMMANDS, is_panic_mode
-
-    # 1. Panic mode has absolute priority
-    if is_panic_mode():
-        if command_name in DANGEROUS_COMMANDS:
-            return False, "panic_mode"
-        # Check subcommands
-        for _parent, subs in DANGEROUS_SUBCOMMANDS.items():
-            if command_name in subs:
-                return False, "panic_mode"
-
-    # 2. PIN protection
+    # PIN protection
     if is_pin_enabled():
         if command_name in DANGEROUS_COMMANDS:
             if is_pin_locked_out():
@@ -1134,127 +894,6 @@ def can_execute_dangerous_command(command_name: str) -> tuple[bool, str]:
                 return False, "pin_required"
 
     return True, "ok"
-
-
-# =============================================================================
-# CANNOT_DISABLE STATE PERSISTENCE
-# =============================================================================
-
-
-def get_cannot_disable_lock_file() -> Path:
-    """Get the cannot_disable lock file path."""
-    return get_log_dir() / ".cannot_disable_lock"
-
-
-def persist_cannot_disable_state(enabled: bool) -> None:
-    """
-    Persist the cannot_disable state to a secure file.
-
-    This provides an additional layer of protection against config.json edits.
-    Even if a user modifies config.json, this lock file will preserve the
-    original cannot_disable state.
-
-    Args:
-        enabled: Whether cannot_disable is enabled
-    """
-    lock_file = get_cannot_disable_lock_file()
-    if enabled:
-        write_secure_file(lock_file, "true")
-        audit_log("CANNOT_DISABLE_LOCK", "Locked cannot_disable state")
-    else:
-        # Only remove if explicitly set to false after proper unlock request
-        if lock_file.exists():
-            lock_file.unlink(missing_ok=True)
-            audit_log("CANNOT_DISABLE_UNLOCK", "Unlocked cannot_disable state")
-
-
-def is_cannot_disable_locked() -> bool:
-    """
-    Check if cannot_disable is locked via the persistent lock file.
-
-    This function checks the lock file rather than config.json to prevent
-    bypass via config.json edits.
-
-    Returns:
-        True if cannot_disable is persistently locked
-    """
-    lock_file = get_cannot_disable_lock_file()
-    content = read_secure_file(lock_file)
-    return content == "true"
-
-
-def sync_cannot_disable_from_config(config: dict[str, Any]) -> None:
-    """
-    Sync the cannot_disable lock state from config.
-
-    Called during init or when config is validated. If config has
-    cannot_disable: true, this creates the lock file. The lock file
-    can only be removed through the proper unlock request process.
-
-    Args:
-        config: The full configuration dictionary
-    """
-    protection = config.get("protection", {})
-    auto_panic = protection.get("auto_panic", {})
-
-    if auto_panic.get("cannot_disable", False):
-        persist_cannot_disable_state(True)
-
-
-# =============================================================================
-# ALLOWLIST PANIC MODE VALIDATION
-# =============================================================================
-
-
-def validate_no_allowlist_bypass_during_panic(
-    old_config: dict[str, Any], new_config: dict[str, Any]
-) -> list[str]:
-    """
-    Validate that allowlist is not being modified during panic mode.
-
-    Since allowlist has highest priority in NextDNS and can bypass all blocks,
-    modifications to allowlist during panic mode are forbidden.
-
-    Args:
-        old_config: Current configuration
-        new_config: Proposed new configuration
-
-    Returns:
-        List of error messages for forbidden allowlist modifications
-    """
-    from .panic import is_panic_mode
-
-    if not is_panic_mode():
-        return []
-
-    errors = []
-
-    # Get old and new allowlists
-    old_allowlist = set()
-    for item in old_config.get("allowlist", []):
-        if isinstance(item, str):
-            old_allowlist.add(item)
-        elif isinstance(item, dict):
-            old_allowlist.add(item.get("domain", ""))
-
-    new_allowlist = set()
-    for item in new_config.get("allowlist", []):
-        if isinstance(item, str):
-            new_allowlist.add(item)
-        elif isinstance(item, dict):
-            new_allowlist.add(item.get("domain", ""))
-
-    # Check for added domains
-    added = new_allowlist - old_allowlist
-    if added:
-        for domain in added:
-            if domain:
-                errors.append(
-                    f"Cannot add '{domain}' to allowlist during panic mode. "
-                    f"Allowlist modifications are blocked to prevent bypassing protection."
-                )
-
-    return errors
 
 
 def get_all_config_validation_errors(
@@ -1278,20 +917,5 @@ def get_all_config_validation_errors(
     # Run all validators
     errors.extend(validate_no_locked_removal(old_config, new_config))
     errors.extend(validate_no_locked_weakening(old_config, new_config))
-    errors.extend(validate_no_auto_panic_weakening(old_config, new_config))
-    errors.extend(validate_no_allowlist_bypass_during_panic(old_config, new_config))
-
-    # Check persistent cannot_disable lock
-    if is_cannot_disable_locked():
-        new_protection = new_config.get("protection", {})
-        new_auto_panic = new_protection.get("auto_panic", {})
-
-        # If lock file exists but config shows cannot_disable=false, block the change
-        if not new_auto_panic.get("cannot_disable", True):
-            errors.append(
-                "Cannot change 'cannot_disable' - it is persistently locked. "
-                f"Use 'ndb protection unlock-request auto_panic' to request modification "
-                f"with a {DEFAULT_UNLOCK_DELAY_HOURS}h delay."
-            )
 
     return errors

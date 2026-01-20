@@ -240,48 +240,14 @@ PYPI_PACKAGE_URL = "https://pypi.org/pypi/nextdns-blocker/json"
 # =============================================================================
 
 
-class PanicAwareGroup(click.Group):
-    """Click Group that hides dangerous commands during panic mode."""
-
-    def get_command(self, ctx: click.Context, cmd_name: str) -> Optional[click.Command]:
-        """Get a command, returning None if hidden during panic mode."""
-        from .panic import DANGEROUS_COMMANDS, is_panic_mode
-
-        cmd = super().get_command(ctx, cmd_name)
-        if cmd is None:
-            return None
-
-        # Check if this top-level command should be hidden
-        if is_panic_mode() and cmd_name in DANGEROUS_COMMANDS:
-            return None  # Returns "No such command" error
-
-        return cmd
-
-    def list_commands(self, ctx: click.Context) -> list[str]:
-        """List commands, excluding hidden ones during panic mode."""
-        from .panic import DANGEROUS_COMMANDS, is_panic_mode
-
-        commands = list(super().list_commands(ctx))
-        if is_panic_mode():
-            commands = [c for c in commands if c not in DANGEROUS_COMMANDS]
-        return commands
-
-
-@click.group(cls=PanicAwareGroup, invoke_without_command=True)
+@click.group(invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="nextdns-blocker")
 @click.option("--no-color", is_flag=True, help="Disable colored output")
 @click.pass_context
 def main(ctx: click.Context, no_color: bool) -> None:
     """NextDNS Blocker - Domain blocking with per-domain scheduling."""
-    from .panic import get_panic_remaining, is_panic_mode
-
     if no_color:
         console.no_color = True
-
-    # Show panic mode banner if active
-    if is_panic_mode():
-        remaining = get_panic_remaining()
-        console.print(f"\n  [red bold]PANIC MODE ACTIVE ({remaining} remaining)[/red bold]\n")
 
     if ctx.invoked_subcommand is None:
         console.print(ctx.get_help())
@@ -418,7 +384,6 @@ def _sync_denylist(
     config: dict[str, Any],
     dry_run: bool,
     verbose: bool,
-    panic_active: bool,
     nm: "NotificationManager",
 ) -> tuple[int, int]:
     """
@@ -431,7 +396,6 @@ def _sync_denylist(
         config: Application configuration
         dry_run: If True, only show what would be done
         verbose: If True, show detailed output
-        panic_active: If True, skip unblocks
         nm: NotificationManager for queuing notifications
 
     Returns:
@@ -459,7 +423,7 @@ def _sync_denylist(
         elif not should_block and is_blocked:
             # Domain should be unblocked
             unblocked = _handle_unblock(
-                domain, domain_config, domains, client, config, dry_run, verbose, panic_active, nm
+                domain, domain_config, domains, client, config, dry_run, verbose, nm
             )
             if unblocked:
                 unblocked_count += 1
@@ -475,7 +439,6 @@ def _handle_unblock(
     config: dict[str, Any],
     dry_run: bool,
     verbose: bool,
-    panic_active: bool,
     nm: "NotificationManager",
 ) -> bool:
     """
@@ -489,7 +452,6 @@ def _handle_unblock(
         config: Application configuration
         dry_run: If True, only show what would be done
         verbose: If True, show detailed output
-        panic_active: If True, skip unblocks
         nm: NotificationManager for queuing notifications
 
     Returns:
@@ -497,12 +459,6 @@ def _handle_unblock(
     """
     from .config import get_unblock_delay, parse_unblock_delay_seconds
     from .pending import create_pending_action, get_pending_for_domain
-
-    # Skip unblocks during panic mode
-    if panic_active:
-        if verbose:
-            console.print(f"  [red]Skipping unblock (panic mode): {domain}[/red]")
-        return False
 
     # Check unblock_delay for this domain
     domain_delay = get_unblock_delay(domains, domain)
@@ -553,15 +509,10 @@ def _sync_allowlist(
     config: dict[str, Any],
     dry_run: bool,
     verbose: bool,
-    panic_active: bool,
     nm: "NotificationManager",
 ) -> tuple[int, int]:
     """
     Synchronize allowlist domains based on schedules.
-
-    During panic mode, ALL allowlist operations are skipped to prevent
-    scheduled allowlist entries from creating security holes. The allowlist
-    has highest priority in NextDNS and would bypass all blocks.
 
     Args:
         allowlist: List of allowlist configurations
@@ -570,20 +521,11 @@ def _sync_allowlist(
         config: Application configuration (for webhook URL)
         dry_run: If True, only show what would be done
         verbose: If True, show detailed output
-        panic_active: If True, skip all allowlist operations
         nm: NotificationManager for queuing notifications
 
     Returns:
         Tuple of (allowed_count, disallowed_count)
     """
-    # During panic mode, skip ALL allowlist operations
-    # This prevents scheduled allowlist entries from creating security holes
-    # (allowlist has highest priority in NextDNS and would bypass all blocks)
-    if panic_active:
-        if verbose:
-            console.print("  [red]Skipping allowlist sync (panic mode active)[/red]")
-        return 0, 0
-
     allowed_count = 0
     disallowed_count = 0
 
@@ -624,7 +566,6 @@ def _sync_nextdns_categories(
     config: dict[str, Any],
     dry_run: bool,
     verbose: bool,
-    panic_active: bool,
     nm: "NotificationManager",
 ) -> tuple[int, int]:
     """
@@ -640,7 +581,6 @@ def _sync_nextdns_categories(
         config: Application configuration
         dry_run: If True, only show what would be done
         verbose: If True, show detailed output
-        panic_active: If True, skip deactivations (maintain blocks)
         nm: NotificationManager for queuing notifications
 
     Returns:
@@ -672,11 +612,6 @@ def _sync_nextdns_categories(
 
         elif not should_block and is_active:
             # Should be available but is blocking - deactivate
-            if panic_active:
-                if verbose:
-                    console.print(f"  [red]Skipping deactivation (panic mode): {category_id}[/red]")
-                continue
-
             if dry_run:
                 console.print(f"  [green]Would DEACTIVATE category: {category_id}[/green]")
             else:
@@ -695,7 +630,6 @@ def _sync_nextdns_services(
     config: dict[str, Any],
     dry_run: bool,
     verbose: bool,
-    panic_active: bool,
     nm: "NotificationManager",
 ) -> tuple[int, int]:
     """
@@ -711,7 +645,6 @@ def _sync_nextdns_services(
         config: Application configuration
         dry_run: If True, only show what would be done
         verbose: If True, show detailed output
-        panic_active: If True, skip deactivations (maintain blocks)
         nm: NotificationManager for queuing notifications
 
     Returns:
@@ -743,11 +676,6 @@ def _sync_nextdns_services(
 
         elif not should_block and is_active:
             # Should be available but is blocking - deactivate
-            if panic_active:
-                if verbose:
-                    console.print(f"  [red]Skipping deactivation (panic mode): {service_id}[/red]")
-                continue
-
             if dry_run:
                 console.print(f"  [green]Would DEACTIVATE service: {service_id}[/green]")
             else:
@@ -875,30 +803,6 @@ def sync_impl(
     """
     setup_logging(verbose)
 
-    # Check panic mode - blocks continue, unblocks and allowlist changes skipped
-    from .panic import is_panic_mode
-
-    panic_active = is_panic_mode()
-
-    # Check auto-panic schedule
-    import json as json_mod
-
-    from .protection import is_auto_panic_time
-
-    try:
-        config_for_autopanic = load_config(config_dir)
-        config_path = Path(config_for_autopanic["script_dir"]) / "config.json"
-        with open(config_path, encoding="utf-8") as f:
-            full_config = json_mod.load(f)
-
-        if is_auto_panic_time(full_config) and not panic_active:
-            # Auto-panic is active but panic mode isn't - treat as panic
-            panic_active = True
-            if verbose:
-                console.print("  [red]Auto-panic active (scheduled)[/red]")
-    except (OSError, json_mod.JSONDecodeError, ConfigurationError):
-        pass  # If we can't read config, continue without auto-panic
-
     try:
         config = load_config(config_dir)
         domains, allowlist = load_domains(config["script_dir"])
@@ -927,11 +831,6 @@ def sync_impl(
         # 3. Third-party blocklists (OISD, HaGeZi, etc.)
         # 4. Security features (Threat Intelligence, NRDs, etc.)
         # 5. Parental Control (categories and services)
-        #
-        # During panic mode:
-        # - Denylist: blocks continue, unblocks skipped
-        # - Allowlist: completely skipped (prevents security holes)
-        # - Parental Control: activations continue, deactivations skipped
         # =========================================================================
 
         # Use NotificationManager context for batched notifications
@@ -939,12 +838,12 @@ def sync_impl(
         with nm.sync_context(config["profile_id"], config):
             # Sync denylist domains
             blocked_count, unblocked_count = _sync_denylist(
-                domains, client, evaluator, config, dry_run, verbose, panic_active, nm
+                domains, client, evaluator, config, dry_run, verbose, nm
             )
 
-            # Sync allowlist (schedule-aware, panic-aware)
+            # Sync allowlist (schedule-aware)
             allowed_count, disallowed_count = _sync_allowlist(
-                allowlist, client, evaluator, config, dry_run, verbose, panic_active, nm
+                allowlist, client, evaluator, config, dry_run, verbose, nm
             )
 
             # Sync NextDNS Parental Control (if configured)
@@ -964,7 +863,6 @@ def sync_impl(
                         config,
                         dry_run,
                         verbose,
-                        panic_active,
                         nm,
                     )
                     pc_activated += cat_activated
@@ -980,7 +878,6 @@ def sync_impl(
                         config,
                         dry_run,
                         verbose,
-                        panic_active,
                         nm,
                     )
                     pc_activated += svc_activated

@@ -81,19 +81,13 @@ nextdns-blocker config push --dry-run -v | grep -A10 domain.com
    - Verify current time
    - Check timezone setting
 
-2. **Panic mode active**
-   ```bash
-   nextdns-blocker panic status
-   ```
-   Wait for expiration or (emergency only) delete `.panic` file.
-
-3. **Watchdog not running**
+2. **Watchdog not running**
    ```bash
    nextdns-blocker watchdog status
    nextdns-blocker watchdog install
    ```
 
-4. **Sync not running**
+3. **Sync not running**
    ```bash
    nextdns-blocker config push --verbose
    ```
@@ -225,17 +219,12 @@ nextdns-blocker pending show <ID>
 1. **Execution time not reached**
    - Check "Execute at" time
 
-2. **Panic mode blocking**
-   ```bash
-   nextdns-blocker panic status
-   ```
-
-3. **Watchdog not running**
+2. **Watchdog not running**
    ```bash
    nextdns-blocker watchdog status
    ```
 
-4. **Force processing**
+3. **Force processing**
    ```bash
    nextdns-blocker config push --verbose
    ```
@@ -292,15 +281,9 @@ tail -f ~/.local/share/nextdns-blocker/logs/app.log
 
 | File | Purpose | Location |
 |------|---------|----------|
-| `.panic` | Panic state | `~/.local/share/nextdns-blocker/` |
 | `pending.json` | Pending actions | `~/.local/share/nextdns-blocker/` |
 
 ### Resetting State
-
-**Clear panic** (emergency only):
-```bash
-rm ~/.local/share/nextdns-blocker/.panic
-```
 
 **Reset pending actions**:
 ```bash

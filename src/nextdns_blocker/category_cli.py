@@ -235,13 +235,6 @@ def cmd_show(category_id: str, config_dir: Optional[Path]) -> None:
 )
 def cmd_add(category_id: str, domain: str, config_dir: Optional[Path]) -> None:
     """Add a domain to a category."""
-    from .panic import is_panic_mode
-
-    # Block during panic mode
-    if is_panic_mode():
-        out.error("Cannot modify categories during panic mode")
-        sys.exit(1)
-
     # Validate domain format
     domain = domain.strip().lower()
     if not validate_domain(domain):
@@ -316,13 +309,6 @@ def cmd_add(category_id: str, domain: str, config_dir: Optional[Path]) -> None:
 )
 def cmd_remove(category_id: str, domain: str, yes: bool, config_dir: Optional[Path]) -> None:
     """Remove a domain from a category."""
-    from .panic import is_panic_mode
-
-    # Block during panic mode
-    if is_panic_mode():
-        out.error("Cannot modify categories during panic mode")
-        sys.exit(1)
-
     domain = domain.strip().lower()
     config_path, config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
@@ -384,13 +370,6 @@ def cmd_create(
     category_id: str, description: Optional[str], delay: str, config_dir: Optional[Path]
 ) -> None:
     """Create a new category."""
-    from .panic import is_panic_mode
-
-    # Block during panic mode
-    if is_panic_mode():
-        out.error("Cannot create categories during panic mode")
-        sys.exit(1)
-
     # Validate category ID
     if not validate_category_id(category_id):
         console.print(
@@ -467,13 +446,6 @@ def cmd_create(
 )
 def cmd_delete(category_id: str, yes: bool, config_dir: Optional[Path]) -> None:
     """Delete a category and all its domains."""
-    from .panic import is_panic_mode
-
-    # Block during panic mode
-    if is_panic_mode():
-        out.error("Cannot delete categories during panic mode")
-        sys.exit(1)
-
     config_path, config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
     category_idx = _find_category_index(categories, category_id)

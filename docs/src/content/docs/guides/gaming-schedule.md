@@ -353,10 +353,7 @@ For game stores:
 Exams, deadlines, etc.:
 
 ```bash
-# Use panic mode
-nextdns-blocker panic 8h  # Full day focus
-
-# Or reduce schedule
+# Reduce schedule
 nextdns-blocker config edit
 # Limit to weekends only temporarily
 ```

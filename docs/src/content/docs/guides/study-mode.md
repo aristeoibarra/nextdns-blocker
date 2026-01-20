@@ -13,7 +13,6 @@ This guide helps students set up NextDNS Blocker for effective studying with min
 - Block all social media during study hours
 - Allow educational resources
 - Scheduled breaks to prevent burnout
-- Quick panic mode for exam periods
 
 ## Configuration
 
@@ -237,21 +236,6 @@ This guide helps students set up NextDNS Blocker for effective studying with min
 ```
 
 ## Exam Mode
-
-### During Exam Periods
-
-Use panic mode for extended focus:
-
-```bash
-# 3-hour study session
-nextdns-blocker panic 180
-
-# Full day study
-nextdns-blocker panic 8h
-
-# Extend if needed
-nextdns-blocker panic extend 60
-```
 
 ### Pre-Exam Configuration
 

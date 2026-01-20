@@ -199,13 +199,6 @@ def cmd_add_category(category_id: str, config_dir: Optional[Path]) -> None:
 
     Valid category IDs: porn, gambling, dating, piracy, social-networks
     """
-    from .panic import is_panic_mode
-
-    # Block during panic mode
-    if is_panic_mode():
-        console.print("\n  [red]Error: Cannot modify Parental Control during panic mode[/red]\n")
-        sys.exit(1)
-
     # Validate category ID
     category_id = category_id.strip().lower()
     if category_id not in NEXTDNS_CATEGORIES:
@@ -247,13 +240,6 @@ def cmd_remove_category(category_id: str, config_dir: Optional[Path]) -> None:
 
     Valid category IDs: porn, gambling, dating, piracy, social-networks
     """
-    from .panic import is_panic_mode
-
-    # Block during panic mode
-    if is_panic_mode():
-        console.print("\n  [red]Error: Cannot modify Parental Control during panic mode[/red]\n")
-        sys.exit(1)
-
     # Validate category ID
     category_id = category_id.strip().lower()
     if category_id not in NEXTDNS_CATEGORIES:
@@ -290,13 +276,6 @@ def cmd_add_service(service_id: str, config_dir: Optional[Path]) -> None:
     Examples: tiktok, netflix, youtube, instagram, discord, fortnite, etc.
     Use 'nextdns-blocker nextdns services' to see all valid IDs.
     """
-    from .panic import is_panic_mode
-
-    # Block during panic mode
-    if is_panic_mode():
-        console.print("\n  [red]Error: Cannot modify Parental Control during panic mode[/red]\n")
-        sys.exit(1)
-
     # Validate service ID
     service_id = service_id.strip().lower()
     if service_id not in NEXTDNS_SERVICES:
@@ -337,13 +316,6 @@ def cmd_remove_service(service_id: str, config_dir: Optional[Path]) -> None:
 
     Use 'nextdns-blocker nextdns services' to see all valid IDs.
     """
-    from .panic import is_panic_mode
-
-    # Block during panic mode
-    if is_panic_mode():
-        console.print("\n  [red]Error: Cannot modify Parental Control during panic mode[/red]\n")
-        sys.exit(1)
-
     # Validate service ID
     service_id = service_id.strip().lower()
     if service_id not in NEXTDNS_SERVICES:

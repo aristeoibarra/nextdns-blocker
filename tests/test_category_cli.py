@@ -1,7 +1,6 @@
 """Tests for category CLI commands."""
 
 import json
-from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -135,8 +134,7 @@ class TestCategoryShow:
 class TestCategoryAdd:
     """Tests for category add command."""
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_add_domain(self, mock_panic, runner, config_with_categories):
+    def test_add_domain(self, runner, config_with_categories):
         """Test adding domain to category."""
         result = runner.invoke(
             category_cli,
@@ -152,8 +150,7 @@ class TestCategoryAdd:
         social_cat = next(c for c in config["categories"] if c["id"] == "social-media")
         assert "tiktok.com" in social_cat["domains"]
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_add_domain_already_exists(self, mock_panic, runner, config_with_categories):
+    def test_add_existing_domain(self, runner, config_with_categories):
         """Test adding domain that already exists."""
         result = runner.invoke(
             category_cli,
@@ -162,8 +159,7 @@ class TestCategoryAdd:
         assert result.exit_code == 0
         assert "already exists" in result.output
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_add_domain_invalid_format(self, mock_panic, runner, config_with_categories):
+    def test_add_invalid_domain(self, runner, config_with_categories):
         """Test adding invalid domain format."""
         result = runner.invoke(
             category_cli,
@@ -172,8 +168,7 @@ class TestCategoryAdd:
         assert result.exit_code == 1
         assert "Invalid domain format" in result.output
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_add_domain_category_not_found(self, mock_panic, runner, config_with_categories):
+    def test_add_to_nonexistent_category(self, runner, config_with_categories):
         """Test adding domain to non-existent category."""
         result = runner.invoke(
             category_cli,
@@ -182,22 +177,11 @@ class TestCategoryAdd:
         assert result.exit_code == 1
         assert "not found" in result.output
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=True)
-    def test_add_domain_panic_mode(self, mock_panic, runner, config_with_categories):
-        """Test adding domain is blocked during panic mode."""
-        result = runner.invoke(
-            category_cli,
-            ["add", "social-media", "tiktok.com", "--config-dir", str(config_with_categories)],
-        )
-        assert result.exit_code == 1
-        assert "panic mode" in result.output
-
 
 class TestCategoryRemove:
     """Tests for category remove command."""
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_remove_domain(self, mock_panic, runner, config_with_categories):
+    def test_remove_domain(self, runner, config_with_categories):
         """Test removing domain from category."""
         result = runner.invoke(
             category_cli,
@@ -219,8 +203,7 @@ class TestCategoryRemove:
         social_cat = next(c for c in config["categories"] if c["id"] == "social-media")
         assert "facebook.com" not in social_cat["domains"]
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_remove_domain_not_found(self, mock_panic, runner, config_with_categories):
+    def test_remove_nonexistent_domain(self, runner, config_with_categories):
         """Test removing domain that doesn't exist."""
         result = runner.invoke(
             category_cli,
@@ -236,8 +219,7 @@ class TestCategoryRemove:
         assert result.exit_code == 1
         assert "not found" in result.output
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_remove_domain_confirmation(self, mock_panic, runner, config_with_categories):
+    def test_remove_requires_confirmation(self, runner, config_with_categories):
         """Test remove requires confirmation."""
         result = runner.invoke(
             category_cli,
@@ -257,8 +239,7 @@ class TestCategoryRemove:
 class TestCategoryCreate:
     """Tests for category create command."""
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_create_category(self, mock_panic, runner, config_with_categories):
+    def test_create_category(self, runner, config_with_categories):
         """Test creating new category."""
         result = runner.invoke(
             category_cli,
@@ -274,8 +255,7 @@ class TestCategoryCreate:
         assert gaming_cat is not None
         assert gaming_cat["description"] == "Gaming sites"
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_create_category_with_delay(self, mock_panic, runner, config_with_categories):
+    def test_create_category_with_delay(self, runner, config_with_categories):
         """Test creating category with delay."""
         result = runner.invoke(
             category_cli,
@@ -289,8 +269,7 @@ class TestCategoryCreate:
         gambling_cat = next((c for c in config["categories"] if c["id"] == "gambling"), None)
         assert gambling_cat["unblock_delay"] == "never"
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_create_category_invalid_id(self, mock_panic, runner, config_with_categories):
+    def test_create_category_invalid_id(self, runner, config_with_categories):
         """Test creating category with invalid ID."""
         result = runner.invoke(
             category_cli,
@@ -299,8 +278,7 @@ class TestCategoryCreate:
         assert result.exit_code == 1
         assert "Invalid category ID" in result.output
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_create_category_already_exists(self, mock_panic, runner, config_with_categories):
+    def test_create_category_already_exists(self, runner, config_with_categories):
         """Test creating category that already exists."""
         result = runner.invoke(
             category_cli,
@@ -309,8 +287,7 @@ class TestCategoryCreate:
         assert result.exit_code == 1
         assert "already exists" in result.output
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_create_category_invalid_delay(self, mock_panic, runner, config_with_categories):
+    def test_create_category_invalid_delay(self, runner, config_with_categories):
         """Test creating category with invalid delay."""
         result = runner.invoke(
             category_cli,
@@ -323,8 +300,7 @@ class TestCategoryCreate:
 class TestCategoryDelete:
     """Tests for category delete command."""
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_delete_category(self, mock_panic, runner, config_with_categories):
+    def test_delete_category(self, runner, config_with_categories):
         """Test deleting category."""
         result = runner.invoke(
             category_cli,
@@ -339,8 +315,7 @@ class TestCategoryDelete:
         streaming_cat = next((c for c in config["categories"] if c["id"] == "streaming"), None)
         assert streaming_cat is None
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_delete_category_not_found(self, mock_panic, runner, config_with_categories):
+    def test_delete_nonexistent_category(self, runner, config_with_categories):
         """Test deleting non-existent category."""
         result = runner.invoke(
             category_cli,
@@ -349,8 +324,7 @@ class TestCategoryDelete:
         assert result.exit_code == 1
         assert "not found" in result.output
 
-    @patch("nextdns_blocker.panic.is_panic_mode", return_value=False)
-    def test_delete_category_confirmation(self, mock_panic, runner, config_with_categories):
+    def test_delete_requires_confirmation(self, runner, config_with_categories):
         """Test delete requires confirmation."""
         result = runner.invoke(
             category_cli,

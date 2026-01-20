@@ -218,32 +218,6 @@ PIN data is stored separately from config:
 | `.pin_session` | Session expiration timestamp |
 | `.pin_attempts` | Failed attempt timestamps |
 
-## Panic Mode Security
-
-### Cannot Be Cancelled
-
-Panic mode intentionally cannot be disabled early:
-- Prevents bypass during weak moments
-- Timer must expire
-
-### Hidden Commands
-
-During panic:
-- `unblock` is hidden
-- `allow` is hidden
-- Commands cannot be run directly
-
-### PIN During Panic
-
-When both panic mode and PIN are active:
-- Panic mode takes priority
-- Commands are completely hidden (not just PIN-protected)
-- No authentication prompt is shown
-
-### Allowlist Sync Disabled
-
-Scheduled allowlist sync is completely skipped during panic to prevent security bypasses.
-
 ## File Locking
 
 ### Concurrent Access Protection
@@ -287,7 +261,6 @@ Configuration changes use atomic write pattern:
 1. Keep Python updated
 2. Keep nextdns-blocker updated
 3. Monitor audit logs regularly
-4. Use panic mode when needed
 
 ### Network Security
 

@@ -53,7 +53,6 @@ export default defineConfig({
                         { label: "unblock", slug: "commands/unblock" },
                         { label: "config", slug: "commands/config" },
                         { label: "watchdog", slug: "commands/watchdog" },
-                        { label: "panic", slug: "commands/panic" },
                         { label: "pending", slug: "commands/pending" },
                         { label: "category", slug: "commands/category" },
                         {
@@ -97,7 +96,6 @@ export default defineConfig({
                     label: "Features",
                     items: [
                         { label: "Overview", slug: "features" },
-                        { label: "Panic Mode", slug: "features/panic-mode" },
                         { label: "Watchdog", slug: "features/watchdog" },
                         {
                             label: "Pending Actions",

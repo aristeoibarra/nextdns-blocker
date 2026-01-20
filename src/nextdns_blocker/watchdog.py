@@ -1397,13 +1397,6 @@ def watchdog_cli() -> None:
 
 def _process_pending_actions() -> None:
     """Execute pending actions that are ready."""
-    from .panic import is_panic_mode
-
-    # Skip pending actions during panic mode
-    if is_panic_mode():
-        logger.debug("Panic mode active, skipping pending actions")
-        return
-
     from .client import NextDNSClient
     from .config import load_config
     from .notifications import EventType, send_notification
@@ -1596,7 +1589,7 @@ def cmd_retry_status() -> None:
         for item in items:
             ready_str = "[READY]" if item.is_ready() else f"[next: {item.next_retry_at[:16]}]"
             click.echo(
-                f"    {item.action} {item.domain} " f"(attempts: {item.attempt_count}, {ready_str})"
+                f"    {item.action} {item.domain} (attempts: {item.attempt_count}, {ready_str})"
             )
     click.echo()
 
