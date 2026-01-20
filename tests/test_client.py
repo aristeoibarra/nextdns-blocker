@@ -11,6 +11,7 @@ from nextdns_blocker.client import (
     API_URL,
     RATE_LIMIT_REQUESTS,
     RATE_LIMIT_WINDOW,
+    BatchResult,
     NextDNSClient,
     RateLimiter,
 )
@@ -528,3 +529,386 @@ class TestRateLimiter:
         for i in range(5):
             limiter.acquire()
             assert len(limiter._requests) == i + 1
+
+
+class TestBatchResult:
+    """Tests for BatchResult dataclass."""
+
+    def test_batch_result_properties(self):
+        """BatchResult properties calculate correctly."""
+        result = BatchResult(
+            succeeded=["a.com", "b.com"],
+            failed=[("c.com", "error")],
+            skipped=["d.com"],
+        )
+        assert result.total == 4
+        assert result.success_count == 2
+        assert result.failure_count == 1
+        assert result.all_succeeded is False
+
+    def test_batch_result_all_succeeded(self):
+        """all_succeeded is True when no failures."""
+        result = BatchResult(
+            succeeded=["a.com", "b.com"],
+            failed=[],
+            skipped=["c.com"],
+        )
+        assert result.all_succeeded is True
+
+    def test_batch_result_empty(self):
+        """Empty BatchResult has zero counts."""
+        result = BatchResult(succeeded=[], failed=[], skipped=[])
+        assert result.total == 0
+        assert result.success_count == 0
+        assert result.failure_count == 0
+        assert result.all_succeeded is True
+
+
+class TestFindDomainsBatch:
+    """Tests for find_domains_batch method."""
+
+    @responses.activate
+    def test_find_domains_batch_mixed(self, client, mock_denylist):
+        """find_domains_batch returns correct status for each domain."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json=mock_denylist,
+            status=200,
+        )
+        result = client.find_domains_batch(["example.com", "blocked.com", "notfound.com"])
+        assert result == {
+            "example.com": True,
+            "blocked.com": True,
+            "notfound.com": False,
+        }
+        assert len(responses.calls) == 1  # Single API call
+
+    @responses.activate
+    def test_find_domains_batch_empty(self, client):
+        """find_domains_batch with empty list returns empty dict."""
+        result = client.find_domains_batch([])
+        assert result == {}
+        assert len(responses.calls) == 0  # No API call
+
+    @responses.activate
+    def test_find_domains_batch_api_error(self, client):
+        """find_domains_batch returns False for all on API error."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            status=500,
+        )
+        result = client.find_domains_batch(["example.com", "other.com"])
+        assert result == {"example.com": False, "other.com": False}
+
+    @responses.activate
+    def test_find_domains_batch_uses_cache(self, client, mock_denylist):
+        """find_domains_batch uses cache on subsequent calls."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json=mock_denylist,
+            status=200,
+        )
+        # First call
+        client.find_domains_batch(["example.com"])
+        # Second call should use cache
+        client.find_domains_batch(["blocked.com"])
+        assert len(responses.calls) == 1
+
+
+class TestBlockDomainsBatch:
+    """Tests for block_domains_batch method."""
+
+    @responses.activate
+    def test_block_domains_batch_success(self, client):
+        """block_domains_batch blocks multiple new domains."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json={"data": []},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json={"success": True},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json={"success": True},
+            status=200,
+        )
+
+        result = client.block_domains_batch(["new1.com", "new2.com"])
+
+        assert result.succeeded == ["new1.com", "new2.com"]
+        assert result.failed == []
+        assert result.skipped == []
+        assert result.all_succeeded is True
+
+    @responses.activate
+    def test_block_domains_batch_already_blocked(self, client, mock_denylist):
+        """block_domains_batch skips already blocked domains."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json=mock_denylist,
+            status=200,
+        )
+
+        result = client.block_domains_batch(["example.com", "blocked.com"])
+
+        assert result.succeeded == []
+        assert result.failed == []
+        assert result.skipped == ["example.com", "blocked.com"]
+        assert len(responses.calls) == 1  # Only GET, no POSTs
+
+    @responses.activate
+    def test_block_domains_batch_mixed(self, client, mock_denylist):
+        """block_domains_batch handles mix of new and existing domains."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json=mock_denylist,
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json={"success": True},
+            status=200,
+        )
+
+        result = client.block_domains_batch(["example.com", "newdomain.com"])
+
+        assert result.succeeded == ["newdomain.com"]
+        assert result.failed == []
+        assert result.skipped == ["example.com"]
+
+    @responses.activate
+    def test_block_domains_batch_invalid_domain(self, client):
+        """block_domains_batch fails invalid domains."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json={"data": []},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json={"success": True},
+            status=200,
+        )
+
+        result = client.block_domains_batch(["valid.com", "not a domain"])
+
+        assert result.succeeded == ["valid.com"]
+        assert len(result.failed) == 1
+        assert result.failed[0][0] == "not a domain"
+        assert result.skipped == []
+
+    def test_block_domains_batch_empty(self, client):
+        """block_domains_batch with empty list returns empty result."""
+        result = client.block_domains_batch([])
+        assert result.succeeded == []
+        assert result.failed == []
+        assert result.skipped == []
+
+
+class TestUnblockDomainsBatch:
+    """Tests for unblock_domains_batch method."""
+
+    @responses.activate
+    def test_unblock_domains_batch_success(self, client, mock_denylist):
+        """unblock_domains_batch unblocks multiple domains."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json=mock_denylist,
+            status=200,
+        )
+        responses.add(
+            responses.DELETE,
+            f"{API_URL}/profiles/testprofile/denylist/example.com",
+            json={"success": True},
+            status=200,
+        )
+        responses.add(
+            responses.DELETE,
+            f"{API_URL}/profiles/testprofile/denylist/blocked.com",
+            json={"success": True},
+            status=200,
+        )
+
+        result = client.unblock_domains_batch(["example.com", "blocked.com"])
+
+        assert result.succeeded == ["example.com", "blocked.com"]
+        assert result.failed == []
+        assert result.skipped == []
+
+    @responses.activate
+    def test_unblock_domains_batch_not_blocked(self, client):
+        """unblock_domains_batch skips domains not in denylist."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json={"data": []},
+            status=200,
+        )
+
+        result = client.unblock_domains_batch(["notblocked.com"])
+
+        assert result.succeeded == []
+        assert result.failed == []
+        assert result.skipped == ["notblocked.com"]
+        assert len(responses.calls) == 1  # Only GET, no DELETEs
+
+    @responses.activate
+    def test_unblock_domains_batch_api_error(self, client, mock_denylist):
+        """unblock_domains_batch handles API errors."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/denylist",
+            json=mock_denylist,
+            status=200,
+        )
+        responses.add(
+            responses.DELETE,
+            f"{API_URL}/profiles/testprofile/denylist/example.com",
+            status=500,
+        )
+
+        result = client.unblock_domains_batch(["example.com"])
+
+        assert result.succeeded == []
+        assert len(result.failed) == 1
+        assert result.failed[0][0] == "example.com"
+        assert result.skipped == []
+
+
+class TestFindInAllowlistBatch:
+    """Tests for find_in_allowlist_batch method."""
+
+    @responses.activate
+    def test_find_in_allowlist_batch_mixed(self, client):
+        """find_in_allowlist_batch returns correct status for each domain."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/allowlist",
+            json={"data": [{"id": "allowed.com", "active": True}]},
+            status=200,
+        )
+        result = client.find_in_allowlist_batch(["allowed.com", "notfound.com"])
+        assert result == {"allowed.com": True, "notfound.com": False}
+
+    @responses.activate
+    def test_find_in_allowlist_batch_empty(self, client):
+        """find_in_allowlist_batch with empty list returns empty dict."""
+        result = client.find_in_allowlist_batch([])
+        assert result == {}
+
+
+class TestAllowDomainsBatch:
+    """Tests for allow_domains_batch method."""
+
+    @responses.activate
+    def test_allow_domains_batch_success(self, client):
+        """allow_domains_batch adds multiple domains to allowlist."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/allowlist",
+            json={"data": []},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/testprofile/allowlist",
+            json={"success": True},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/testprofile/allowlist",
+            json={"success": True},
+            status=200,
+        )
+
+        result = client.allow_domains_batch(["new1.com", "new2.com"])
+
+        assert result.succeeded == ["new1.com", "new2.com"]
+        assert result.failed == []
+        assert result.skipped == []
+
+    @responses.activate
+    def test_allow_domains_batch_already_allowed(self, client):
+        """allow_domains_batch skips already allowed domains."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/allowlist",
+            json={"data": [{"id": "existing.com", "active": True}]},
+            status=200,
+        )
+
+        result = client.allow_domains_batch(["existing.com"])
+
+        assert result.succeeded == []
+        assert result.failed == []
+        assert result.skipped == ["existing.com"]
+
+
+class TestDisallowDomainsBatch:
+    """Tests for disallow_domains_batch method."""
+
+    @responses.activate
+    def test_disallow_domains_batch_success(self, client):
+        """disallow_domains_batch removes multiple domains from allowlist."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/allowlist",
+            json={
+                "data": [
+                    {"id": "allowed1.com", "active": True},
+                    {"id": "allowed2.com", "active": True},
+                ]
+            },
+            status=200,
+        )
+        responses.add(
+            responses.DELETE,
+            f"{API_URL}/profiles/testprofile/allowlist/allowed1.com",
+            json={"success": True},
+            status=200,
+        )
+        responses.add(
+            responses.DELETE,
+            f"{API_URL}/profiles/testprofile/allowlist/allowed2.com",
+            json={"success": True},
+            status=200,
+        )
+
+        result = client.disallow_domains_batch(["allowed1.com", "allowed2.com"])
+
+        assert result.succeeded == ["allowed1.com", "allowed2.com"]
+        assert result.failed == []
+        assert result.skipped == []
+
+    @responses.activate
+    def test_disallow_domains_batch_not_in_allowlist(self, client):
+        """disallow_domains_batch skips domains not in allowlist."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/testprofile/allowlist",
+            json={"data": []},
+            status=200,
+        )
+
+        result = client.disallow_domains_batch(["notallowed.com"])
+
+        assert result.succeeded == []
+        assert result.failed == []
+        assert result.skipped == ["notallowed.com"]
