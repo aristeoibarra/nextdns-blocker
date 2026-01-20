@@ -72,7 +72,7 @@ class TestProtectionStatus:
 
     def test_status_shows_info(self, runner, mock_config, tmp_path):
         """Should show protection status."""
-        with patch("nextdns_blocker.protection_cli.load_config") as mock_load:
+        with patch("nextdns_blocker.cli_helpers.load_config") as mock_load:
             mock_load.return_value = {"script_dir": str(mock_config["dir"])}
             with patch("nextdns_blocker.protection_cli.is_pin_enabled", return_value=False):
                 with patch("nextdns_blocker.protection_cli.is_auto_panic_time", return_value=False):
@@ -87,7 +87,7 @@ class TestProtectionStatus:
 
     def test_status_shows_pin_enabled(self, runner, mock_config):
         """Should show PIN status when enabled."""
-        with patch("nextdns_blocker.protection_cli.load_config") as mock_load:
+        with patch("nextdns_blocker.cli_helpers.load_config") as mock_load:
             mock_load.return_value = {"script_dir": str(mock_config["dir"])}
             with patch("nextdns_blocker.protection_cli.is_pin_enabled", return_value=True):
                 with patch(
@@ -113,7 +113,7 @@ class TestProtectionStatus:
         """Should handle config error."""
         from nextdns_blocker.exceptions import ConfigurationError
 
-        with patch("nextdns_blocker.protection_cli.load_config") as mock_load:
+        with patch("nextdns_blocker.cli_helpers.load_config") as mock_load:
             mock_load.side_effect = ConfigurationError("Test error")
             result = runner.invoke(protection, ["status"])
 
@@ -126,7 +126,7 @@ class TestUnlockRequest:
 
     def test_unlock_request_not_found(self, runner, mock_config):
         """Should error when item not found."""
-        with patch("nextdns_blocker.protection_cli.load_config") as mock_load:
+        with patch("nextdns_blocker.cli_helpers.load_config") as mock_load:
             mock_load.return_value = {"script_dir": str(mock_config["dir"])}
             result = runner.invoke(protection, ["unlock-request", "nonexistent"])
 
@@ -135,7 +135,7 @@ class TestUnlockRequest:
 
     def test_unlock_request_not_locked(self, runner, mock_config):
         """Should warn when item not locked."""
-        with patch("nextdns_blocker.protection_cli.load_config") as mock_load:
+        with patch("nextdns_blocker.cli_helpers.load_config") as mock_load:
             mock_load.return_value = {"script_dir": str(mock_config["dir"])}
             result = runner.invoke(protection, ["unlock-request", "gambling"])
 
@@ -152,7 +152,7 @@ class TestUnlockRequest:
                 "execute_at": (datetime.now() + timedelta(hours=24)).isoformat(),
             }
         ]
-        with patch("nextdns_blocker.protection_cli.load_config") as mock_load:
+        with patch("nextdns_blocker.cli_helpers.load_config") as mock_load:
             mock_load.return_value = {"script_dir": str(mock_config["dir"])}
             with patch(
                 "nextdns_blocker.protection_cli.get_pending_unlock_requests",
@@ -165,7 +165,7 @@ class TestUnlockRequest:
 
     def test_unlock_request_creates_request(self, runner, mock_config):
         """Should create unlock request."""
-        with patch("nextdns_blocker.protection_cli.load_config") as mock_load:
+        with patch("nextdns_blocker.cli_helpers.load_config") as mock_load:
             mock_load.return_value = {"script_dir": str(mock_config["dir"])}
             with patch(
                 "nextdns_blocker.protection_cli.get_pending_unlock_requests",

@@ -105,6 +105,29 @@ def _find_category_index(categories: list[dict[str, Any]], category_id: str) -> 
     return None
 
 
+def _load_config_or_exit(config_dir: Optional[Path]) -> tuple[Path, dict[str, Any]]:
+    """Load config file or exit with error message.
+
+    Args:
+        config_dir: Optional config directory path
+
+    Returns:
+        Tuple of (config_path, config_dict)
+    """
+    config_path = _get_config_file_path(config_dir)
+
+    if not config_path.exists():
+        out.error(f"Config file not found: {config_path}")
+        sys.exit(1)
+
+    try:
+        config = _load_config_file(config_path)
+        return config_path, config
+    except ConfigurationError as e:
+        out.error(str(e))
+        sys.exit(1)
+
+
 # =============================================================================
 # CLI GROUP
 # =============================================================================
@@ -124,18 +147,7 @@ def category_cli() -> None:
 )
 def cmd_list(config_dir: Optional[Path]) -> None:
     """List all categories."""
-    config_path = _get_config_file_path(config_dir)
-
-    if not config_path.exists():
-        out.error(f"Config file not found: {config_path}")
-        sys.exit(1)
-
-    try:
-        config = _load_config_file(config_path)
-    except ConfigurationError as e:
-        out.error(str(e))
-        sys.exit(1)
-
+    _config_path, config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
 
     if not categories:
@@ -179,18 +191,7 @@ def cmd_list(config_dir: Optional[Path]) -> None:
 )
 def cmd_show(category_id: str, config_dir: Optional[Path]) -> None:
     """Show details of a category."""
-    config_path = _get_config_file_path(config_dir)
-
-    if not config_path.exists():
-        out.error(f"Config file not found: {config_path}")
-        sys.exit(1)
-
-    try:
-        config = _load_config_file(config_path)
-    except ConfigurationError as e:
-        out.error(str(e))
-        sys.exit(1)
-
+    _config_path, config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
     category = _find_category_by_id(categories, category_id)
 
@@ -247,18 +248,7 @@ def cmd_add(category_id: str, domain: str, config_dir: Optional[Path]) -> None:
         out.error(f"Invalid domain format: {domain}")
         sys.exit(1)
 
-    config_path = _get_config_file_path(config_dir)
-
-    if not config_path.exists():
-        out.error(f"Config file not found: {config_path}")
-        sys.exit(1)
-
-    try:
-        config = _load_config_file(config_path)
-    except ConfigurationError as e:
-        out.error(str(e))
-        sys.exit(1)
-
+    config_path, config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
     category_idx = _find_category_index(categories, category_id)
 
@@ -334,18 +324,7 @@ def cmd_remove(category_id: str, domain: str, yes: bool, config_dir: Optional[Pa
         sys.exit(1)
 
     domain = domain.strip().lower()
-    config_path = _get_config_file_path(config_dir)
-
-    if not config_path.exists():
-        out.error(f"Config file not found: {config_path}")
-        sys.exit(1)
-
-    try:
-        config = _load_config_file(config_path)
-    except ConfigurationError as e:
-        out.error(str(e))
-        sys.exit(1)
-
+    config_path, config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
     category_idx = _find_category_index(categories, category_id)
 
@@ -421,17 +400,7 @@ def cmd_create(
         )
         sys.exit(1)
 
-    config_path = _get_config_file_path(config_dir)
-
-    if not config_path.exists():
-        out.error(f"Config file not found: {config_path}")
-        sys.exit(1)
-
-    try:
-        config = _load_config_file(config_path)
-    except ConfigurationError as e:
-        out.error(str(e))
-        sys.exit(1)
+    config_path, config = _load_config_or_exit(config_dir)
 
     # Ensure categories array exists
     if "categories" not in config:
@@ -505,18 +474,7 @@ def cmd_delete(category_id: str, yes: bool, config_dir: Optional[Path]) -> None:
         out.error("Cannot delete categories during panic mode")
         sys.exit(1)
 
-    config_path = _get_config_file_path(config_dir)
-
-    if not config_path.exists():
-        out.error(f"Config file not found: {config_path}")
-        sys.exit(1)
-
-    try:
-        config = _load_config_file(config_path)
-    except ConfigurationError as e:
-        out.error(str(e))
-        sys.exit(1)
-
+    config_path, config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
     category_idx = _find_category_index(categories, category_id)
 

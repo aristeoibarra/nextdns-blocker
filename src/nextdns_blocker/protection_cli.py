@@ -9,8 +9,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from .config import load_config
-from .exceptions import ConfigurationError
+from .cli_helpers import config_context
 from .protection import (
     DEFAULT_UNLOCK_DELAY_HOURS,
     MIN_UNLOCK_DELAY_HOURS,
@@ -59,107 +58,100 @@ def protection() -> None:
 )
 def protection_status(config_dir: Optional[Path]) -> None:
     """Show protection status and locked items."""
-    try:
-        config = load_config(config_dir)
-        config_path = Path(config["script_dir"]) / "config.json"
+    import json
 
-        import json
+    with config_context(config_dir, "loading config") as config:
+        config_path = Path(config["script_dir"]) / "config.json"
 
         with open(config_path, encoding="utf-8") as f:
             full_config = json.load(f)
 
-        protection_config = full_config.get("protection", {})
-        auto_panic = protection_config.get("auto_panic", {})
+    protection_config = full_config.get("protection", {})
+    auto_panic = protection_config.get("auto_panic", {})
 
-        console.print("\n  [bold]Protection Status[/bold]")
-        console.print("  [dim]━━━━━━━━━━━━━━━━━━━[/dim]\n")
+    console.print("\n  [bold]Protection Status[/bold]")
+    console.print("  [dim]━━━━━━━━━━━━━━━━━━━[/dim]\n")
 
-        # PIN status
-        if is_pin_enabled():
-            if is_pin_session_valid():
-                session_remaining = get_pin_session_remaining()
-                console.print(f"  PIN: [green]enabled[/green] (session: {session_remaining})")
-            elif is_pin_locked_out():
-                lockout_remaining = get_lockout_remaining()
-                console.print(f"  PIN: [red]LOCKED OUT[/red] ({lockout_remaining})")
-            else:
-                console.print("  PIN: [green]enabled[/green] [dim](no active session)[/dim]")
+    # PIN status
+    if is_pin_enabled():
+        if is_pin_session_valid():
+            session_remaining = get_pin_session_remaining()
+            console.print(f"  PIN: [green]enabled[/green] (session: {session_remaining})")
+        elif is_pin_locked_out():
+            lockout_remaining = get_lockout_remaining()
+            console.print(f"  PIN: [red]LOCKED OUT[/red] ({lockout_remaining})")
         else:
-            console.print("  PIN: [dim]not enabled[/dim]")
+            console.print("  PIN: [green]enabled[/green] [dim](no active session)[/dim]")
+    else:
+        console.print("  PIN: [dim]not enabled[/dim]")
 
-        # Unlock delay
-        delay = protection_config.get("unlock_delay_hours", DEFAULT_UNLOCK_DELAY_HOURS)
-        console.print(f"  Unlock delay: [cyan]{delay}h[/cyan]")
+    # Unlock delay
+    delay = protection_config.get("unlock_delay_hours", DEFAULT_UNLOCK_DELAY_HOURS)
+    console.print(f"  Unlock delay: [cyan]{delay}h[/cyan]")
 
-        # Auto-panic status
-        if auto_panic.get("enabled"):
-            schedule = auto_panic.get("schedule", {})
-            start = schedule.get("start", "23:00")
-            end = schedule.get("end", "06:00")
-            cannot_disable = auto_panic.get("cannot_disable", False)
+    # Auto-panic status
+    if auto_panic.get("enabled"):
+        schedule = auto_panic.get("schedule", {})
+        start = schedule.get("start", "23:00")
+        end = schedule.get("end", "06:00")
+        cannot_disable = auto_panic.get("cannot_disable", False)
 
-            status = (
-                "[green]ACTIVE NOW[/green]"
-                if is_auto_panic_time(full_config)
-                else "[dim]scheduled[/dim]"
+        status = (
+            "[green]ACTIVE NOW[/green]"
+            if is_auto_panic_time(full_config)
+            else "[dim]scheduled[/dim]"
+        )
+        lock_status = "[red]cannot disable[/red]" if cannot_disable else "[dim]can disable[/dim]"
+
+        console.print(f"  Auto-panic: {status} ({start} - {end})")
+        console.print(f"              {lock_status}")
+    else:
+        console.print("  Auto-panic: [dim]disabled[/dim]")
+
+    # Locked categories
+    console.print("\n  [bold]Locked Items[/bold]")
+
+    nextdns = full_config.get("nextdns", {})
+    locked_cats = [
+        c
+        for c in nextdns.get("categories", [])
+        if c.get("locked") or c.get("unblock_delay") == "never"
+    ]
+    locked_svcs = [
+        s
+        for s in nextdns.get("services", [])
+        if s.get("locked") or s.get("unblock_delay") == "never"
+    ]
+
+    if locked_cats:
+        cat_ids = ", ".join(c["id"] for c in locked_cats)
+        console.print(f"  Categories: [red]{cat_ids}[/red]")
+    else:
+        console.print("  Categories: [dim]none[/dim]")
+
+    if locked_svcs:
+        svc_ids = ", ".join(s["id"] for s in locked_svcs)
+        console.print(f"  Services: [red]{svc_ids}[/red]")
+    else:
+        console.print("  Services: [dim]none[/dim]")
+
+    # Pending unlock requests
+    pending = get_pending_unlock_requests()
+    if pending:
+        console.print("\n  [bold]Pending Unlock Requests[/bold]")
+        for req in pending:
+            execute_at = datetime.fromisoformat(req["execute_at"])
+            remaining = execute_at - datetime.now()
+            hours = int(remaining.total_seconds() // 3600)
+            mins = int((remaining.total_seconds() % 3600) // 60)
+
+            console.print(
+                f"  [yellow]•[/yellow] {req['item_type']}:{req['item_id']} "
+                f"- [cyan]{hours}h {mins}m remaining[/cyan] "
+                f"(ID: {req['id']})"
             )
-            lock_status = (
-                "[red]cannot disable[/red]" if cannot_disable else "[dim]can disable[/dim]"
-            )
 
-            console.print(f"  Auto-panic: {status} ({start} - {end})")
-            console.print(f"              {lock_status}")
-        else:
-            console.print("  Auto-panic: [dim]disabled[/dim]")
-
-        # Locked categories
-        console.print("\n  [bold]Locked Items[/bold]")
-
-        nextdns = full_config.get("nextdns", {})
-        locked_cats = [
-            c
-            for c in nextdns.get("categories", [])
-            if c.get("locked") or c.get("unblock_delay") == "never"
-        ]
-        locked_svcs = [
-            s
-            for s in nextdns.get("services", [])
-            if s.get("locked") or s.get("unblock_delay") == "never"
-        ]
-
-        if locked_cats:
-            cat_ids = ", ".join(c["id"] for c in locked_cats)
-            console.print(f"  Categories: [red]{cat_ids}[/red]")
-        else:
-            console.print("  Categories: [dim]none[/dim]")
-
-        if locked_svcs:
-            svc_ids = ", ".join(s["id"] for s in locked_svcs)
-            console.print(f"  Services: [red]{svc_ids}[/red]")
-        else:
-            console.print("  Services: [dim]none[/dim]")
-
-        # Pending unlock requests
-        pending = get_pending_unlock_requests()
-        if pending:
-            console.print("\n  [bold]Pending Unlock Requests[/bold]")
-            for req in pending:
-                execute_at = datetime.fromisoformat(req["execute_at"])
-                remaining = execute_at - datetime.now()
-                hours = int(remaining.total_seconds() // 3600)
-                mins = int((remaining.total_seconds() % 3600) // 60)
-
-                console.print(
-                    f"  [yellow]•[/yellow] {req['item_type']}:{req['item_id']} "
-                    f"- [cyan]{hours}h {mins}m remaining[/cyan] "
-                    f"(ID: {req['id']})"
-                )
-
-        console.print()
-
-    except ConfigurationError as e:
-        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
+    console.print()
 
 
 @protection.command(name="unlock-request")
@@ -190,80 +182,73 @@ def unlock_request(
     delay period (default: 48 hours). You can cancel the request at any
     time before it's executed.
     """
-    try:
-        config = load_config(config_dir)
-        config_path = Path(config["script_dir"]) / "config.json"
+    import json
 
-        import json
+    with config_context(config_dir, "loading config") as config:
+        config_path = Path(config["script_dir"]) / "config.json"
 
         with open(config_path, encoding="utf-8") as f:
             full_config = json.load(f)
 
-        protection_config = full_config.get("protection", {})
-        delay_hours = protection_config.get("unlock_delay_hours", DEFAULT_UNLOCK_DELAY_HOURS)
+    protection_config = full_config.get("protection", {})
+    delay_hours = protection_config.get("unlock_delay_hours", DEFAULT_UNLOCK_DELAY_HOURS)
 
-        # Enforce minimum
-        delay_hours = max(delay_hours, MIN_UNLOCK_DELAY_HOURS)
+    # Enforce minimum
+    delay_hours = max(delay_hours, MIN_UNLOCK_DELAY_HOURS)
 
-        # Check if item exists and is locked
-        found = False
-        is_locked = False
+    # Check if item exists and is locked
+    found = False
+    is_locked = False
 
-        if item_type == "category":
-            for cat in full_config.get("nextdns", {}).get("categories", []):
-                if cat.get("id") == item_id:
-                    found = True
-                    is_locked = cat.get("locked") or cat.get("unblock_delay") == "never"
-                    break
-        elif item_type == "service":
-            for svc in full_config.get("nextdns", {}).get("services", []):
-                if svc.get("id") == item_id:
-                    found = True
-                    is_locked = svc.get("locked") or svc.get("unblock_delay") == "never"
-                    break
+    if item_type == "category":
+        for cat in full_config.get("nextdns", {}).get("categories", []):
+            if cat.get("id") == item_id:
+                found = True
+                is_locked = cat.get("locked") or cat.get("unblock_delay") == "never"
+                break
+    elif item_type == "service":
+        for svc in full_config.get("nextdns", {}).get("services", []):
+            if svc.get("id") == item_id:
+                found = True
+                is_locked = svc.get("locked") or svc.get("unblock_delay") == "never"
+                break
 
-        if not found:
-            console.print(f"\n  [red]Error: {item_type} '{item_id}' not found[/red]\n")
-            sys.exit(1)
+    if not found:
+        console.print(f"\n  [red]Error: {item_type} '{item_id}' not found[/red]\n")
+        sys.exit(1)
 
-        if not is_locked:
-            console.print(
-                f"\n  [yellow]'{item_id}' is not locked. You can remove it directly.[/yellow]\n"
-            )
+    if not is_locked:
+        console.print(
+            f"\n  [yellow]'{item_id}' is not locked. You can remove it directly.[/yellow]\n"
+        )
+        return
+
+    # Check for existing pending request
+    pending = get_pending_unlock_requests()
+    for req in pending:
+        if req["item_type"] == item_type and req["item_id"] == item_id:
+            execute_at = datetime.fromisoformat(req["execute_at"])
+            remaining = execute_at - datetime.now()
+            hours = int(remaining.total_seconds() // 3600)
+
+            console.print(f"\n  [yellow]Unlock request already pending for '{item_id}'[/yellow]")
+            console.print(f"  Remaining: {hours}h")
+            console.print(f"  ID: {req['id']}")
+            console.print(f"\n  Use 'ndb protection cancel {req['id']}' to cancel\n")
             return
 
-        # Check for existing pending request
-        pending = get_pending_unlock_requests()
-        for req in pending:
-            if req["item_type"] == item_type and req["item_id"] == item_id:
-                execute_at = datetime.fromisoformat(req["execute_at"])
-                remaining = execute_at - datetime.now()
-                hours = int(remaining.total_seconds() // 3600)
+    # Create the request
+    request = create_unlock_request(item_type, item_id, delay_hours, reason)
 
-                console.print(
-                    f"\n  [yellow]Unlock request already pending for '{item_id}'[/yellow]"
-                )
-                console.print(f"  Remaining: {hours}h")
-                console.print(f"  ID: {req['id']}")
-                console.print(f"\n  Use 'ndb protection cancel {req['id']}' to cancel\n")
-                return
+    execute_at = datetime.fromisoformat(request["execute_at"])
 
-        # Create the request
-        request = create_unlock_request(item_type, item_id, delay_hours, reason)
-
-        execute_at = datetime.fromisoformat(request["execute_at"])
-
-        console.print("\n  [yellow]Unlock request created[/yellow]")
-        console.print(f"  Item: {item_type}:{item_id}")
-        console.print(f"  Delay: {delay_hours} hours")
-        console.print(f"  Execute at: {execute_at.strftime('%Y-%m-%d %H:%M')}")
-        console.print(f"  Request ID: {request['id']}")
-        console.print("\n  [dim]You can cancel this request anytime with:[/dim]")
-        console.print(f"  [cyan]ndb protection cancel {request['id']}[/cyan]\n")
-
-    except ConfigurationError as e:
-        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
+    console.print("\n  [yellow]Unlock request created[/yellow]")
+    console.print(f"  Item: {item_type}:{item_id}")
+    console.print(f"  Delay: {delay_hours} hours")
+    console.print(f"  Execute at: {execute_at.strftime('%Y-%m-%d %H:%M')}")
+    console.print(f"  Request ID: {request['id']}")
+    console.print("\n  [dim]You can cancel this request anytime with:[/dim]")
+    console.print(f"  [cyan]ndb protection cancel {request['id']}[/cyan]\n")
 
 
 @protection.command(name="cancel")
