@@ -7,7 +7,7 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0"  # Development without install
 
-from .client import NextDNSClient
+from .client import BatchResult, NextDNSClient
 from .config import (
     get_config_dir,
     get_data_dir,
@@ -32,6 +32,7 @@ from .scheduler import ScheduleEvaluator
 
 __all__ = [
     "__version__",
+    "BatchResult",
     "NextDNSClient",
     "ScheduleEvaluator",
     "load_config",

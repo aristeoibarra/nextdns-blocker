@@ -24,6 +24,41 @@ from .exceptions import APIError, DomainValidationError
 
 
 @dataclass
+class BatchResult:
+    """Result of a batch operation on multiple domains.
+
+    Attributes:
+        succeeded: List of domains that were processed successfully
+        failed: List of tuples (domain, error_message) for failed operations
+        skipped: List of domains that were skipped (already existed/didn't exist)
+    """
+
+    succeeded: list[str]
+    failed: list[tuple[str, str]]
+    skipped: list[str]
+
+    @property
+    def total(self) -> int:
+        """Total number of domains processed."""
+        return len(self.succeeded) + len(self.failed) + len(self.skipped)
+
+    @property
+    def success_count(self) -> int:
+        """Number of successfully processed domains."""
+        return len(self.succeeded)
+
+    @property
+    def failure_count(self) -> int:
+        """Number of failed domains."""
+        return len(self.failed)
+
+    @property
+    def all_succeeded(self) -> bool:
+        """True if all domains were processed successfully (no failures)."""
+        return len(self.failed) == 0
+
+
+@dataclass
 class APIRequestResult:
     """Result of an API request with error context.
 
@@ -858,6 +893,140 @@ class NextDNSClient:
         self._cache.invalidate()
         return self.get_denylist(use_cache=False) is not None
 
+    def find_domains_batch(self, domains: list[str], use_cache: bool = True) -> dict[str, bool]:
+        """
+        Check multiple domains against the denylist in a single operation.
+
+        This is more efficient than calling find_domain() for each domain,
+        as it fetches the denylist once and checks all domains against it.
+
+        Args:
+            domains: List of domain names to check
+            use_cache: Whether to use cached denylist if available
+
+        Returns:
+            Dict mapping domain -> is_blocked (True if in denylist)
+        """
+        if not domains:
+            return {}
+
+        denylist = self.get_denylist(use_cache=use_cache)
+        if denylist is None:
+            return dict.fromkeys(domains, False)
+
+        blocked_set = {str(entry.get("id")) for entry in denylist if entry.get("id")}
+        return {d: d in blocked_set for d in domains}
+
+    def block_domains_batch(self, domains: list[str]) -> BatchResult:
+        """
+        Block multiple domains in a single batch operation.
+
+        Validates all domains first, then attempts to block each one.
+        Uses a single denylist fetch to check existing blocks.
+
+        Args:
+            domains: List of domain names to block
+
+        Returns:
+            BatchResult with succeeded, failed, and skipped domains
+        """
+        succeeded: list[str] = []
+        failed: list[tuple[str, str]] = []
+        skipped: list[str] = []
+
+        if not domains:
+            return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
+
+        # Validate all domains first
+        valid_domains: list[str] = []
+        for domain in domains:
+            if not validate_domain(domain):
+                failed.append((domain, f"Invalid domain: {domain}"))
+            else:
+                valid_domains.append(domain)
+
+        if not valid_domains:
+            return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
+
+        # Fetch denylist once to check existing blocks
+        existing_blocks = self.find_domains_batch(valid_domains)
+
+        # Process each domain
+        for domain in valid_domains:
+            if existing_blocks.get(domain, False):
+                skipped.append(domain)
+                logger.debug(f"Domain already blocked: {domain}")
+                continue
+
+            result = self.request(
+                "POST",
+                f"/profiles/{self.profile_id}/denylist",
+                {"id": domain, "active": True},
+            )
+
+            if result.success:
+                self._cache.add_domain(domain)
+                succeeded.append(domain)
+                logger.info(f"Blocked: {domain}")
+            else:
+                failed.append((domain, result.error_msg))
+                logger.error(f"Failed to block: {domain} - {result.error_msg}")
+
+        return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
+
+    def unblock_domains_batch(self, domains: list[str]) -> BatchResult:
+        """
+        Unblock multiple domains in a single batch operation.
+
+        Validates all domains first, then attempts to unblock each one.
+        Uses a single denylist fetch to check which domains are actually blocked.
+
+        Args:
+            domains: List of domain names to unblock
+
+        Returns:
+            BatchResult with succeeded, failed, and skipped domains
+        """
+        succeeded: list[str] = []
+        failed: list[tuple[str, str]] = []
+        skipped: list[str] = []
+
+        if not domains:
+            return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
+
+        # Validate all domains first
+        valid_domains: list[str] = []
+        for domain in domains:
+            if not validate_domain(domain):
+                failed.append((domain, f"Invalid domain: {domain}"))
+            else:
+                valid_domains.append(domain)
+
+        if not valid_domains:
+            return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
+
+        # Fetch denylist once to check existing blocks
+        existing_blocks = self.find_domains_batch(valid_domains)
+
+        # Process each domain
+        for domain in valid_domains:
+            if not existing_blocks.get(domain, False):
+                skipped.append(domain)
+                logger.debug(f"Domain not in denylist: {domain}")
+                continue
+
+            result = self.request("DELETE", f"/profiles/{self.profile_id}/denylist/{domain}")
+
+            if result.success:
+                self._cache.remove_domain(domain)
+                succeeded.append(domain)
+                logger.info(f"Unblocked: {domain}")
+            else:
+                failed.append((domain, result.error_msg))
+                logger.error(f"Failed to unblock: {domain} - {result.error_msg}")
+
+        return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
+
     # -------------------------------------------------------------------------
     # ALLOWLIST METHODS
     # -------------------------------------------------------------------------
@@ -1067,6 +1236,142 @@ class NextDNSClient:
         """
         self._allowlist_cache.invalidate()
         return self.get_allowlist(use_cache=False) is not None
+
+    def find_in_allowlist_batch(
+        self, domains: list[str], use_cache: bool = True
+    ) -> dict[str, bool]:
+        """
+        Check multiple domains against the allowlist in a single operation.
+
+        This is more efficient than calling find_in_allowlist() for each domain,
+        as it fetches the allowlist once and checks all domains against it.
+
+        Args:
+            domains: List of domain names to check
+            use_cache: Whether to use cached allowlist if available
+
+        Returns:
+            Dict mapping domain -> is_allowed (True if in allowlist)
+        """
+        if not domains:
+            return {}
+
+        allowlist = self.get_allowlist(use_cache=use_cache)
+        if allowlist is None:
+            return dict.fromkeys(domains, False)
+
+        allowed_set = {str(entry.get("id")) for entry in allowlist if entry.get("id")}
+        return {d: d in allowed_set for d in domains}
+
+    def allow_domains_batch(self, domains: list[str]) -> BatchResult:
+        """
+        Add multiple domains to the allowlist in a single batch operation.
+
+        Validates all domains first, then attempts to allow each one.
+        Uses a single allowlist fetch to check existing entries.
+
+        Args:
+            domains: List of domain names to allow
+
+        Returns:
+            BatchResult with succeeded, failed, and skipped domains
+        """
+        succeeded: list[str] = []
+        failed: list[tuple[str, str]] = []
+        skipped: list[str] = []
+
+        if not domains:
+            return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
+
+        # Validate all domains first
+        valid_domains: list[str] = []
+        for domain in domains:
+            if not validate_domain(domain):
+                failed.append((domain, f"Invalid domain: {domain}"))
+            else:
+                valid_domains.append(domain)
+
+        if not valid_domains:
+            return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
+
+        # Fetch allowlist once to check existing entries
+        existing_allowed = self.find_in_allowlist_batch(valid_domains)
+
+        # Process each domain
+        for domain in valid_domains:
+            if existing_allowed.get(domain, False):
+                skipped.append(domain)
+                logger.debug(f"Domain already in allowlist: {domain}")
+                continue
+
+            result = self.request(
+                "POST",
+                f"/profiles/{self.profile_id}/allowlist",
+                {"id": domain, "active": True},
+            )
+
+            if result.success:
+                self._allowlist_cache.add_domain(domain)
+                succeeded.append(domain)
+                logger.info(f"Added to allowlist: {domain}")
+            else:
+                failed.append((domain, result.error_msg))
+                logger.error(f"Failed to add to allowlist: {domain} - {result.error_msg}")
+
+        return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
+
+    def disallow_domains_batch(self, domains: list[str]) -> BatchResult:
+        """
+        Remove multiple domains from the allowlist in a single batch operation.
+
+        Validates all domains first, then attempts to remove each one.
+        Uses a single allowlist fetch to check which domains are actually allowed.
+
+        Args:
+            domains: List of domain names to remove from allowlist
+
+        Returns:
+            BatchResult with succeeded, failed, and skipped domains
+        """
+        succeeded: list[str] = []
+        failed: list[tuple[str, str]] = []
+        skipped: list[str] = []
+
+        if not domains:
+            return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
+
+        # Validate all domains first
+        valid_domains: list[str] = []
+        for domain in domains:
+            if not validate_domain(domain):
+                failed.append((domain, f"Invalid domain: {domain}"))
+            else:
+                valid_domains.append(domain)
+
+        if not valid_domains:
+            return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
+
+        # Fetch allowlist once to check existing entries
+        existing_allowed = self.find_in_allowlist_batch(valid_domains)
+
+        # Process each domain
+        for domain in valid_domains:
+            if not existing_allowed.get(domain, False):
+                skipped.append(domain)
+                logger.debug(f"Domain not in allowlist: {domain}")
+                continue
+
+            result = self.request("DELETE", f"/profiles/{self.profile_id}/allowlist/{domain}")
+
+            if result.success:
+                self._allowlist_cache.remove_domain(domain)
+                succeeded.append(domain)
+                logger.info(f"Removed from allowlist: {domain}")
+            else:
+                failed.append((domain, result.error_msg))
+                logger.error(f"Failed to remove from allowlist: {domain} - {result.error_msg}")
+
+        return BatchResult(succeeded=succeeded, failed=failed, skipped=skipped)
 
     # -------------------------------------------------------------------------
     # PARENTAL CONTROL METHODS
