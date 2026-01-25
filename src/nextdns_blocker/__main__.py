@@ -3,7 +3,6 @@
 from .category_cli import register_category
 from .cli import main
 from .config_cli import register_config
-from .db_cli import register_db
 from .list_cli import register_allowlist, register_denylist
 from .pending_cli import register_pending
 from .watchdog import register_watchdog
@@ -15,7 +14,6 @@ register_pending(main)
 register_category(main)
 register_denylist(main)
 register_allowlist(main)
-register_db(main)
 
 if __name__ == "__main__":
     main()
