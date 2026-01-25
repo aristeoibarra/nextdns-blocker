@@ -77,7 +77,6 @@ def test_all_subcommands_available():
         "allow",
         "disallow",
         "health",
-        "stats",
         "watchdog",
     ]
 

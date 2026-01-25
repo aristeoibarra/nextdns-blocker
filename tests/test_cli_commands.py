@@ -2,7 +2,6 @@
 
 import sys
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -308,29 +307,6 @@ class TestHealthCommand:
 
         # API failure causes exit code 1
         assert result.exit_code == 1
-
-
-class TestStatsCommand:
-    """Tests for stats CLI command."""
-
-    def test_stats_no_audit_file(self, runner, use_temp_database):
-        """Test stats with no audit log entries."""
-        result = runner.invoke(main, ["stats"])
-
-        assert result.exit_code == 0
-        assert "Statistics" in result.output or "No activity" in result.output
-
-    def test_stats_with_audit_data(self, runner, use_temp_database):
-        """Test stats with audit log data."""
-        now = datetime.now().isoformat()
-        db.add_audit_log("BLOCK", domain="example.com", created_at=now)
-        db.add_audit_log("BLOCK", domain="test.com", created_at=now)
-        db.add_audit_log("UNBLOCK", domain="example.com", created_at=now)
-
-        result = runner.invoke(main, ["stats"])
-
-        assert result.exit_code == 0
-        assert "Blocks:" in result.output or "Total entries:" in result.output
 
 
 class TestMainCLI:
@@ -783,16 +759,6 @@ class TestUpdateCommandEdgeCases:
                 pip_call_found = True
                 break
         assert pip_call_found, f"pip not found in calls: {mock_run.call_args_list}"
-
-
-class TestStatsCommandEdgeCases:
-    """Additional tests for stats command edge cases."""
-
-    def test_stats_empty_database(self, runner, use_temp_database):
-        """Should handle empty database gracefully."""
-        result = runner.invoke(main, ["stats"])
-
-        assert result.exit_code == 0
 
 
 class TestFixCommand:

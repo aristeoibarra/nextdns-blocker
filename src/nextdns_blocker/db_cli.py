@@ -1,7 +1,6 @@
 """Database command group for NextDNS Blocker.
 
 Provides CLI commands for managing the SQLite database:
-- db migrate: Migrate from JSON files to SQLite
 - db dump: Inspect database contents
 - db stats: Show database statistics
 """
@@ -16,15 +15,6 @@ from rich.console import Console
 from rich.table import Table
 
 from . import database as db
-from .migrate_to_sqlite import (
-    check_migration_needed,
-    get_audit_log_path,
-    get_config_json_path,
-    get_pending_json_path,
-    get_retry_queue_json_path,
-    get_unlock_requests_json_path,
-    run_migration,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -42,135 +32,6 @@ def db_cli() -> None:
     pass
 
 
-@db_cli.command("migrate")
-@click.option("--dry-run", is_flag=True, help="Show what would be migrated without making changes")
-@click.option("--skip-audit", is_flag=True, help="Skip migrating audit.log (can be large)")
-@click.option("--no-backup", is_flag=True, help="Don't create backups of JSON files")
-@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
-@click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
-def cmd_migrate(
-    dry_run: bool,
-    skip_audit: bool,
-    no_backup: bool,
-    verbose: bool,
-    yes: bool,
-) -> None:
-    """Migrate data from JSON files to SQLite database.
-
-    This command migrates existing data from JSON files to the new SQLite
-    database. It should be run once during the upgrade process.
-
-    Files migrated:
-    - config.json -> config, blocklist, allowlist, categories tables
-    - pending.json -> pending_actions table
-    - unlock_requests.json -> unlock_requests table
-    - retry_queue.json -> retry_queue table
-    - audit.log -> audit_log table
-
-    Examples:
-        nextdns-blocker db migrate             # Run migration
-        nextdns-blocker db migrate --dry-run   # Preview changes
-        nextdns-blocker db migrate --skip-audit  # Skip large audit.log
-    """
-    # Configure logging for verbose mode
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
-
-    # Show current status
-    console.print()
-    console.print("  [bold]SQLite Migration[/bold]")
-    console.print("  [dim]━━━━━━━━━━━━━━━━━[/dim]")
-    console.print()
-
-    # Show file locations
-    console.print("  [bold]Source files:[/bold]")
-    json_files = [
-        ("config.json", get_config_json_path()),
-        ("pending.json", get_pending_json_path()),
-        ("unlock_requests.json", get_unlock_requests_json_path()),
-        ("retry_queue.json", get_retry_queue_json_path()),
-        ("audit.log", get_audit_log_path()),
-    ]
-
-    files_found = 0
-    for name, path in json_files:
-        exists = path.exists()
-        if exists:
-            files_found += 1
-            size = path.stat().st_size
-            console.print(f"    [green]✓[/green] {name} ({size:,} bytes)")
-        else:
-            console.print(f"    [dim]✗ {name} (not found)[/dim]")
-
-    console.print()
-    console.print(f"  [bold]Target:[/bold] {db.get_db_path()}")
-    console.print()
-
-    if files_found == 0:
-        console.print("  [yellow]No JSON files found to migrate.[/yellow]")
-        console.print("  [dim]Migration is only needed for existing installations.[/dim]")
-        console.print()
-        return
-
-    # Check if database already has data
-    if db.database_exists():
-        db.init_database()
-        existing_config = db.get_all_config()
-        if existing_config and not dry_run:
-            console.print("  [yellow]Warning: Database already contains data.[/yellow]")
-            console.print("  [dim]Running migration again may create duplicates.[/dim]")
-            console.print()
-            if not yes and not click.confirm("  Continue anyway?", default=False):
-                console.print("\n  [dim]Aborted[/dim]\n")
-                return
-
-    # Confirmation
-    if not dry_run and not yes:
-        if not click.confirm("  Proceed with migration?", default=True):
-            console.print("\n  [dim]Aborted[/dim]\n")
-            return
-
-    console.print()
-
-    # Run migration
-    if dry_run:
-        console.print("  [yellow]DRY RUN - No changes will be made[/yellow]")
-        console.print()
-
-    results = run_migration(
-        dry_run=dry_run,
-        skip_audit=skip_audit,
-        backup=not no_backup,
-    )
-
-    # Show results
-    console.print("  [bold]Migration Summary:[/bold]")
-    console.print()
-
-    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
-    table.add_column("Category")
-    table.add_column("Items", justify="right")
-
-    table.add_row("Config items", str(results["config"]))
-    table.add_row("Pending actions", str(results["pending_actions"]))
-    table.add_row("Unlock requests", str(results["unlock_requests"]))
-    table.add_row("Retry queue", str(results["retry_queue"]))
-    table.add_row("Audit log entries", str(results["audit_log"]))
-
-    console.print(table)
-    console.print()
-
-    total = sum(results.values())
-    if dry_run:
-        console.print(f"  Would migrate [cyan]{total}[/cyan] total items")
-    else:
-        console.print(f"  [green]✓[/green] Successfully migrated [cyan]{total}[/cyan] items")
-        console.print()
-        console.print(f"  Database size: {db.get_database_size():,} bytes")
-
-    console.print()
-
-
 @db_cli.command("dump")
 @click.option("--table", "table_name", help="Dump specific table only")
 @click.option("--json", "output_json", is_flag=True, help="Output in JSON format")
@@ -179,7 +40,7 @@ def cmd_dump(table_name: Optional[str], output_json: bool, limit: int) -> None:
     """Dump database contents for debugging.
 
     Shows the contents of all tables (or a specific table) in the SQLite
-    database. Useful for debugging and verifying migration.
+    database. Useful for debugging and verification.
 
     Examples:
         nextdns-blocker db dump                     # Show all tables
@@ -189,8 +50,7 @@ def cmd_dump(table_name: Optional[str], output_json: bool, limit: int) -> None:
     """
     if not db.database_exists():
         console.print("\n  [red]Database not found.[/red]")
-        console.print(f"  [dim]Expected at: {db.get_db_path()}[/dim]")
-        console.print("  [dim]Run 'nextdns-blocker db migrate' first.[/dim]\n")
+        console.print(f"  [dim]Expected at: {db.get_db_path()}[/dim]\n")
         sys.exit(1)
 
     db.init_database()
@@ -294,8 +154,7 @@ def cmd_stats(output_json: bool) -> None:
     """
     if not db.database_exists():
         console.print("\n  [red]Database not found.[/red]")
-        console.print(f"  [dim]Expected at: {db.get_db_path()}[/dim]")
-        console.print("  [dim]Run 'nextdns-blocker db migrate' first.[/dim]\n")
+        console.print(f"  [dim]Expected at: {db.get_db_path()}[/dim]\n")
         sys.exit(1)
 
     db.init_database()
@@ -378,32 +237,6 @@ def cmd_stats(output_json: bool) -> None:
         for status, count in stats["pending_actions_by_status"].items():
             console.print(f"    {status}: {count}")
         console.print()
-
-
-@db_cli.command("check")
-def cmd_check() -> None:
-    """Check if migration is needed.
-
-    Checks whether JSON files exist that need to be migrated to SQLite.
-    Useful for scripts and automated checks.
-
-    Exit codes:
-        0: Migration needed or database is up to date
-        1: Error checking status
-    """
-    needs_migration = check_migration_needed()
-
-    console.print()
-    if needs_migration:
-        console.print("  [yellow]Migration needed[/yellow]")
-        console.print("  [dim]Run 'nextdns-blocker db migrate' to migrate data.[/dim]")
-    else:
-        if db.database_exists():
-            console.print("  [green]✓[/green] Database is up to date")
-        else:
-            console.print("  [dim]No existing data to migrate.[/dim]")
-            console.print("  [dim]Database will be created on first use.[/dim]")
-    console.print()
 
 
 # =============================================================================
