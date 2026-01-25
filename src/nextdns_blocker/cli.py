@@ -39,6 +39,7 @@ from .config import (
     validate_no_overlap,
 )
 from .config_cli import register_config
+from .db_cli import register_db
 from .exceptions import ConfigurationError, DomainValidationError
 from .init import run_interactive_wizard, run_non_interactive
 from .nextdns_cli import register_nextdns
@@ -2005,6 +2006,9 @@ register_protection(main)
 
 # Register stats command group
 register_stats(main)
+
+# Register db command group
+register_db(main)
 
 
 if __name__ == "__main__":

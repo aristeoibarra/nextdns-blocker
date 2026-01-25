@@ -10,6 +10,7 @@ import pytest
 import responses
 from click.testing import CliRunner
 
+from nextdns_blocker import database as db
 from nextdns_blocker.cli import main
 from nextdns_blocker.client import API_URL, NextDNSClient
 from nextdns_blocker.common import (
@@ -38,6 +39,19 @@ def temp_log_dir():
     with tempfile.TemporaryDirectory() as tmpdir:
         log_dir = Path(tmpdir)
         yield log_dir
+
+
+@pytest.fixture
+def use_temp_database(tmp_path: Path):
+    """Use a temporary database for each test."""
+    test_db_path = tmp_path / "test.db"
+
+    with patch.object(db, "get_db_path", return_value=test_db_path):
+        if hasattr(db._local, "connection"):
+            db._local.connection = None
+        db.init_database()
+        yield
+        db.close_connection()
 
 
 @pytest.fixture
@@ -299,29 +313,21 @@ class TestHealthCommand:
 class TestStatsCommand:
     """Tests for stats CLI command."""
 
-    def test_stats_no_audit_file(self, runner, temp_log_dir):
-        """Test stats with no audit log file."""
-        with patch(
-            "nextdns_blocker.analytics.get_audit_log_file", return_value=temp_log_dir / "audit.log"
-        ):
-            result = runner.invoke(main, ["stats"])
+    def test_stats_no_audit_file(self, runner, use_temp_database):
+        """Test stats with no audit log entries."""
+        result = runner.invoke(main, ["stats"])
 
         assert result.exit_code == 0
         assert "Statistics" in result.output or "No activity" in result.output
 
-    def test_stats_with_audit_data(self, runner, temp_log_dir):
+    def test_stats_with_audit_data(self, runner, use_temp_database):
         """Test stats with audit log data."""
-
-        audit_file = temp_log_dir / "audit.log"
         now = datetime.now().isoformat()
-        audit_file.write_text(
-            f"{now} | BLOCK | example.com\n"
-            f"{now} | BLOCK | test.com\n"
-            f"{now} | UNBLOCK | example.com\n"
-        )
+        db.add_audit_log("BLOCK", domain="example.com", created_at=now)
+        db.add_audit_log("BLOCK", domain="test.com", created_at=now)
+        db.add_audit_log("UNBLOCK", domain="example.com", created_at=now)
 
-        with patch("nextdns_blocker.analytics.get_audit_log_file", return_value=audit_file):
-            result = runner.invoke(main, ["stats"])
+        result = runner.invoke(main, ["stats"])
 
         assert result.exit_code == 0
         assert "Blocks:" in result.output or "Total entries:" in result.output
@@ -378,25 +384,25 @@ class TestDomainValidationInClient:
 
 
 class TestAuditLog:
-    """Tests for audit_log function."""
+    """Tests for audit_log function writing to SQLite."""
 
-    def test_audit_log_creates_file(self, temp_log_dir):
-        """Test audit_log creates log file if not exists."""
-        audit_file = temp_log_dir / "audit.log"
-        with patch("nextdns_blocker.common.get_audit_log_file", return_value=audit_file):
-            with patch("nextdns_blocker.common.get_log_dir", return_value=temp_log_dir):
-                audit_log("TEST_ACTION", "test detail")
-        assert audit_file.exists()
+    def test_audit_log_writes_entry(self, use_temp_database):
+        """Test audit_log writes to database."""
+        audit_log("BLOCK", "example.com")
 
-    def test_audit_log_writes_entry(self, temp_log_dir):
-        """Test audit_log writes correct format."""
-        audit_file = temp_log_dir / "audit.log"
-        with patch("nextdns_blocker.common.get_audit_log_file", return_value=audit_file):
-            with patch("nextdns_blocker.common.get_log_dir", return_value=temp_log_dir):
-                audit_log("BLOCK", "example.com")
-        content = audit_file.read_text()
-        assert "BLOCK" in content
-        assert "example.com" in content
+        # Verify entry was written to database
+        logs = db.get_audit_logs(limit=1)
+        assert len(logs) == 1
+        assert logs[0]["event_type"] == "BLOCK"
+        assert logs[0]["domain"] == "example.com"
+
+    def test_audit_log_with_prefix(self, use_temp_database):
+        """Test audit_log writes prefix correctly."""
+        audit_log("RESTORE", "cron jobs", prefix="WD")
+
+        logs = db.get_audit_logs(limit=1)
+        assert len(logs) == 1
+        assert logs[0]["event_type"] == "WD_RESTORE"
 
 
 class TestWriteSecureFile:
@@ -782,14 +788,9 @@ class TestUpdateCommandEdgeCases:
 class TestStatsCommandEdgeCases:
     """Additional tests for stats command edge cases."""
 
-    def test_stats_read_error(self, runner, temp_log_dir):
-        """Should handle read error gracefully."""
-        audit_file = temp_log_dir / "audit.log"
-
-        # Create file then make it unreadable by simulating error
-        with patch("nextdns_blocker.analytics.get_audit_log_file", return_value=audit_file):
-            # Stats command handles missing files gracefully
-            result = runner.invoke(main, ["stats"])
+    def test_stats_empty_database(self, runner, use_temp_database):
+        """Should handle empty database gracefully."""
+        result = runner.invoke(main, ["stats"])
 
         assert result.exit_code == 0
 

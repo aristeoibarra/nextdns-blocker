@@ -2,10 +2,12 @@
 
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from nextdns_blocker import database as db
 from nextdns_blocker import protection
 
 
@@ -151,13 +153,26 @@ class TestValidateNoLockedWeakening:
 class TestUnlockRequests:
     """Tests for unlock request functions."""
 
-    @pytest.fixture
-    def mock_log_dir(self, tmp_path):
-        """Mock the log directory."""
-        with patch.object(protection, "get_log_dir", return_value=tmp_path):
-            yield tmp_path
+    @pytest.fixture(autouse=True)
+    def use_temp_database(self, tmp_path: Path):
+        """Use a temporary database for each test."""
+        test_db_path = tmp_path / "test.db"
 
-    def test_create_unlock_request(self, mock_log_dir):
+        # Patch the database path
+        with patch.object(db, "get_db_path", return_value=test_db_path):
+            # Clear thread-local connection
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+
+            # Initialize fresh database
+            db.init_database()
+
+            yield
+
+            # Close connection
+            db.close_connection()
+
+    def test_create_unlock_request(self):
         """Should create an unlock request."""
         with patch.object(protection, "audit_log"):
             request = protection.create_unlock_request("category", "porn", 48, "testing")
@@ -168,14 +183,14 @@ class TestUnlockRequests:
         assert request["delay_hours"] == 48
         assert request["reason"] == "testing"
 
-    def test_create_unlock_request_min_delay(self, mock_log_dir):
+    def test_create_unlock_request_min_delay(self):
         """Should enforce minimum delay."""
         with patch.object(protection, "audit_log"):
             request = protection.create_unlock_request("category", "test", 1)
 
         assert request["delay_hours"] >= protection.MIN_UNLOCK_DELAY_HOURS
 
-    def test_get_pending_unlock_requests(self, mock_log_dir):
+    def test_get_pending_unlock_requests(self):
         """Should return pending requests."""
         with patch.object(protection, "audit_log"):
             protection.create_unlock_request("category", "test1")
@@ -184,7 +199,7 @@ class TestUnlockRequests:
         pending = protection.get_pending_unlock_requests()
         assert len(pending) == 2
 
-    def test_cancel_unlock_request(self, mock_log_dir):
+    def test_cancel_unlock_request(self):
         """Should cancel a pending request."""
         with patch.object(protection, "audit_log"):
             request = protection.create_unlock_request("category", "test")
@@ -194,12 +209,12 @@ class TestUnlockRequests:
         pending = protection.get_pending_unlock_requests()
         assert len(pending) == 0
 
-    def test_cancel_nonexistent_request(self, mock_log_dir):
+    def test_cancel_nonexistent_request(self):
         """Should return False for nonexistent request."""
         result = protection.cancel_unlock_request("nonexistent")
         assert result is False
 
-    def test_get_executable_unlock_requests(self, mock_log_dir):
+    def test_get_executable_unlock_requests(self):
         """Should return only executable requests."""
         # Create request with 0 delay (will be min delay)
         with patch.object(protection, "audit_log"):
@@ -208,14 +223,6 @@ class TestUnlockRequests:
         # Not executable yet
         executable = protection.get_executable_unlock_requests()
         assert len(executable) == 0
-
-    def test_load_unlock_requests_invalid_json(self, mock_log_dir):
-        """Should handle invalid JSON gracefully."""
-        requests_file = mock_log_dir / "unlock_requests.json"
-        requests_file.write_text("invalid json")
-
-        requests = protection._load_unlock_requests()
-        assert requests == []
 
 
 class TestValidateProtectionConfig:
@@ -245,13 +252,26 @@ class TestValidateProtectionConfig:
 class TestExecuteUnlockRequest:
     """Tests for execute_unlock_request function."""
 
-    @pytest.fixture
-    def mock_log_dir(self, tmp_path):
-        """Mock the log directory."""
-        with patch.object(protection, "get_log_dir", return_value=tmp_path):
-            yield tmp_path
+    @pytest.fixture(autouse=True)
+    def use_temp_database(self, tmp_path: Path):
+        """Use a temporary database for each test."""
+        test_db_path = tmp_path / "test.db"
 
-    def test_execute_unlock_request_success(self, mock_log_dir, tmp_path):
+        # Patch the database path
+        with patch.object(db, "get_db_path", return_value=test_db_path):
+            # Clear thread-local connection
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+
+            # Initialize fresh database
+            db.init_database()
+
+            yield
+
+            # Close connection
+            db.close_connection()
+
+    def test_execute_unlock_request_success(self, tmp_path):
         """Should execute unlock request and modify config."""
         # Create config file
         config_path = tmp_path / "config.json"
@@ -262,10 +282,14 @@ class TestExecuteUnlockRequest:
         with patch.object(protection, "audit_log"):
             request = protection.create_unlock_request("category", "porn", 24)
 
-        # Modify execute_at to be in the past
-        requests = protection._load_unlock_requests()
-        requests[0]["execute_at"] = (datetime.now() - timedelta(hours=1)).isoformat()
-        protection._save_unlock_requests(requests)
+        # Modify execute_at to be in the past using database
+        conn = db.get_connection()
+        past_time = (datetime.now() - timedelta(hours=1)).isoformat()
+        conn.execute(
+            "UPDATE unlock_requests SET execute_at = ? WHERE id = ?",
+            (past_time, request["id"]),
+        )
+        conn.commit()
 
         # Execute
         with patch.object(protection, "audit_log"):
@@ -277,7 +301,7 @@ class TestExecuteUnlockRequest:
         new_config = json.loads(config_path.read_text())
         assert new_config["nextdns"]["categories"] == []
 
-    def test_execute_unlock_request_not_ready(self, mock_log_dir, tmp_path):
+    def test_execute_unlock_request_not_ready(self, tmp_path):
         """Should not execute if delay hasn't passed."""
         config_path = tmp_path / "config.json"
         config_path.write_text("{}")
@@ -288,7 +312,7 @@ class TestExecuteUnlockRequest:
 
         assert result is False
 
-    def test_execute_unlock_request_not_found(self, mock_log_dir, tmp_path):
+    def test_execute_unlock_request_not_found(self, tmp_path):
         """Should return False for nonexistent request."""
         config_path = tmp_path / "config.json"
         result = protection.execute_unlock_request("nonexistent", config_path)

@@ -13,14 +13,10 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from .common import (
-    _lock_file,
-    _unlock_file,
-    ensure_naive_datetime,
-    get_audit_log_file,
-)
+from . import database as db
+from .common import ensure_naive_datetime
 from .pending import get_pending_actions
 
 logger = logging.getLogger(__name__)
@@ -137,9 +133,10 @@ class AnalyticsManager:
         Initialize analytics manager.
 
         Args:
-            audit_log_path: Path to audit log file. If None, uses default location.
+            audit_log_path: Deprecated, kept for API compatibility. Ignored.
         """
-        self.audit_log_path = audit_log_path or get_audit_log_file()
+        # audit_log_path is ignored - we now read from SQLite
+        pass
 
     def _parse_audit_log(
         self,
@@ -147,7 +144,7 @@ class AnalyticsManager:
         domain_filter: Optional[str] = None,
     ) -> list[AuditLogEntry]:
         """
-        Parse audit log entries.
+        Parse audit log entries from SQLite database.
 
         Args:
             days: Only include entries from last N days. None = all entries.
@@ -158,94 +155,99 @@ class AnalyticsManager:
         """
         entries: list[AuditLogEntry] = []
 
-        if not self.audit_log_path.exists():
-            return entries
-
-        # Calculate cutoff date if days specified
-        cutoff: Optional[datetime] = None
+        # Calculate date range
+        start_date: Optional[str] = None
         if days is not None:
             cutoff = datetime.now() - timedelta(days=days)
+            start_date = cutoff.isoformat()
 
         try:
-            with open(self.audit_log_path, encoding="utf-8") as f:
-                _lock_file(f, exclusive=False)
-                try:
-                    for line in f:
-                        entry = self._parse_log_line(line.strip())
-                        if entry is None:
-                            continue
-
-                        # Filter by date
-                        if cutoff and entry.timestamp < cutoff:
-                            continue
-
-                        # Filter by domain
-                        if domain_filter:
-                            detail_lower = entry.detail.lower()
-                            filter_lower = domain_filter.lower()
-                            if filter_lower not in detail_lower:
-                                continue
-
-                        entries.append(entry)
-                finally:
-                    _unlock_file(f)
-        except OSError as e:
-            logger.warning(f"Failed to read audit log: {e}")
-
-        return entries
-
-    def _parse_log_line(self, line: str) -> Optional[AuditLogEntry]:
-        """
-        Parse a single audit log line.
-
-        Format: ISO_TIMESTAMP | [PREFIX] | ACTION | DETAIL
-        Examples:
-            2024-01-15T10:00:00.123456 | BLOCK | youtube.com
-            2024-01-15T10:05:00.123456 | WD | RESTORE | cron jobs restored
-
-        Args:
-            line: Raw log line
-
-        Returns:
-            Parsed entry or None if invalid
-        """
-        if not line:
-            return None
-
-        parts = line.split(" | ")
-        if len(parts) < 2:
-            return None
-
-        try:
-            timestamp = ensure_naive_datetime(datetime.fromisoformat(parts[0].strip()))
-        except ValueError:
-            logger.debug(f"Invalid timestamp in log line: {line[:50]}")
-            return None
-
-        # Handle WD prefix entries: [timestamp, WD, action, detail]
-        if len(parts) >= 3 and parts[1].strip() == "WD":
-            return AuditLogEntry(
-                timestamp=timestamp,
-                action=parts[2].strip(),
-                detail=parts[3].strip() if len(parts) > 3 else "",
-                prefix="WD",
+            # Query from SQLite - get a large batch
+            raw_entries = db.get_audit_logs(
+                start_date=start_date,
+                limit=100000,  # Large limit to get all entries
             )
 
-        # Standard entries: [timestamp, action, detail]
-        action = parts[1].strip()
-        detail = parts[2].strip() if len(parts) > 2 else ""
+            for row in raw_entries:
+                entry = self._row_to_entry(row)
+                if entry is None:
+                    continue
 
-        # Handle PENDING entries which have format: PENDING_X | action_id domain detail
-        if action.startswith("PENDING_"):
-            # Extract domain from detail like "pnd_20240115_143022_a1b2c3 youtube.com delay=4h"
-            detail_parts = detail.split()
-            if len(detail_parts) >= 2:
-                detail = detail_parts[1]  # domain is second part
+                # Filter by domain if specified
+                if domain_filter:
+                    # Check domain field first
+                    domain_match = False
+                    if row.get("domain"):
+                        if domain_filter.lower() in row["domain"].lower():
+                            domain_match = True
+
+                    # Also check metadata for domain references
+                    if not domain_match and row.get("metadata"):
+                        metadata = row["metadata"]
+                        if isinstance(metadata, dict):
+                            for value in metadata.values():
+                                if (
+                                    isinstance(value, str)
+                                    and domain_filter.lower() in value.lower()
+                                ):
+                                    domain_match = True
+                                    break
+
+                    if not domain_match:
+                        continue
+
+                entries.append(entry)
+
+        except Exception as e:
+            logger.warning(f"Failed to read audit log from database: {e}")
+
+        # Reverse to get chronological order (DB returns newest first)
+        return list(reversed(entries))
+
+    def _row_to_entry(self, row: dict[str, Any]) -> Optional[AuditLogEntry]:
+        """
+        Convert a database row to AuditLogEntry.
+
+        Args:
+            row: Database row dict
+
+        Returns:
+            AuditLogEntry or None if invalid
+        """
+        try:
+            timestamp = ensure_naive_datetime(datetime.fromisoformat(row["created_at"]))
+        except (ValueError, KeyError):
+            return None
+
+        event_type = row.get("event_type", "")
+
+        # Parse prefix from event_type (e.g., "WD_RESTORE" -> prefix="WD", action="RESTORE")
+        prefix = ""
+        action = event_type
+        if "_" in event_type:
+            parts = event_type.split("_", 1)
+            if parts[0] in ("WD",):  # Known prefixes
+                prefix = parts[0]
+                action = parts[1]
+
+        # Build detail from domain and metadata
+        detail_parts = []
+        if row.get("domain"):
+            detail_parts.append(row["domain"])
+
+        metadata = row.get("metadata")
+        if metadata and isinstance(metadata, dict):
+            for key, value in metadata.items():
+                if key != "id":  # Skip internal id
+                    detail_parts.append(f"{key}={value}")
+
+        detail = " ".join(detail_parts)
 
         return AuditLogEntry(
             timestamp=timestamp,
             action=action,
             detail=detail,
+            prefix=prefix,
         )
 
     def get_top_blocked_domains(

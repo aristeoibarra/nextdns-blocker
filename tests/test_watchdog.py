@@ -38,11 +38,18 @@ def mock_disabled_file(temp_log_dir):
 
 @pytest.fixture
 def mock_audit_log_file(temp_log_dir):
-    """Mock the AUDIT_LOG_FILE path by patching the common module."""
-    audit_file = temp_log_dir / "audit.log"
-    with patch("nextdns_blocker.common.get_audit_log_file", return_value=audit_file):
+    """Use a temporary SQLite database for audit log tests."""
+    from nextdns_blocker import database as db
+
+    test_db_path = temp_log_dir / "test.db"
+
+    with patch.object(db, "get_db_path", return_value=test_db_path):
         with patch("nextdns_blocker.common.get_log_dir", return_value=temp_log_dir):
-            yield audit_file
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+            db.init_database()
+            yield test_db_path
+            db.close_connection()
 
 
 class TestIsDisabled:
@@ -584,23 +591,38 @@ class TestCmdCheckRestoration:
 class TestAuditLogWatchdog:
     """Tests for watchdog audit_log function."""
 
-    def test_audit_log_creates_file(self, temp_log_dir):
-        """Should create audit log file."""
-        audit_file = temp_log_dir / "audit.log"
-        with patch("nextdns_blocker.common.get_audit_log_file", return_value=audit_file):
-            with patch("nextdns_blocker.common.get_log_dir", return_value=temp_log_dir):
-                watchdog.audit_log("TEST", "detail")
-                assert audit_file.exists()
+    def test_audit_log_writes_to_database(self, temp_log_dir):
+        """Should write audit log to SQLite database."""
+        from nextdns_blocker import database as db
+
+        test_db_path = temp_log_dir / "test.db"
+        with patch.object(db, "get_db_path", return_value=test_db_path):
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+            db.init_database()
+
+            watchdog.audit_log("TEST", "detail")
+
+            entries = db.get_audit_logs()
+            assert len(entries) == 1
+            db.close_connection()
 
     def test_audit_log_writes_wd_prefix(self, temp_log_dir):
         """Should write WD prefix in log entries."""
-        audit_file = temp_log_dir / "audit.log"
-        with patch("nextdns_blocker.common.get_audit_log_file", return_value=audit_file):
-            with patch("nextdns_blocker.common.get_log_dir", return_value=temp_log_dir):
-                watchdog.audit_log("ACTION", "detail")
-                content = audit_file.read_text()
-                assert "WD" in content
-                assert "ACTION" in content
+        from nextdns_blocker import database as db
+
+        test_db_path = temp_log_dir / "test.db"
+        with patch.object(db, "get_db_path", return_value=test_db_path):
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+            db.init_database()
+
+            watchdog.audit_log("ACTION", "detail")
+
+            entries = db.get_audit_logs()
+            assert len(entries) == 1
+            assert entries[0]["event_type"] == "WD_ACTION"
+            db.close_connection()
 
 
 class TestMain:

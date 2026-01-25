@@ -332,44 +332,64 @@ class TestRemovePin:
 
     def test_remove_pin_requires_verification(self, tmp_path):
         """Should require current PIN to remove."""
+        from nextdns_blocker import database as db
+
         pin_file = tmp_path / ".pin_hash"
         session_file = tmp_path / ".pin_session"
         attempts_file = tmp_path / ".pin_attempts"
+        test_db_path = tmp_path / "test.db"
 
         with (
             patch("nextdns_blocker.protection.get_pin_hash_file", return_value=pin_file),
             patch("nextdns_blocker.protection.get_pin_session_file", return_value=session_file),
             patch("nextdns_blocker.protection.get_pin_attempts_file", return_value=attempts_file),
-            patch(
-                "nextdns_blocker.protection.get_unlock_requests_file",
-                return_value=tmp_path / "unlock.json",
-            ),
             patch("nextdns_blocker.protection.audit_log"),
+            patch.object(db, "get_db_path", return_value=test_db_path),
         ):
+            # Clear thread-local connection and init fresh database
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+            db.init_database()
+
             set_pin("testpin")
             result = remove_pin("wrongpin")
             assert result is False
             assert pin_file.exists()  # PIN should still exist
 
+            db.close_connection()
+
     def test_remove_pin_creates_pending_request(self, tmp_path):
         """Should create pending removal request (not immediate removal)."""
+        from nextdns_blocker import database as db
+
         pin_file = tmp_path / ".pin_hash"
         session_file = tmp_path / ".pin_session"
         attempts_file = tmp_path / ".pin_attempts"
-        unlock_file = tmp_path / "unlock_requests.json"
+        test_db_path = tmp_path / "test.db"
 
         with (
             patch("nextdns_blocker.protection.get_pin_hash_file", return_value=pin_file),
             patch("nextdns_blocker.protection.get_pin_session_file", return_value=session_file),
             patch("nextdns_blocker.protection.get_pin_attempts_file", return_value=attempts_file),
-            patch("nextdns_blocker.protection.get_unlock_requests_file", return_value=unlock_file),
             patch("nextdns_blocker.protection.audit_log"),
+            patch.object(db, "get_db_path", return_value=test_db_path),
         ):
+            # Clear thread-local connection and init fresh database
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+            db.init_database()
+
             set_pin("testpin")
             result = remove_pin("testpin")
             assert result is True
             assert pin_file.exists()  # PIN still exists (pending removal)
-            assert unlock_file.exists()  # Pending request created
+
+            # Check pending request in SQLite
+            requests = db.get_unlock_requests()
+            assert len(requests) == 1
+            assert requests[0]["item_type"] == "pin"
+
+            db.close_connection()
 
     def test_remove_pin_force_removes_immediately(self, tmp_path):
         """Should remove immediately when force=True."""

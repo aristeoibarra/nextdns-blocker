@@ -20,7 +20,6 @@ from nextdns_blocker.common import (
     VALID_DAYS,
     audit_log,
     ensure_log_dir,
-    get_audit_log_file,
     get_log_dir,
     parse_env_value,
     read_secure_file,
@@ -271,15 +270,6 @@ class TestLogDirectoryFunctions:
         assert result == Path("/mock/data/dir/logs")
 
     @patch("nextdns_blocker.common.get_log_dir")
-    def test_get_audit_log_file(self, mock_log_dir: MagicMock) -> None:
-        """Test get_audit_log_file returns correct path."""
-        mock_log_dir.return_value = Path("/mock/logs")
-
-        result = get_audit_log_file()
-
-        assert result == Path("/mock/logs/audit.log")
-
-    @patch("nextdns_blocker.common.get_log_dir")
     def test_ensure_log_dir_creates_directory(
         self, mock_log_dir: MagicMock, tmp_path: Path
     ) -> None:
@@ -304,49 +294,65 @@ class TestLogDirectoryFunctions:
 
 
 class TestAuditLog:
-    """Tests for audit logging."""
+    """Tests for audit logging to SQLite database."""
 
-    @patch("nextdns_blocker.common.get_log_dir")
-    def test_audit_log_creates_entry(self, mock_log_dir: MagicMock, tmp_path: Path) -> None:
-        """Test audit_log creates log entry."""
-        log_dir = tmp_path / "logs"
-        mock_log_dir.return_value = log_dir
+    def test_audit_log_creates_entry(self, tmp_path: Path) -> None:
+        """Test audit_log creates log entry in database."""
+        from nextdns_blocker import database as db
 
-        audit_log("BLOCK", "example.com")
+        test_db_path = tmp_path / "test.db"
 
-        audit_file = log_dir / "audit.log"
-        assert audit_file.exists()
-        content = audit_file.read_text()
-        assert "BLOCK" in content
-        assert "example.com" in content
+        with patch.object(db, "get_db_path", return_value=test_db_path):
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+            db.init_database()
 
-    @patch("nextdns_blocker.common.get_log_dir")
-    def test_audit_log_with_prefix(self, mock_log_dir: MagicMock, tmp_path: Path) -> None:
+            audit_log("BLOCK", "example.com")
+
+            entries = db.get_audit_logs()
+            assert len(entries) == 1
+            assert entries[0]["event_type"] == "BLOCK"
+            assert entries[0]["domain"] == "example.com"
+            db.close_connection()
+
+    def test_audit_log_with_prefix(self, tmp_path: Path) -> None:
         """Test audit_log with prefix."""
-        log_dir = tmp_path / "logs"
-        mock_log_dir.return_value = log_dir
+        from nextdns_blocker import database as db
 
-        audit_log("CHECK", "jobs restored", prefix="WD")
+        test_db_path = tmp_path / "test.db"
 
-        audit_file = log_dir / "audit.log"
-        content = audit_file.read_text()
-        assert "WD" in content
-        assert "CHECK" in content
+        with patch.object(db, "get_db_path", return_value=test_db_path):
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+            db.init_database()
 
-    @patch("nextdns_blocker.common.get_log_dir")
-    def test_audit_log_appends(self, mock_log_dir: MagicMock, tmp_path: Path) -> None:
-        """Test audit_log appends to existing file."""
-        log_dir = tmp_path / "logs"
-        mock_log_dir.return_value = log_dir
+            audit_log("CHECK", "jobs restored", prefix="WD")
 
-        audit_log("ACTION1", "detail1")
-        audit_log("ACTION2", "detail2")
+            entries = db.get_audit_logs()
+            assert len(entries) == 1
+            assert entries[0]["event_type"] == "WD_CHECK"
+            db.close_connection()
 
-        audit_file = log_dir / "audit.log"
-        content = audit_file.read_text()
-        assert "ACTION1" in content
-        assert "ACTION2" in content
-        assert content.count("\n") == 2
+    def test_audit_log_appends(self, tmp_path: Path) -> None:
+        """Test audit_log appends entries to database."""
+        from nextdns_blocker import database as db
+
+        test_db_path = tmp_path / "test.db"
+
+        with patch.object(db, "get_db_path", return_value=test_db_path):
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+            db.init_database()
+
+            audit_log("ACTION1", "detail1")
+            audit_log("ACTION2", "detail2")
+
+            entries = db.get_audit_logs()
+            assert len(entries) == 2
+            event_types = [e["event_type"] for e in entries]
+            assert "ACTION1" in event_types
+            assert "ACTION2" in event_types
+            db.close_connection()
 
 
 class TestWriteSecureFile:

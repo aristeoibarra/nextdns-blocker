@@ -153,11 +153,6 @@ def get_log_dir() -> Path:
     return Path(user_data_dir(APP_NAME)) / "logs"
 
 
-def get_audit_log_file() -> Path:
-    """Get the audit log file path."""
-    return get_log_dir() / "audit.log"
-
-
 # Secure file permissions (owner read/write only)
 # Note: On Windows, Unix file mode bits (0o600) are largely ignored by the OS.
 # Files are created with default Windows ACLs based on the parent directory
@@ -556,41 +551,47 @@ def safe_int(value: Optional[str], default: int, name: str = "value") -> int:
 
 def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
     """
-    Log an action to the audit log file with secure permissions and file locking.
+    Log an action to both SQLite database and legacy audit log file.
 
     Args:
         action: The action being logged (e.g., 'BLOCK', 'UNBLOCK', 'PAUSE')
         detail: Additional details about the action
         prefix: Optional prefix for the log entry (e.g., 'WD' for watchdog)
     """
+    # Build event type with prefix
+    event_type = f"{prefix}_{action}" if prefix else action
+
+    # Parse domain from detail if present
+    domain = None
+    metadata = None
+    if detail:
+        parts = detail.split()
+        # First part is usually domain or ID
+        if parts and "." in parts[0] and "=" not in parts[0]:
+            domain = parts[0]
+        elif len(parts) > 1 and "." in parts[1] and "=" not in parts[1]:
+            domain = parts[1]
+            metadata = {"id": parts[0]}
+
+        # Parse key=value pairs into metadata
+        for part in parts:
+            if "=" in part:
+                if metadata is None:
+                    metadata = {}
+                key, value = part.split("=", 1)
+                metadata[key] = value
+
+    # Write to SQLite database
     try:
-        ensure_log_dir()
+        from . import database as db
 
-        audit_file = get_audit_log_file()
-
-        # Create file with secure permissions if it doesn't exist
-        if not audit_file.exists():
-            audit_file.touch(mode=SECURE_FILE_MODE)
-
-        # Build log entry
-        parts = [datetime.now().isoformat()]
-        if prefix:
-            parts.append(prefix)
-        parts.extend([action, detail])
-        log_entry = " | ".join(parts) + "\n"
-
-        # Write with exclusive lock to prevent corruption from concurrent writes
-        with open(audit_file, "a", encoding="utf-8") as f:
-            _lock_file(f, exclusive=True)
-            try:
-                f.write(log_entry)
-            finally:
-                _unlock_file(f)
-
-    except OSError as e:
-        # Log at WARNING level to ensure audit failures are visible
-        # (audit logs are security-relevant and failures should be noticed)
-        logger.warning(f"Failed to write audit log: {e}")
+        db.add_audit_log(
+            event_type=event_type,
+            domain=domain,
+            metadata=metadata,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to write audit log to database: {e}")
 
 
 def write_secure_file(path: Path, content: str) -> None:

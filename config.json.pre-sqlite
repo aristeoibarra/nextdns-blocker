@@ -1,0 +1,307 @@
+{
+  "version": "1.0",
+  "settings": {
+    "timezone": "America/Mazatlan",
+    "editor": null
+  },
+  "protection": {
+    "unlock_delay_hours": 48,
+    "auto_panic": {
+      "enabled": true,
+      "schedule": {
+        "start": "23:00",
+        "end": "06:00"
+      },
+      "days": [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday"
+      ],
+      "cannot_disable": true
+    }
+  },
+  "notifications": {
+    "channels": {
+      "ntfy": {
+        "enabled": true,
+        "topic": "HE8t8aaJx9UTZ1w1"
+      }
+    }
+  },
+  "schedules": {
+    "evenings": {
+      "available_hours": [
+        {
+          "days": [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday"
+          ],
+          "time_ranges": [{ "start": "20:00", "end": "22:00" }]
+        }
+      ]
+    },
+    "evenings-extended": {
+      "available_hours": [
+        {
+          "days": [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday"
+          ],
+          "time_ranges": [{ "start": "20:00", "end": "22:30" }]
+        }
+      ]
+    },
+    "daytime": {
+      "available_hours": [
+        {
+          "days": [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday"
+          ],
+          "time_ranges": [{ "start": "09:00", "end": "23:59" }]
+        }
+      ]
+    },
+    "early-to-midnight": {
+      "available_hours": [
+        {
+          "days": [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday"
+          ],
+          "time_ranges": [{ "start": "04:00", "end": "23:59" }]
+        }
+      ]
+    },
+    "evening-to-midnight": {
+      "available_hours": [
+        {
+          "days": [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday"
+          ],
+          "time_ranges": [{ "start": "18:00", "end": "23:59" }]
+        }
+      ]
+    }
+  },
+  "nextdns": {
+    "parental_control": {
+      "safe_search": true,
+      "youtube_restricted_mode": false,
+      "block_bypass": true
+    },
+    "categories": [
+      {
+        "id": "porn",
+        "description": "Adult content - always blocked",
+        "unblock_delay": "never",
+        "schedule": null,
+        "locked": true
+      },
+      {
+        "id": "gambling",
+        "description": "Gambling - always blocked",
+        "unblock_delay": "never",
+        "schedule": null,
+        "locked": true
+      },
+      {
+        "id": "dating",
+        "description": "Dating apps - always blocked",
+        "unblock_delay": "never",
+        "schedule": null,
+        "locked": true
+      },
+      {
+        "id": "piracy",
+        "description": "Piracy - always blocked",
+        "unblock_delay": "never",
+        "schedule": null,
+        "locked": true
+      },
+      {
+        "id": "social-networks",
+        "description": "Social networks - always blocked",
+        "unblock_delay": "never",
+        "schedule": null,
+        "locked": true
+      },
+      {
+        "id": "gaming",
+        "description": "Online gaming - always blocked",
+        "unblock_delay": "never",
+        "schedule": null,
+        "locked": true
+      },
+      {
+        "id": "video-streaming",
+        "description": "Video streaming - always blocked",
+        "unblock_delay": "never",
+        "schedule": null,
+        "locked": true
+      }
+    ],
+    "services": [
+      {
+        "id": "amazon",
+        "description": "Amazon - evenings only",
+        "unblock_delay": "0",
+        "schedule": "evenings-extended"
+      },
+      {
+        "id": "whatsapp",
+        "description": "WhatsApp - blocked 00:00-04:00",
+        "unblock_delay": "0",
+        "schedule": "early-to-midnight"
+      }
+    ]
+  },
+  "categories": [
+    {
+      "id": "news",
+      "description": "News sites - evenings only",
+      "unblock_delay": "0",
+      "schedule": "evenings-extended",
+      "domains": ["latinus.us", "noroeste.com.mx", "debate.com.mx"]
+    },
+    {
+      "id": "protected",
+      "description": "Always blocked - cannot be unblocked",
+      "unblock_delay": "never",
+      "schedule": null,
+      "locked": true,
+      "domains": ["public.sqrx.com"]
+    }
+  ],
+  "blocklist": [],
+  "allowlist": [
+    {
+      "domain": "brave.com",
+      "description": "Brave browser - always accessible"
+    },
+    {
+      "domain": "search.brave.com",
+      "description": "Brave Search - always accessible"
+    },
+    {
+      "domain": "aws.amazon.com",
+      "description": "AWS Console - always accessible"
+    },
+    {
+      "domain": "discord.com",
+      "description": "Discord - always accessible"
+    },
+    {
+      "domain": "stable.dl2.discordapp.net",
+      "description": "Discord CDN - always accessible"
+    },
+    {
+      "domain": "disboard.org",
+      "description": "Discord server listing - always accessible"
+    },
+    {
+      "domain": "discordapp.net",
+      "description": "Discord CDN - always accessible"
+    },
+    {
+      "domain": "discordapp.com",
+      "description": "Discord legacy domain - always accessible"
+    },
+    {
+      "domain": "discord.gg",
+      "description": "Discord invites - always accessible"
+    },
+    {
+      "domain": "discord.media",
+      "description": "Discord media - always accessible"
+    },
+    {
+      "domain": "discordcdn.com",
+      "description": "Discord CDN - always accessible"
+    },
+    {
+      "domain": "dis.gd",
+      "description": "Discord short links - always accessible"
+    },
+    {
+      "domain": "x.com",
+      "description": "X/Twitter - evenings only",
+      "schedule": "evenings"
+    },
+    {
+      "domain": "twitter.com",
+      "description": "Twitter - evenings only",
+      "schedule": "evenings"
+    },
+    {
+      "domain": "t.co",
+      "description": "Twitter/X links - evenings only",
+      "schedule": "evenings"
+    },
+    {
+      "domain": "twimg.com",
+      "description": "Twitter/X media - evenings only",
+      "schedule": "evenings"
+    },
+    {
+      "domain": "reddit.com",
+      "description": "Reddit - 9am to midnight",
+      "schedule": "daytime"
+    },
+    {
+      "domain": "redd.it",
+      "description": "Reddit short links - 9am to midnight",
+      "schedule": "daytime"
+    },
+    {
+      "domain": "redditstatic.com",
+      "description": "Reddit static assets - 9am to midnight",
+      "schedule": "daytime"
+    },
+    {
+      "domain": "redditmedia.com",
+      "description": "Reddit media - 9am to midnight",
+      "schedule": "daytime"
+    },
+    {
+      "domain": "redditmail.com",
+      "description": "Reddit mail - 9am to midnight",
+      "schedule": "daytime"
+    },
+    {
+      "domain": "youtube.com",
+      "description": "YouTube - 9am to midnight",
+      "schedule": "daytime"
+    }
+  ]
+}
