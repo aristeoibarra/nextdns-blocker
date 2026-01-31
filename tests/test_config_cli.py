@@ -1,20 +1,20 @@
 """Tests for config command group."""
 
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
-# Import main from cli and register config command group
+from nextdns_blocker import database as db
 from nextdns_blocker.cli import main
-from nextdns_blocker.config_cli import (
-    NEW_CONFIG_FILE,
-    register_config,
-)
+from nextdns_blocker.config_cli import register_config
 
-# Register config command group for tests
 register_config(main)
+
+# Temp file name for seeding DB from JSON (used by _seed_db_from_config_file)
+CONFIG_JSON_FILENAME = "config.json"
 
 
 @pytest.fixture
@@ -25,10 +25,21 @@ def runner():
 
 @pytest.fixture
 def temp_config_dir(tmp_path):
-    """Create a temporary config directory with .env file."""
+    """Create a temporary config directory with .env and use it for DB path."""
     env_file = tmp_path / ".env"
     env_file.write_text("NEXTDNS_API_KEY=test_key_12345\nNEXTDNS_PROFILE_ID=abc123\nTIMEZONE=UTC\n")
-    return tmp_path
+    test_db = tmp_path / "nextdns-blocker.db"
+    with patch.object(db, "get_db_path", return_value=test_db):
+        if hasattr(db._local, "connection"):
+            db._local.connection = None
+        yield tmp_path
+        db.close_connection()
+
+
+def _seed_db_from_config_file(config_file: Path) -> None:
+    """After writing config.json, import it into the (temp) DB so CLI reads it."""
+    db.init_database()
+    db.import_config_from_json(config_file)
 
 
 @pytest.fixture
@@ -71,8 +82,9 @@ class TestConfigShow:
 
     def test_config_show_displays_header(self, runner, temp_config_dir, new_config_format):
         """Test config show displays formatted header."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(main, ["config", "show", "--config-dir", str(temp_config_dir)])
         assert result.exit_code == 0
@@ -83,8 +95,9 @@ class TestConfigShow:
 
     def test_config_show_displays_blocklist(self, runner, temp_config_dir, new_config_format):
         """Test config show displays blocklist info."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(main, ["config", "show", "--config-dir", str(temp_config_dir)])
         assert result.exit_code == 0
@@ -110,8 +123,9 @@ class TestConfigShow:
                 },
             ],
         }
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config_with_categories))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(main, ["config", "show", "--config-dir", str(temp_config_dir)])
         assert result.exit_code == 0
@@ -127,8 +141,9 @@ class TestConfigShow:
                 {"domain": "scheduled.com", "schedule": {"available_hours": []}},
             ],
         }
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config_with_allowlist))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(main, ["config", "show", "--config-dir", str(temp_config_dir)])
         assert result.exit_code == 0
@@ -137,32 +152,34 @@ class TestConfigShow:
 
     def test_config_show_displays_config_path(self, runner, temp_config_dir, new_config_format):
         """Test config show displays config file path."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(main, ["config", "show", "--config-dir", str(temp_config_dir)])
         assert result.exit_code == 0
         assert "Config:" in result.output
-        assert "config.json" in result.output
+        assert "database" in result.output
 
     def test_config_show_json_output(self, runner, temp_config_dir, new_config_format):
         """Test config show with --json flag."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(
             main, ["config", "show", "--json", "--config-dir", str(temp_config_dir)]
         )
         assert result.exit_code == 0
         output = json.loads(result.output)
-        assert output["version"] == "1.0"
+        assert output["version"] in ("1.0", 1.0)
         assert "blocklist" in output
 
     def test_config_show_file_not_found(self, runner, temp_config_dir):
-        """Test config show when no config file exists."""
+        """Test config show when database has no configuration."""
         result = runner.invoke(main, ["config", "show", "--config-dir", str(temp_config_dir)])
         assert result.exit_code == 1
-        assert "not found" in result.output
+        assert "No configuration" in result.output or "database" in result.output
 
     def test_config_show_nextdns_parental_control(self, runner, temp_config_dir):
         """Test config show displays NextDNS parental control section."""
@@ -177,8 +194,9 @@ class TestConfigShow:
                 "services": [{"id": "tiktok"}],
             },
         }
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config_with_nextdns))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(main, ["config", "show", "--config-dir", str(temp_config_dir)])
         assert result.exit_code == 0
@@ -192,8 +210,9 @@ class TestConfigSet:
 
     def test_config_set_editor(self, runner, temp_config_dir, new_config_format):
         """Test setting editor preference."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(
             main, ["config", "set", "editor", "nano", "--config-dir", str(temp_config_dir)]
@@ -207,8 +226,9 @@ class TestConfigSet:
 
     def test_config_set_timezone(self, runner, temp_config_dir, new_config_format):
         """Test setting timezone preference."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(
             main,
@@ -219,8 +239,9 @@ class TestConfigSet:
 
     def test_config_set_invalid_key(self, runner, temp_config_dir, new_config_format):
         """Test setting invalid key."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(
             main, ["config", "set", "invalid_key", "value", "--config-dir", str(temp_config_dir)]
@@ -230,8 +251,9 @@ class TestConfigSet:
 
     def test_config_set_null_unsets(self, runner, temp_config_dir, new_config_format):
         """Test setting value to null unsets it."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(
             main, ["config", "set", "editor", "null", "--config-dir", str(temp_config_dir)]
@@ -264,8 +286,9 @@ class TestConfigEdit:
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=test_key_12345\nNEXTDNS_PROFILE_ID=abc123\n")
 
-        config_file = tmp_path / NEW_CONFIG_FILE
+        config_file = tmp_path / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
@@ -285,8 +308,9 @@ class TestBlocklistSupport:
 
     def test_load_blocklist_key(self, runner, temp_config_dir, new_config_format):
         """Test that blocklist key is recognized."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         result = runner.invoke(main, ["config", "validate", "--config-dir", str(temp_config_dir)])
         assert result.exit_code == 0
@@ -311,8 +335,9 @@ class TestConfigDiff:
     def test_diff_empty_local_and_remote(self, runner, temp_config_dir):
         """Test diff when both local and remote are empty."""
         config = {"blocklist": [], "allowlist": []}
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             mock_client.return_value.get_denylist.return_value = []
@@ -329,8 +354,9 @@ class TestConfigDiff:
             "blocklist": [{"domain": "local-only.com"}],
             "allowlist": [],
         }
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             mock_client.return_value.get_denylist.return_value = []
@@ -345,8 +371,9 @@ class TestConfigDiff:
     def test_diff_shows_remote_only(self, runner, temp_config_dir):
         """Test diff shows domains that exist only remotely."""
         config = {"blocklist": [], "allowlist": []}
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             mock_client.return_value.get_denylist.return_value = [
@@ -366,8 +393,9 @@ class TestConfigDiff:
             "blocklist": [{"domain": "synced.com"}],
             "allowlist": [],
         }
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             mock_client.return_value.get_denylist.return_value = [
@@ -388,8 +416,9 @@ class TestConfigDiff:
             "categories": [{"id": "social", "domains": ["twitter.com", "facebook.com"]}],
             "allowlist": [],
         }
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             mock_client.return_value.get_denylist.return_value = []
@@ -407,8 +436,9 @@ class TestConfigDiff:
             "blocklist": [{"domain": "local.com"}],
             "allowlist": [],
         }
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             mock_client.return_value.get_denylist.return_value = [
@@ -433,8 +463,9 @@ class TestConfigDiff:
             "blocklist": [{"domain": "a.com"}, {"domain": "b.com"}],
             "allowlist": [{"domain": "c.com"}],
         }
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             mock_client.return_value.get_denylist.return_value = [
@@ -469,8 +500,9 @@ class TestConfigPull:
     def test_pull_dry_run_shows_preview(self, runner, temp_config_dir):
         """Test pull --dry-run shows preview without changes."""
         config = {"blocklist": [], "allowlist": []}
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             mock_client.return_value.get_denylist.return_value = [{"id": "new.com", "active": True}]
@@ -492,8 +524,9 @@ class TestConfigPull:
             "blocklist": [{"domain": "existing.com", "unblock_delay": "30m", "locked": True}],
             "allowlist": [],
         }
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             mock_client.return_value.get_denylist.return_value = [
@@ -526,8 +559,9 @@ class TestConfigPull:
             "blocklist": [{"domain": "local-only.com"}],
             "allowlist": [],
         }
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             mock_client.return_value.get_denylist.return_value = []
@@ -546,8 +580,9 @@ class TestConfigPull:
             "blocklist": [{"domain": "protected.com", "locked": True}],
             "allowlist": [],
         }
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             # Remote does NOT have the protected domain
@@ -565,8 +600,9 @@ class TestConfigPull:
     def test_pull_creates_backup(self, runner, temp_config_dir):
         """Test pull creates backup before modifying."""
         config = {"blocklist": [], "allowlist": []}
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(config))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.config_cli._get_client") as mock_client:
             mock_client.return_value.get_denylist.return_value = [{"id": "new.com", "active": True}]
@@ -578,7 +614,7 @@ class TestConfigPull:
 
         assert result.exit_code == 0
         # Check backup file was created
-        backups = list(temp_config_dir.glob(".config.json.backup.*"))
+        backups = list(temp_config_dir.glob(".config.backup.*.json"))
         assert len(backups) == 1
 
 
@@ -611,8 +647,9 @@ class TestConfigSyncDeprecation:
 
     def test_sync_shows_deprecation_warning(self, runner, temp_config_dir, new_config_format):
         """Test that config sync shows deprecation warning."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.cli.NextDNSClient") as mock_client:
             mock_instance = mock_client.return_value
@@ -631,8 +668,9 @@ class TestConfigSyncDeprecation:
 
     def test_sync_mentions_v8_removal(self, runner, temp_config_dir, new_config_format):
         """Test that deprecation warning mentions v8.0.0 removal."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.cli.NextDNSClient") as mock_client:
             mock_instance = mock_client.return_value
@@ -649,8 +687,9 @@ class TestConfigSyncDeprecation:
 
     def test_push_no_deprecation_warning(self, runner, temp_config_dir, new_config_format):
         """Test that config push does NOT show deprecation warning."""
-        config_file = temp_config_dir / NEW_CONFIG_FILE
+        config_file = temp_config_dir / CONFIG_JSON_FILENAME
         config_file.write_text(json.dumps(new_config_format))
+        _seed_db_from_config_file(config_file)
 
         with patch("nextdns_blocker.cli.NextDNSClient") as mock_client:
             mock_instance = mock_client.return_value

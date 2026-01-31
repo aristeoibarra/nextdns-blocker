@@ -198,7 +198,7 @@ class NotificationsConfig(TypedDict, total=False):
 
 
 class Config(TypedDict, total=False):
-    """Main configuration structure for config.json."""
+    """Main configuration structure (exported config / database)."""
 
     version: str
     settings: SettingsConfig

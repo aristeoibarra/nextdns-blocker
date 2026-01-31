@@ -551,7 +551,7 @@ def safe_int(value: Optional[str], default: int, name: str = "value") -> int:
 
 def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
     """
-    Log an action to both SQLite database and legacy audit log file.
+    Log an action to both SQLite database and audit log file.
 
     Args:
         action: The action being logged (e.g., 'BLOCK', 'UNBLOCK', 'PAUSE')

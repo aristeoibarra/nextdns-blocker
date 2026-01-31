@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -13,7 +12,7 @@ from click.testing import CliRunner
 
 from nextdns_blocker.init import (
     NEXTDNS_API_URL,
-    create_config_file,
+    create_default_config_in_db,
     create_env_file,
     validate_api_credentials,
     validate_timezone,
@@ -192,33 +191,44 @@ class TestCreateEnvFile:
         assert config_dir.exists()
 
 
-class TestCreateConfigFile:
-    """Tests for config.json creation."""
+class TestCreateDefaultConfigInDb:
+    """Tests for create_default_config_in_db (DB seeding)."""
 
-    def test_creates_config_file(self, tmp_path: Path) -> None:
-        """Test config.json creation."""
-        config_dir = tmp_path / "config"
+    def test_creates_and_seeds_database(self, tmp_path: Path) -> None:
+        """Test database is created and seeded with default config."""
+        import nextdns_blocker.database as db
 
-        config_file = create_config_file(config_dir, "America/New_York")
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()  # use fresh connection to patched path
+            create_default_config_in_db("America/New_York")
 
-        assert config_file.exists()
-        content = json.loads(config_file.read_text())
-        assert "version" in content
-        assert "settings" in content
-        assert "blocklist" in content
-        assert "allowlist" in content
-        assert content["settings"]["timezone"] == "America/New_York"
+        assert db_path.exists()
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            assert db.get_config("version") in ("1.0", 1.0)
+            settings = db.get_config("settings")
+            assert settings is not None
+            assert settings.get("timezone") == "America/New_York"
+            full = db.get_full_config_dict()
+            assert "blocklist" in full
+            assert "allowlist" in full
+            assert full["blocklist"] == []
+            assert full["allowlist"] == []
 
     def test_config_has_valid_structure(self, tmp_path: Path) -> None:
-        """Test config.json has valid structure."""
-        config_dir = tmp_path / "config"
+        """Test seeded config has valid structure."""
+        import nextdns_blocker.database as db
 
-        config_file = create_config_file(config_dir, "UTC")
-        content = json.loads(config_file.read_text())
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            create_default_config_in_db("UTC")
 
-        assert content["version"] == "1.0"
-        assert content["blocklist"] == []
-        assert content["allowlist"] == []
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            full = db.get_full_config_dict()
+            assert full["version"] in ("1.0", 1.0)
+            assert full["blocklist"] == []
+            assert full["allowlist"] == []
 
 
 class TestWindowsPathHelpers:

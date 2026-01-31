@@ -60,10 +60,10 @@ SLACK_WEBHOOK_PATTERN = re.compile(
 # UNBLOCK DELAY SETTINGS
 # =============================================================================
 
-# Legacy valid unblock_delay values (kept for backward compatibility messages)
+# Valid unblock_delay values (for backward compatibility messages)
 VALID_UNBLOCK_DELAYS = frozenset({"never", "24h", "4h", "30m", "0"})
 
-# Legacy mapping of unblock_delay strings to seconds (None for 'never' = cannot unblock)
+# Mapping of unblock_delay strings to seconds (None for 'never' = cannot unblock)
 # Kept for backward compatibility - new code should use parse_duration()
 UNBLOCK_DELAY_SECONDS: dict[str, Optional[int]] = {
     "never": None,
@@ -263,7 +263,7 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
 
     Resolution order:
     1. Override path if provided (validated to prevent path traversal)
-    2. Current working directory if .env AND config.json exist
+    2. Current working directory if .env exists (config is stored in database)
     3. XDG config directory (~/.config/nextdns-blocker on Linux,
        ~/Library/Application Support/nextdns-blocker on macOS)
 
@@ -309,12 +309,9 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
 
         return resolved
 
-    # Require .env AND config.json to use CWD (fixes #124)
-    # This avoids false positives from unrelated .env files
+    # Use CWD if .env exists there (config lives in database)
     cwd = Path.cwd()
-    has_env = (cwd / ".env").exists()
-    has_config = (cwd / "config.json").exists()
-    if has_env and has_config:
+    if (cwd / ".env").exists():
         return cwd
 
     return Path(user_config_dir(APP_NAME))
@@ -1234,7 +1231,7 @@ def validate_nextdns_config(
     Validate the complete nextdns configuration section.
 
     Args:
-        nextdns_config: The 'nextdns' section from config.json
+        nextdns_config: The 'nextdns' section from config
         valid_schedule_names: Set of valid schedule template names (if None, only inline validated)
 
     Returns:
@@ -1297,10 +1294,10 @@ def validate_nextdns_config(
 
 def load_nextdns_config(script_dir: str) -> Optional[dict[str, Any]]:
     """
-    Load and validate NextDNS Parental Control configuration from config.json.
+    Load and validate NextDNS Parental Control configuration from the database.
 
     Args:
-        script_dir: Directory containing config.json
+        script_dir: Config directory (unused; data comes from DB).
 
     Returns:
         NextDNS config dict if present and valid, None if not present
@@ -1308,63 +1305,70 @@ def load_nextdns_config(script_dir: str) -> Optional[dict[str, Any]]:
     Raises:
         ConfigurationError: If nextdns section exists but is invalid
     """
-    script_path = Path(script_dir)
-    config_file = script_path / "config.json"
+    from . import database as db
 
-    if not config_file.exists():
+    parental_control = db.get_config("parental_control")
+    if (
+        parental_control is None
+        and not db.get_all_nextdns_categories()
+        and not db.get_all_nextdns_services()
+    ):
         return None
 
-    try:
-        with open(config_file, encoding="utf-8") as f:
-            config = json.load(f)
-    except json.JSONDecodeError as e:
-        logger.warning(f"Invalid JSON in {config_file}: {e}")
-        return None
-    except OSError as e:
-        logger.warning(f"Cannot read {config_file}: {e}")
-        return None
-
-    if not isinstance(config, dict):
-        return None
-
-    nextdns_config: Optional[dict[str, Any]] = config.get("nextdns")
-    if nextdns_config is None:
-        return None
-
-    # Load schedule templates for reference validation
-    schedules: dict[str, dict[str, Any]] = config.get("schedules", {})
-    valid_schedule_names: Optional[set[str]] = None
-    if isinstance(schedules, dict) and schedules:
-        # Validate schedules section first
+    schedules = db.get_all_schedules()
+    valid_schedule_names: Optional[set[str]] = set(schedules.keys()) if schedules else None
+    if schedules:
         schedule_errors = validate_schedules_section(schedules)
         if schedule_errors:
             for error in schedule_errors:
                 logger.error(error)
             raise ConfigurationError(f"Schedule validation failed: {len(schedule_errors)} error(s)")
-        valid_schedule_names = set(schedules.keys())
 
-    # Validate the nextdns configuration
+    categories = []
+    for row in db.get_all_nextdns_categories():
+        categories.append(
+            {
+                "id": row["id"],
+                "description": row.get("description"),
+                "unblock_delay": row.get("unblock_delay") or "never",
+                "schedule": _parse_schedule_from_db(row.get("schedule")),
+                "locked": bool(row.get("locked", 1)),
+            }
+        )
+
+    services = []
+    for row in db.get_all_nextdns_services():
+        services.append(
+            {
+                "id": row["id"],
+                "description": row.get("description"),
+                "unblock_delay": row.get("unblock_delay") or "0",
+                "schedule": _parse_schedule_from_db(row.get("schedule")),
+                "locked": bool(row.get("locked", 0)),
+            }
+        )
+
+    nextdns_config: dict[str, Any] = {
+        "parental_control": parental_control or {},
+        "categories": categories,
+        "services": services,
+    }
+
     errors = validate_nextdns_config(nextdns_config, valid_schedule_names)
     if errors:
         for error in errors:
             logger.error(error)
         raise ConfigurationError(f"NextDNS configuration validation failed: {len(errors)} error(s)")
 
-    # Resolve schedule references in nextdns categories and services
-    if valid_schedule_names:
-        categories = nextdns_config.get("categories", [])
-        for category in categories:
-            schedule = category.get("schedule")
-            if schedule is not None:
-                resolved = resolve_schedule_reference(schedule, schedules)
-                category["schedule"] = resolved
+    for category in nextdns_config["categories"]:
+        schedule = category.get("schedule")
+        if schedule is not None:
+            category["schedule"] = resolve_schedule_reference(schedule, schedules)
 
-        services = nextdns_config.get("services", [])
-        for service in services:
-            schedule = service.get("schedule")
-            if schedule is not None:
-                resolved = resolve_schedule_reference(schedule, schedules)
-                service["schedule"] = resolved
+    for service in nextdns_config["services"]:
+        schedule = service.get("schedule")
+        if schedule is not None:
+            service["schedule"] = resolve_schedule_reference(schedule, schedules)
 
     return nextdns_config
 
@@ -1420,15 +1424,62 @@ def _expand_categories(categories: list[dict[str, Any]]) -> list[dict[str, Any]]
     return expanded
 
 
+def _parse_schedule_from_db(schedule_value: Any) -> Any:
+    """Parse schedule value from DB: JSON string -> dict, else return as reference name."""
+    if schedule_value is None:
+        return None
+    if isinstance(schedule_value, dict):
+        return schedule_value
+    if isinstance(schedule_value, str) and schedule_value.strip().startswith("{"):
+        try:
+            return json.loads(schedule_value)
+        except json.JSONDecodeError:
+            return schedule_value
+    return schedule_value
+
+
+def _blocklist_entry_from_db(row: dict[str, Any]) -> dict[str, Any]:
+    """Convert DB blocked_domains row to config-like dict."""
+    return {
+        "domain": row["domain"],
+        "description": row.get("description"),
+        "locked": bool(row.get("locked", 0)),
+        "unblock_delay": row.get("unblock_delay") or "4h",
+        "schedule": _parse_schedule_from_db(row.get("schedule")),
+    }
+
+
+def _allowlist_entry_from_db(row: dict[str, Any]) -> dict[str, Any]:
+    """Convert DB allowed_domains row to config-like dict."""
+    return {
+        "domain": row["domain"],
+        "description": row.get("description"),
+        "schedule": _parse_schedule_from_db(row.get("schedule")),
+        "suppress_subdomain_warning": bool(row.get("suppress_subdomain_warning", 0)),
+    }
+
+
+def _category_from_db(row: dict[str, Any]) -> dict[str, Any]:
+    """Convert DB categories row (with domains list) to config-like dict."""
+    return {
+        "id": row["id"],
+        "description": row.get("description"),
+        "unblock_delay": row.get("unblock_delay") or "0",
+        "schedule": _parse_schedule_from_db(row.get("schedule")),
+        "locked": bool(row.get("locked", 0)),
+        "domains": row.get("domains", []),
+    }
+
+
 def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
-    Load domain configurations from config.json.
+    Load domain configurations from the database.
 
     Supports both blocklist and categories. Categories are expanded into
     individual domain entries that inherit the category's settings.
 
     Args:
-        script_dir: Directory containing config.json
+        script_dir: Config directory (unused; data comes from DB).
 
     Returns:
         Tuple of (denylist domains, allowlist domains)
@@ -1436,33 +1487,14 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
     Raises:
         ConfigurationError: If loading or validation fails
     """
-    script_path = Path(script_dir)
-    config_file = script_path / "config.json"
+    from . import database as db
 
-    if not config_file.exists():
+    if not db.config_has_domains():
         raise ConfigurationError(
-            f"Config file not found: {config_file}\nRun 'nextdns-blocker init' to create one."
+            "No domains configured. Run 'nextdns-blocker init' or migrate from config."
         )
 
-    try:
-        with open(config_file, encoding="utf-8") as f:
-            config = json.load(f)
-        logger.info(f"Loaded domains from {config_file.name}")
-    except json.JSONDecodeError as e:
-        raise ConfigurationError(f"Invalid JSON in {config_file.name}: {e}")
-    except OSError as e:
-        raise ConfigurationError(f"Failed to read {config_file.name}: {e}")
-
-    # Validate structure
-    if not isinstance(config, dict):
-        raise ConfigurationError("Config must be a JSON object")
-
-    # Load schedule templates (optional, defaults to empty)
-    schedules: dict[str, dict[str, Any]] = config.get("schedules", {})
-    if not isinstance(schedules, dict):
-        raise ConfigurationError("'schedules' must be an object")
-
-    # Validate schedule templates and get valid names
+    schedules = db.get_all_schedules()
     schedule_errors = validate_schedules_section(schedules)
     if schedule_errors:
         for error in schedule_errors:
@@ -1471,56 +1503,25 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
 
     valid_schedule_names: set[str] = set(schedules.keys())
 
-    # Load blocklist (can be empty if categories exist)
-    blocklist = config.get("blocklist", [])
-    if not isinstance(blocklist, list):
-        raise ConfigurationError("'blocklist' must be an array")
+    blocklist = [_blocklist_entry_from_db(r) for r in db.get_all_blocked_domains()]
+    categories = [_category_from_db(r) for r in db.get_all_categories()]
+    allowlist = [_allowlist_entry_from_db(r) for r in db.get_all_allowed_domains()]
 
-    # Load categories (optional, defaults to empty)
-    categories = config.get("categories", [])
-    if not isinstance(categories, list):
-        raise ConfigurationError("'categories' must be an array")
-
-    # Load allowlist (optional, defaults to empty)
-    allowlist = config.get("allowlist", [])
-    if not isinstance(allowlist, list):
-        raise ConfigurationError("'allowlist' must be an array")
-
-    # Must have at least blocklist or categories
     if not blocklist and not categories:
-        raise ConfigurationError(
-            "No domains configured. Add domains to 'blocklist' or 'categories'."
-        )
+        return [], allowlist
 
-    # Collect all validation errors
     all_errors: list[str] = []
-
-    # Validate each category
     for idx, category_config in enumerate(categories):
         all_errors.extend(validate_category_config(category_config, idx, valid_schedule_names))
-
-    # Validate unique category IDs
     all_errors.extend(validate_unique_category_ids(categories))
-
-    # Validate each domain in blocklist
     for idx, domain_config in enumerate(blocklist):
         all_errors.extend(validate_domain_config(domain_config, idx, valid_schedule_names))
-
-    # Validate each domain in allowlist
     for idx, allowlist_config in enumerate(allowlist):
         all_errors.extend(validate_allowlist_config(allowlist_config, idx, valid_schedule_names))
-
-    # Validate no duplicate domains within blocklist (issue #140)
     all_errors.extend(validate_no_duplicates(blocklist, "blocklist"))
-
-    # Validate no duplicate domains within allowlist (issue #140)
     all_errors.extend(validate_no_duplicates(allowlist, "allowlist"))
-
-    # Validate no duplicate domains across categories and blocklist
     all_errors.extend(validate_no_duplicate_domains(categories, blocklist))
 
-    # Validate no overlap between denylist and allowlist
-    # (includes both blocklist domains and category domains)
     category_domains_as_blocklist = _expand_categories(categories)
     combined_blocklist = blocklist + category_domains_as_blocklist
     all_errors.extend(validate_no_overlap(combined_blocklist, allowlist))
@@ -1530,81 +1531,51 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
             logger.error(error)
         raise ConfigurationError(f"Domain validation failed: {len(all_errors)} error(s)")
 
-    # Check for subdomain relationships (warnings only, not errors)
-    # This helps users understand that allowlist entries will override blocks
     check_subdomain_relationships(blocklist, allowlist)
     check_category_subdomain_relationships(categories, allowlist)
-
-    # Check for ineffective blocks (denylist subdomains of allowlist entries)
-    # These blocks will be ignored by NextDNS because allowlist has higher priority
     check_ineffective_blocks(blocklist, allowlist)
     check_category_ineffective_blocks(categories, allowlist)
 
-    # Resolve schedule references in blocklist
     for entry in blocklist:
         schedule = entry.get("schedule")
         if schedule is not None:
-            resolved = resolve_schedule_reference(schedule, schedules)
-            entry["schedule"] = resolved
+            entry["schedule"] = resolve_schedule_reference(schedule, schedules)
 
-    # Resolve schedule references in categories
     for category in categories:
         schedule = category.get("schedule")
         if schedule is not None:
-            resolved = resolve_schedule_reference(schedule, schedules)
-            category["schedule"] = resolved
+            category["schedule"] = resolve_schedule_reference(schedule, schedules)
 
-    # Resolve schedule references in allowlist
     for entry in allowlist:
         schedule = entry.get("schedule")
         if schedule is not None:
-            resolved = resolve_schedule_reference(schedule, schedules)
-            entry["schedule"] = resolved
+            entry["schedule"] = resolve_schedule_reference(schedule, schedules)
 
-    # Expand categories into individual domain entries
     expanded_domains = _expand_categories(categories)
-
-    # Combine blocklist with expanded category domains
     final_domains = blocklist + expanded_domains
-
     return final_domains, allowlist
 
 
-def _load_timezone_setting(config_dir: Path) -> str:
+def _load_timezone_setting(_config_dir: Optional[Path] = None) -> str:
     """
-    Load timezone setting from config.json or fall back to default.
-
-    Priority:
-    1. config.json settings.timezone
-    2. DEFAULT_TIMEZONE constant
+    Load timezone setting from database (settings.timezone) or fall back to default.
 
     Args:
-        config_dir: Directory containing config files
+        _config_dir: Unused, kept for compatibility.
 
     Returns:
         Timezone string (e.g., 'America/New_York')
     """
-    config_file = config_dir / "config.json"
-    if config_file.exists():
-        try:
-            with open(config_file, encoding="utf-8") as f:
-                config_data = json.load(f)
-            # Type-safe access: ensure config_data is a dict
-            if not isinstance(config_data, dict):
-                logger.debug("config.json root is not a dict")
-            else:
-                settings = config_data.get("settings")
-                # Ensure settings is a dict before accessing timezone
-                if isinstance(settings, dict):
-                    timezone_value = settings.get("timezone")
-                    if timezone_value and isinstance(timezone_value, str):
-                        return str(timezone_value)
-        except json.JSONDecodeError as e:
-            logger.debug(f"Could not parse timezone from config.json: {e}")
-        except OSError as e:
-            logger.debug(f"Could not read config.json for timezone: {e}")
+    try:
+        from . import database as db
 
-    # Default
+        settings = db.get_config("settings")
+        if isinstance(settings, dict):
+            tz = settings.get("timezone")
+            if tz and isinstance(tz, str):
+                return str(tz)
+    except Exception as e:
+        logger.debug("Could not load timezone from database: %s", e)
     return DEFAULT_TIMEZONE
 
 
@@ -1814,32 +1785,22 @@ def validate_notifications_config(notifications: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _load_notifications_config(config_dir: Path) -> dict[str, Any]:
+def _load_notifications_config(_config_dir: Optional[Path] = None) -> dict[str, Any]:
     """
-    Load notifications configuration from config.json.
+    Load notifications configuration from database.
 
     Args:
-        config_dir: Directory containing config.json
+        _config_dir: Unused, kept for compatibility.
 
     Returns:
         Notifications configuration dictionary (empty if not configured)
     """
-    config_file = config_dir / "config.json"
-    if not config_file.exists():
-        return {}
-
     try:
-        with open(config_file, encoding="utf-8") as f:
-            config_data = json.load(f)
+        from . import database as db
 
-        if not isinstance(config_data, dict):
-            return {}
-
-        notifications = config_data.get("notifications", {})
+        notifications = db.get_config("notifications")
         if not isinstance(notifications, dict):
             return {}
-
-        # Validate the notifications config
         errors = validate_notifications_config(notifications)
         if errors:
             for error in errors:
@@ -1847,14 +1808,11 @@ def _load_notifications_config(config_dir: Path) -> dict[str, Any]:
             raise ConfigurationError(
                 f"Notification configuration validation failed: {len(errors)} error(s)"
             )
-
         return notifications
-
-    except json.JSONDecodeError as e:
-        logger.debug(f"Could not parse notifications from config.json: {e}")
-        return {}
-    except OSError as e:
-        logger.debug(f"Could not read config.json for notifications: {e}")
+    except ConfigurationError:
+        raise
+    except Exception as e:
+        logger.debug("Could not load notifications from database: %s", e)
         return {}
 
 
@@ -1883,14 +1841,9 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
     # Build configuration dictionary
     config = _build_config_dict(config_dir)
 
-    # Load timezone from config.json
     config["timezone"] = _load_timezone_setting(config_dir)
-
-    # Validate all configuration
     _validate_required_credentials(config)
     _validate_timezone(config["timezone"])
-
-    # Load notifications config from config.json
     config["notifications"] = _load_notifications_config(config_dir)
 
     return config

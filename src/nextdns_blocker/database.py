@@ -1078,6 +1078,22 @@ def get_all_nextdns_services() -> list[dict[str, Any]]:
     return [dict(row) for row in cursor]
 
 
+def remove_nextdns_category(category_id: str) -> bool:
+    """Remove a NextDNS native category. Returns True if removed."""
+    conn = get_connection()
+    cursor = conn.execute("DELETE FROM nextdns_categories WHERE id = ?", (category_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def remove_nextdns_service(service_id: str) -> bool:
+    """Remove a NextDNS native service. Returns True if removed."""
+    conn = get_connection()
+    cursor = conn.execute("DELETE FROM nextdns_services WHERE id = ?", (service_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
 # =============================================================================
 # SCHEDULES OPERATIONS
 # =============================================================================
@@ -1176,3 +1192,302 @@ def export_to_json() -> dict[str, Any]:
         "pending_actions": get_pending_actions("pending"),
         "unlock_requests": get_unlock_requests("pending"),
     }
+
+
+def get_full_config_dict() -> dict[str, Any]:
+    """
+    Build the full configuration as a single dict (same shape as exported config JSON).
+    Used by config edit, validate, and sync pull/push.
+    """
+    schedules = get_all_schedules()
+    blocklist = []
+    for r in get_all_blocked_domains():
+        s = r.get("schedule")
+        if isinstance(s, str) and s.strip().startswith("{"):
+            with contextlib.suppress(json.JSONDecodeError):
+                s = json.loads(s)
+        blocklist.append(
+            {
+                "domain": r["domain"],
+                "description": r.get("description"),
+                "locked": bool(r.get("locked", 0)),
+                "unblock_delay": r.get("unblock_delay") or "4h",
+                "schedule": s,
+            }
+        )
+    allowlist = []
+    for r in get_all_allowed_domains():
+        s = r.get("schedule")
+        if isinstance(s, str) and s.strip().startswith("{"):
+            with contextlib.suppress(json.JSONDecodeError):
+                s = json.loads(s)
+        allowlist.append(
+            {
+                "domain": r["domain"],
+                "description": r.get("description"),
+                "schedule": s,
+                "suppress_subdomain_warning": bool(r.get("suppress_subdomain_warning", 0)),
+            }
+        )
+    categories = []
+    for r in get_all_categories():
+        s = r.get("schedule")
+        if isinstance(s, str) and s.strip().startswith("{"):
+            with contextlib.suppress(json.JSONDecodeError):
+                s = json.loads(s)
+        categories.append(
+            {
+                "id": r["id"],
+                "description": r.get("description"),
+                "unblock_delay": r.get("unblock_delay") or "0",
+                "schedule": s,
+                "locked": bool(r.get("locked", 0)),
+                "domains": r.get("domains", []),
+            }
+        )
+    nextdns_cats = []
+    for r in get_all_nextdns_categories():
+        s = r.get("schedule")
+        if isinstance(s, str) and s.strip().startswith("{"):
+            with contextlib.suppress(json.JSONDecodeError):
+                s = json.loads(s)
+        nextdns_cats.append(
+            {
+                "id": r["id"],
+                "description": r.get("description"),
+                "unblock_delay": r.get("unblock_delay") or "never",
+                "schedule": s,
+                "locked": bool(r.get("locked", 1)),
+            }
+        )
+    nextdns_svcs = []
+    for r in get_all_nextdns_services():
+        s = r.get("schedule")
+        if isinstance(s, str) and s.strip().startswith("{"):
+            with contextlib.suppress(json.JSONDecodeError):
+                s = json.loads(s)
+        nextdns_svcs.append(
+            {
+                "id": r["id"],
+                "description": r.get("description"),
+                "unblock_delay": r.get("unblock_delay") or "0",
+                "schedule": s,
+                "locked": bool(r.get("locked", 0)),
+            }
+        )
+    return {
+        "version": get_config("version") or "1.0",
+        "settings": get_config("settings") or {},
+        "protection": get_config("protection") or {},
+        "notifications": get_config("notifications") or {},
+        "schedules": schedules,
+        "nextdns": {
+            "parental_control": get_config("parental_control") or {},
+            "categories": nextdns_cats,
+            "services": nextdns_svcs,
+        },
+        "categories": categories,
+        "blocklist": blocklist,
+        "allowlist": allowlist,
+    }
+
+
+def save_full_config_dict(config: dict[str, Any]) -> None:
+    """
+    Replace database content with the given full config dict (same shape as exported config).
+    Clears existing domain/schedule/nextdns data and repopulates.
+    """
+    conn = get_connection()
+    conn.execute("DELETE FROM blocked_domains")
+    conn.execute("DELETE FROM allowed_domains")
+    conn.execute("DELETE FROM category_domains")
+    conn.execute("DELETE FROM categories")
+    conn.execute("DELETE FROM nextdns_categories")
+    conn.execute("DELETE FROM nextdns_services")
+    conn.execute("DELETE FROM schedules")
+    conn.commit()
+
+    set_config("version", config.get("version", "1.0"))
+    set_config("settings", config.get("settings") or {})
+    set_config("notifications", config.get("notifications") or {})
+    set_config("protection", config.get("protection") or {})
+    set_config("parental_control", (config.get("nextdns") or {}).get("parental_control") or {})
+
+    for name, schedule_data in (config.get("schedules") or {}).items():
+        if isinstance(schedule_data, dict):
+            add_schedule(name, schedule_data)
+
+    nextdns = config.get("nextdns") or {}
+    for c in nextdns.get("categories") or []:
+        sid = c.get("id")
+        if not sid:
+            continue
+        sched = c.get("schedule")
+        if isinstance(sched, dict):
+            sched = json.dumps(sched)
+        set_nextdns_category(
+            sid,
+            c.get("description"),
+            c.get("unblock_delay", "never"),
+            sched,
+            c.get("locked", True),
+        )
+    for s in nextdns.get("services") or []:
+        sid = s.get("id")
+        if not sid:
+            continue
+        sched = s.get("schedule")
+        if isinstance(sched, dict):
+            sched = json.dumps(sched)
+        set_nextdns_service(
+            sid,
+            s.get("description"),
+            s.get("unblock_delay", "0"),
+            sched,
+            s.get("locked", False),
+        )
+    for cat in config.get("categories") or []:
+        cid = cat.get("id")
+        if not cid:
+            continue
+        add_category(
+            cid,
+            cat.get("description"),
+            cat.get("unblock_delay", "0"),
+            cat.get("schedule"),
+            cat.get("locked", False),
+            cat.get("domains") or [],
+        )
+    for b in config.get("blocklist") or []:
+        domain = b.get("domain")
+        if not domain:
+            continue
+        sched = b.get("schedule")
+        add_blocked_domain(
+            domain,
+            b.get("description"),
+            b.get("locked", False),
+            b.get("unblock_delay", "4h"),
+            sched,
+        )
+    for a in config.get("allowlist") or []:
+        domain = a.get("domain")
+        if not domain:
+            continue
+        add_allowed_domain(
+            domain,
+            a.get("description"),
+            a.get("schedule"),
+            a.get("suppress_subdomain_warning", False),
+        )
+    set_config("migrated", True)
+
+
+def config_has_domains() -> bool:
+    """Return True if the database has domain config (blocklist, categories, or allowlist)."""
+    if get_config("migrated") is not None:
+        return True
+    conn = get_connection()
+    for table, _col in (
+        ("blocked_domains", "domain"),
+        ("categories", "id"),
+        ("allowed_domains", "domain"),
+    ):
+        cursor = conn.execute(f"SELECT 1 FROM {table} LIMIT 1")  # nosec B608
+        if cursor.fetchone() is not None:
+            return True
+    return False
+
+
+def import_config_from_json(path: Path) -> None:
+    """
+    One-time import from a JSON config file into the database.
+
+    Populates config key-value, blocked_domains, allowed_domains, categories,
+    schedules, nextdns_categories, nextdns_services. Sets config key 'migrated' when done.
+    """
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("Config must be a JSON object")
+
+    set_config("version", data.get("version", "1.0"))
+    set_config("settings", data.get("settings") or {})
+    set_config("notifications", data.get("notifications") or {})
+    set_config("protection", data.get("protection") or {})
+    nextdns = data.get("nextdns") or {}
+    set_config("parental_control", nextdns.get("parental_control") or {})
+
+    for name, schedule_data in (data.get("schedules") or {}).items():
+        if isinstance(schedule_data, dict):
+            add_schedule(name, schedule_data)
+
+    for c in nextdns.get("categories") or []:
+        sid = c.get("id")
+        if not sid:
+            continue
+        sched = c.get("schedule")
+        if isinstance(sched, dict):
+            sched = json.dumps(sched)
+        set_nextdns_category(
+            sid,
+            c.get("description"),
+            c.get("unblock_delay", "never"),
+            sched,
+            c.get("locked", True),
+        )
+
+    for s in nextdns.get("services") or []:
+        sid = s.get("id")
+        if not sid:
+            continue
+        sched = s.get("schedule")
+        if isinstance(sched, dict):
+            sched = json.dumps(sched)
+        set_nextdns_service(
+            sid,
+            s.get("description"),
+            s.get("unblock_delay", "0"),
+            sched,
+            s.get("locked", False),
+        )
+
+    for cat in data.get("categories") or []:
+        cid = cat.get("id")
+        if not cid:
+            continue
+        sched = cat.get("schedule")
+        add_category(
+            cid,
+            cat.get("description"),
+            cat.get("unblock_delay", "0"),
+            sched,
+            cat.get("locked", False),
+            cat.get("domains") or [],
+        )
+
+    for b in data.get("blocklist") or []:
+        domain = b.get("domain")
+        if not domain:
+            continue
+        sched = b.get("schedule")
+        add_blocked_domain(
+            domain,
+            b.get("description"),
+            b.get("locked", False),
+            b.get("unblock_delay", "4h"),
+            sched,
+        )
+
+    for a in data.get("allowlist") or []:
+        domain = a.get("domain")
+        if not domain:
+            continue
+        add_allowed_domain(
+            domain,
+            a.get("description"),
+            a.get("schedule"),
+            a.get("suppress_subdomain_warning", False),
+        )
+
+    set_config("migrated", True)

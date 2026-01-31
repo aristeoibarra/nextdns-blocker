@@ -393,7 +393,7 @@ Protected domains (with `locked: true` or `unblock_delay: "never"`) cannot be re
 A backup is automatically created before modifying config:
 
 ```
-  Backup: /Users/you/.config/nextdns-blocker/.config.json.backup.20240115_143000
+  Backup: /Users/you/.config/nextdns-blocker/.config.backup.20240115_143000.json
 ```
 
 Only the 3 most recent backups are kept.

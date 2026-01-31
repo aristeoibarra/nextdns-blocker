@@ -1,11 +1,7 @@
 """Category command group for NextDNS Blocker."""
 
-import contextlib
-import json
 import logging
-import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
@@ -15,8 +11,6 @@ from rich.table import Table
 
 from .cli_formatter import CLIOutput as out
 from .common import audit_log, validate_category_id, validate_domain
-from .config import get_config_dir
-from .exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -28,53 +22,25 @@ console = Console(highlight=False)  # Keep for tables and complex output
 # =============================================================================
 
 
-def _get_config_file_path(config_dir: Optional[Path] = None) -> Path:
-    """Get the path to config.json."""
-    if config_dir is None:
-        config_dir = get_config_dir()
-    return config_dir / "config.json"
+def _load_config_or_exit(config_dir: Optional[Path]) -> dict[str, Any]:
+    """Load config from database or exit with error."""
+    from . import database as db
 
-
-def _load_config_file(config_path: Path) -> dict[str, Any]:
-    """Load and parse config.json."""
+    if not db.config_has_domains():
+        out.error("No configuration in database. Run 'nextdns-blocker init' to create one.")
+        sys.exit(1)
     try:
-        with open(config_path, encoding="utf-8") as f:
-            result = json.load(f)
-            if not isinstance(result, dict):
-                raise ConfigurationError(
-                    f"Invalid config format in {config_path.name}: expected JSON object"
-                )
-            return result
-    except json.JSONDecodeError as e:
-        raise ConfigurationError(f"Invalid JSON in {config_path.name}: {e}")
-    except OSError as e:
-        raise ConfigurationError(f"Failed to read {config_path.name}: {e}")
+        return db.get_full_config_dict()
+    except Exception as e:
+        out.error(str(e))
+        sys.exit(1)
 
 
-def _save_config_file(config_path: Path, config: dict[str, Any]) -> None:
-    """Save config to file with atomic write for safety."""
-    temp_fd, temp_path = tempfile.mkstemp(
-        dir=config_path.parent, prefix=f".{config_path.name}.", suffix=".tmp"
-    )
-    temp_path_obj = Path(temp_path)
-    try:
-        with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
-            f.write("\n")
-            f.flush()
-            os.fsync(f.fileno())
-        # Move temp file to final location (atomic on POSIX)
-        temp_path_obj.replace(config_path)
-    except (OSError, TypeError, ValueError):
-        # Clean up temp file on any error (including replace failure)
-        with contextlib.suppress(OSError):
-            temp_path_obj.unlink()
-        raise
-    except KeyboardInterrupt:
-        # Clean up temp file on user interrupt
-        with contextlib.suppress(OSError):
-            temp_path_obj.unlink()
-        raise
+def _save_config(config: dict[str, Any]) -> None:
+    """Save config to database."""
+    from . import database as db
+
+    db.save_full_config_dict(config)
 
 
 def _get_categories(config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -105,29 +71,6 @@ def _find_category_index(categories: list[dict[str, Any]], category_id: str) -> 
     return None
 
 
-def _load_config_or_exit(config_dir: Optional[Path]) -> tuple[Path, dict[str, Any]]:
-    """Load config file or exit with error message.
-
-    Args:
-        config_dir: Optional config directory path
-
-    Returns:
-        Tuple of (config_path, config_dict)
-    """
-    config_path = _get_config_file_path(config_dir)
-
-    if not config_path.exists():
-        out.error(f"Config file not found: {config_path}")
-        sys.exit(1)
-
-    try:
-        config = _load_config_file(config_path)
-        return config_path, config
-    except ConfigurationError as e:
-        out.error(str(e))
-        sys.exit(1)
-
-
 # =============================================================================
 # CLI GROUP
 # =============================================================================
@@ -147,7 +90,7 @@ def category_cli() -> None:
 )
 def cmd_list(config_dir: Optional[Path]) -> None:
     """List all categories."""
-    _config_path, config = _load_config_or_exit(config_dir)
+    config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
 
     if not categories:
@@ -191,7 +134,7 @@ def cmd_list(config_dir: Optional[Path]) -> None:
 )
 def cmd_show(category_id: str, config_dir: Optional[Path]) -> None:
     """Show details of a category."""
-    _config_path, config = _load_config_or_exit(config_dir)
+    config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
     category = _find_category_by_id(categories, category_id)
 
@@ -241,7 +184,7 @@ def cmd_add(category_id: str, domain: str, config_dir: Optional[Path]) -> None:
         out.error(f"Invalid domain format: {domain}")
         sys.exit(1)
 
-    config_path, config = _load_config_or_exit(config_dir)
+    config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
     category_idx = _find_category_index(categories, category_id)
 
@@ -287,10 +230,9 @@ def cmd_add(category_id: str, domain: str, config_dir: Optional[Path]) -> None:
     # Ensure categories list is in config
     config["categories"] = categories
 
-    # Save config
     try:
-        _save_config_file(config_path, config)
-    except (OSError, TypeError, ValueError) as e:
+        _save_config(config)
+    except Exception as e:
         out.error(f"Saving config: {e}")
         sys.exit(1)
 
@@ -310,7 +252,7 @@ def cmd_add(category_id: str, domain: str, config_dir: Optional[Path]) -> None:
 def cmd_remove(category_id: str, domain: str, yes: bool, config_dir: Optional[Path]) -> None:
     """Remove a domain from a category."""
     domain = domain.strip().lower()
-    config_path, config = _load_config_or_exit(config_dir)
+    config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
     category_idx = _find_category_index(categories, category_id)
 
@@ -346,10 +288,9 @@ def cmd_remove(category_id: str, domain: str, yes: bool, config_dir: Optional[Pa
     category["domains"] = existing_domains
     config["categories"] = categories
 
-    # Save config
     try:
-        _save_config_file(config_path, config)
-    except (OSError, TypeError, ValueError) as e:
+        _save_config(config)
+    except Exception as e:
         out.error(f"Saving config: {e}")
         sys.exit(1)
 
@@ -379,7 +320,7 @@ def cmd_create(
         )
         sys.exit(1)
 
-    config_path, config = _load_config_or_exit(config_dir)
+    config = _load_config_or_exit(config_dir)
 
     # Ensure categories array exists
     if "categories" not in config:
@@ -421,10 +362,9 @@ def cmd_create(
     categories.append(new_category)
     config["categories"] = categories
 
-    # Save config
     try:
-        _save_config_file(config_path, config)
-    except (OSError, TypeError, ValueError) as e:
+        _save_config(config)
+    except Exception as e:
         out.error(f"Saving config: {e}")
         sys.exit(1)
 
@@ -446,7 +386,7 @@ def cmd_create(
 )
 def cmd_delete(category_id: str, yes: bool, config_dir: Optional[Path]) -> None:
     """Delete a category and all its domains."""
-    config_path, config = _load_config_or_exit(config_dir)
+    config = _load_config_or_exit(config_dir)
     categories = _get_categories(config)
     category_idx = _find_category_index(categories, category_id)
 
@@ -469,10 +409,9 @@ def cmd_delete(category_id: str, yes: bool, config_dir: Optional[Path]) -> None:
     categories.pop(category_idx)
     config["categories"] = categories
 
-    # Save config
     try:
-        _save_config_file(config_path, config)
-    except (OSError, TypeError, ValueError) as e:
+        _save_config(config)
+    except Exception as e:
         out.error(f"Saving config: {e}")
         sys.exit(1)
 

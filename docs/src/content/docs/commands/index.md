@@ -136,7 +136,7 @@ Manage NextDNS allowlist (whitelisted domains).
 | [`allowlist export`](/commands/allowlist/) | Export to JSON or CSV |
 | [`allowlist import`](/commands/allowlist/) | Import from file |
 
-### Legacy Allowlist Commands
+### Allowlist: allow / disallow
 
 | Command | Description |
 |---------|-------------|

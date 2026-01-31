@@ -12,7 +12,7 @@ from click.testing import CliRunner
 from nextdns_blocker.cli import main
 from nextdns_blocker.init import (
     NEXTDNS_API_URL,
-    create_config_file,
+    create_default_config_in_db,
     create_env_file,
     detect_system_timezone,
     run_initial_sync,
@@ -235,38 +235,54 @@ class TestCreateEnvFile:
         assert mode == 0o600
 
 
-class TestCreateConfigFile:
-    """Tests for create_config_file function."""
+class TestCreateDefaultConfigInDb:
+    """Tests for create_default_config_in_db function."""
 
-    def test_creates_config_file(self, tmp_path):
-        """Should create config.json file."""
-        config_file = create_config_file(tmp_path, "UTC")
+    def test_seeds_database(self, tmp_path):
+        """Should create and seed the database with default config."""
+        import nextdns_blocker.database as db
 
-        assert config_file.exists()
-        assert config_file.name == "config.json"
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()  # use fresh connection to patched path
+            create_default_config_in_db("UTC")
 
-    def test_valid_json_content(self, tmp_path):
-        """Should create valid JSON content."""
-        import json
+        assert db_path.exists()
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            assert db.get_config("version") in ("1.0", 1.0)
+            settings = db.get_config("settings")
+            assert settings is not None
+            assert settings.get("timezone") == "UTC"
 
-        config_file = create_config_file(tmp_path, "America/New_York")
-        content = json.loads(config_file.read_text())
+    def test_valid_settings_content(self, tmp_path):
+        """Should store timezone and default structure in DB."""
+        import nextdns_blocker.database as db
 
-        assert "version" in content
-        assert "settings" in content
-        assert "blocklist" in content
-        assert "allowlist" in content
-        assert content["settings"]["timezone"] == "America/New_York"
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            create_default_config_in_db("America/New_York")
 
-    def test_contains_empty_blocklist(self, tmp_path):
-        """Should contain empty blocklist."""
-        import json
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            assert db.get_config("version") in ("1.0", 1.0)
+            settings = db.get_config("settings")
+            assert settings is not None
+            assert settings.get("timezone") == "America/New_York"
+            full = db.get_full_config_dict()
+            assert full.get("blocklist") == []
+            assert full.get("allowlist") == []
 
-        config_file = create_config_file(tmp_path, "UTC")
-        content = json.loads(config_file.read_text())
+    def test_marks_migrated(self, tmp_path):
+        """Should set migrated flag so load_domains uses DB."""
+        import nextdns_blocker.database as db
 
-        assert content["blocklist"] == []
-        assert content["allowlist"] == []
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            create_default_config_in_db("UTC")
+
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            assert db.get_config("migrated") is True
 
 
 class TestRunNonInteractive:
@@ -396,24 +412,28 @@ class TestInteractiveWizard:
     @patch("nextdns_blocker.init.run_initial_sync", return_value=True)
     @patch("nextdns_blocker.init.requests.get")
     def test_wizard_creates_files(self, mock_get, mock_sync, tmp_path):
-        """Should create .env and config.json."""
+        """Should create .env and initialize database."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_get.return_value = mock_response
 
-        # Mock click prompts
-        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-            # Set up prompt responses (only API key and profile ID now)
-            mock_prompt.side_effect = [
-                "testapikey123",  # API key (must be at least 8 chars)
-                "testprofile",  # Profile ID
-            ]
+        import nextdns_blocker.database as db
 
-            result = run_interactive_wizard(tmp_path)
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()  # clear cached connection so wizard uses patched path
+            db.init_database()  # create empty DB with schema so config_has_domains() can run
+            with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+                mock_prompt.side_effect = [
+                    "testapikey123",  # API key (must be at least 8 chars)
+                    "testprofile",  # Profile ID
+                ]
+
+                result = run_interactive_wizard(tmp_path)
 
         assert result is True
         assert (tmp_path / ".env").exists()
-        assert (tmp_path / "config.json").exists()
+        assert db_path.exists()
 
     @patch("nextdns_blocker.init.requests.get")
     def test_wizard_invalid_credentials(self, mock_get, tmp_path):

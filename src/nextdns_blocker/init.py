@@ -1,6 +1,5 @@
 """Interactive initialization wizard for NextDNS Blocker."""
 
-import json
 import logging
 import os
 import subprocess
@@ -179,35 +178,20 @@ NEXTDNS_PROFILE_ID={profile_id}
     return env_file
 
 
-def create_config_file(config_dir: Path, timezone: str) -> Path:
+def create_default_config_in_db(timezone: str) -> None:
     """
-    Create config.json with initial structure.
-
-    Args:
-        config_dir: Directory to create config.json in
-        timezone: Auto-detected timezone string
-
-    Returns:
-        Path to created config.json file
+    Seed the database with default settings (timezone, empty notifications).
+    Marks config as migrated so load_domains considers the DB initialized.
     """
-    config_dir.mkdir(parents=True, exist_ok=True)
+    from . import database as db
 
-    config_file = config_dir / "config.json"
-
-    config = {
-        "_comment": "NextDNS Blocker configuration. See docs for schedule format.",
-        "version": "1.0",
-        "settings": {
-            "timezone": timezone,
-            "editor": None,
-        },
-        "blocklist": [],
-        "allowlist": [],
-    }
-
-    # Use write_secure_file for consistent secure permissions (0o600)
-    write_secure_file(config_file, json.dumps(config, indent=2) + "\n")
-    return config_file
+    db.init_database()
+    db.set_config("version", "1.0")
+    db.set_config("settings", {"timezone": timezone, "editor": None})
+    db.set_config("notifications", {})
+    db.set_config("protection", {})
+    db.set_config("parental_control", {})
+    db.set_config("migrated", True)
 
 
 # =============================================================================
@@ -547,13 +531,14 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
     env_file = create_env_file(config_dir, api_key, profile_id)
     click.echo(f"  Created: {env_file}")
 
-    # Create config.json if it doesn't exist
-    config_file = config_dir / "config.json"
-    if not config_file.exists():
-        config_file = create_config_file(config_dir, timezone)
-        click.echo(f"  Created: {config_file}")
+    # Seed database with default settings if not already migrated
+    from . import database as db
+
+    if not db.config_has_domains():
+        create_default_config_in_db(timezone)
+        click.echo("  Database initialized with default settings")
     else:
-        click.echo(f"  Existing config.json found: {config_file}")
+        click.echo("  Database already has configuration")
 
     # Install scheduling (launchd/cron)
     click.echo()
@@ -671,11 +656,11 @@ def run_non_interactive(config_dir_override: Optional[Path] = None) -> bool:
     env_file = create_env_file(config_dir, api_key, profile_id)
     click.echo(f"Configuration saved to: {env_file}")
 
-    # Create config.json if it doesn't exist
-    config_file = config_dir / "config.json"
-    if not config_file.exists():
-        create_config_file(config_dir, timezone)
-        click.echo(f"Created: {config_file}")
+    from . import database as db
+
+    if not db.config_has_domains():
+        create_default_config_in_db(timezone)
+        click.echo("Database initialized with default settings")
 
     # Install scheduling
     sched_success, sched_type = install_scheduling()

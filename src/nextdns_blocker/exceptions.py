@@ -35,7 +35,7 @@ class ConfigurationError(NextDNSBlockerError):
     """Raised when configuration is invalid or missing.
 
     This exception is raised when:
-    - Required configuration files (.env, config.json) are missing
+    - Required configuration (.env and database) is missing
     - API credentials are missing or have invalid format
     - Timezone setting is invalid
     - Domain configuration has validation errors

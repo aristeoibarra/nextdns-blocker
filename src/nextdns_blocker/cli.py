@@ -11,6 +11,7 @@ import click
 from rich.console import Console
 
 from . import __version__
+from . import database as db
 from .alias_cli import register_alias
 from .client import NextDNSClient
 from .common import (
@@ -247,6 +248,19 @@ def main(ctx: click.Context, no_color: bool) -> None:
     """NextDNS Blocker - Domain blocking with per-domain scheduling."""
     if no_color:
         console.no_color = True
+
+    try:
+        db.init_database()
+        config_dir = get_config_dir()
+        json_config_path = config_dir / "config.json"
+        if json_config_path.exists() and not db.config_has_domains():
+            try:
+                db.import_config_from_json(json_config_path)
+                logging.getLogger(__name__).info("Imported config from JSON file into database")
+            except Exception as e:
+                logging.getLogger(__name__).warning("Import from JSON config file failed: %s", e)
+    except Exception as e:
+        logging.getLogger(__name__).warning("Database initialization failed: %s", e)
 
     if ctx.invoked_subcommand is None:
         console.print(ctx.get_help())
@@ -697,7 +711,7 @@ def _sync_nextdns_parental_control(
     Sync NextDNS Parental Control global settings.
 
     Args:
-        nextdns_config: The 'nextdns' section from config.json
+        nextdns_config: The 'nextdns' section from config
         client: NextDNS API client
         config: Application configuration
         dry_run: If True, only show what would be done
@@ -1303,7 +1317,7 @@ def health(config_dir: Optional[Path]) -> None:
         console.print(f"  [red][✗][/red] Configuration: {e}")
         sys.exit(1)
 
-    # Check config.json
+    # Check domains (from database)
     checks_total += 1
     try:
         domains, allowlist = load_domains(config["script_dir"])
@@ -1363,7 +1377,7 @@ def test_notifications(config_dir: Optional[Path]) -> None:
 
         if not notifications:
             console.print(
-                "\n  [red]Error: No 'notifications' section in config.json[/red]",
+                "\n  [red]Error: No notifications configured[/red]",
                 highlight=False,
             )
             console.print("      Please add notification configuration.\n", highlight=False)
@@ -1384,7 +1398,7 @@ def test_notifications(config_dir: Optional[Path]) -> None:
                 "\n  [red]Error: No notification channels enabled[/red]",
                 highlight=False,
             )
-            console.print("      Enable at least one channel in config.json\n", highlight=False)
+            console.print("      Enable at least one channel in config\n", highlight=False)
             sys.exit(1)
 
         console.print(f"\n  Sending test notification to: {', '.join(enabled_channels)}...")
@@ -1405,7 +1419,7 @@ def uninstall(yes: bool) -> None:
 
     This command will:
     - Remove all scheduled jobs (launchd/cron/Task Scheduler)
-    - Delete configuration files (.env, config.json)
+    - Delete configuration (.env and database)
     - Delete all logs, cache, and data files
 
     After running this command, you will need to reinstall the package
@@ -1771,12 +1785,11 @@ def update(yes: bool) -> None:
 
 def validate_impl(output_json: bool, config_dir: Optional[Path]) -> None:
     """
-    Validate configuration files before deployment.
+    Validate configuration before deployment.
 
     This is the implementation function called by config_cli.py.
 
-    Checks config.json for:
-    - Valid JSON syntax
+    Validates config:
     - Valid domain formats
     - Valid schedule time formats (HH:MM)
     - No denylist/allowlist conflicts
@@ -1807,23 +1820,18 @@ def validate_impl(output_json: bool, config_dir: Optional[Path]) -> None:
     def add_warning(message: str) -> None:
         results["warnings"].append(message)
 
-    # Check 1: config.json exists and has valid JSON syntax
-    config_file = config_dir / "config.json"
+    # Check 1: database has configuration
     domains_data = None
-
-    if config_file.exists():
+    if db.config_has_domains():
         try:
-            with open(config_file, encoding="utf-8") as f:
-                domains_data = json_module.load(f)
-            add_check("config.json", True, "valid JSON syntax")
-        except json_module.JSONDecodeError as e:
-            add_check("config.json", False, f"invalid JSON: {e}")
-            add_error(f"JSON syntax error: {e}")
+            domains_data = db.get_full_config_dict()
+            add_check("database", True, "config loaded")
+        except Exception as e:
+            add_check("database", False, str(e))
+            add_error(f"Failed to load config from database: {e}")
     else:
-        add_check("config.json", False, "file not found")
-        add_error(
-            f"Config file not found: {config_file}\nRun 'nextdns-blocker init' to create one."
-        )
+        add_check("database", False, "no configuration")
+        add_error("No configuration in database. Run 'nextdns-blocker init' to create one.")
 
     if domains_data is None:
         # Cannot proceed without valid domains data

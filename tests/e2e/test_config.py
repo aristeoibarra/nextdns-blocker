@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Any
@@ -95,11 +94,9 @@ class TestGetConfigDir:
         assert result == override
 
     def test_with_cwd_both_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test config dir uses CWD when both .env AND config.json exist."""
+        """Test config dir uses CWD when .env exists (config lives in DB)."""
         env_file = tmp_path / ".env"
         env_file.write_text("TEST=value")
-        config_file = tmp_path / "config.json"
-        config_file.write_text('{"blocklist": []}')
         monkeypatch.chdir(tmp_path)
 
         result = get_config_dir()
@@ -108,15 +105,14 @@ class TestGetConfigDir:
     def test_with_cwd_env_only_uses_system_dir(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test config dir uses system dir when only .env exists (no config file)."""
+        """Test config dir uses CWD when .env exists (config lives in DB, not config.json)."""
         env_file = tmp_path / ".env"
         env_file.write_text("TEST=value")
         monkeypatch.chdir(tmp_path)
 
         result = get_config_dir()
-        # Should NOT use CWD, should fall back to system config dir
-        assert result != tmp_path
-        assert "nextdns-blocker" in str(result)
+        # With SQLite migration, CWD is used when .env exists (config is in DB)
+        assert result == tmp_path
 
     def test_with_cwd_config_only_uses_system_dir(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -356,58 +352,79 @@ class TestValidateNoOverlap:
 
 
 class TestLoadDomains:
-    """Tests for loading domains."""
+    """Tests for loading domains (from database)."""
 
-    def test_load_from_local_file(self, tmp_path: Path) -> None:
-        """Test loading domains from local file."""
-        domains_file = tmp_path / "config.json"
-        domains_file.write_text(
-            json.dumps(
-                {
-                    "blocklist": [{"domain": "example.com"}],
-                    "allowlist": [],
-                }
-            )
-        )
+    def test_load_from_database(self, tmp_path: Path) -> None:
+        """Test loading domains from database."""
+        import nextdns_blocker.database as db
 
-        domains, allowlist = load_domains(str(tmp_path))
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            db.init_database()
+            db.add_blocked_domain("example.com")
+            db.set_config("migrated", True)
+
+            domains, allowlist = load_domains(str(tmp_path))
 
         assert len(domains) == 1
         assert domains[0]["domain"] == "example.com"
 
-    def test_load_missing_file(self, tmp_path: Path) -> None:
-        """Test loading from missing file."""
-        with pytest.raises(ConfigurationError, match="not found"):
-            load_domains(str(tmp_path))
+    def test_load_empty_db_raises(self, tmp_path: Path) -> None:
+        """Test loading when database has no domains raises."""
+        import nextdns_blocker.database as db
 
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            db.init_database()
+            # No domains, no migrated flag -> config_has_domains() is False
+
+            with pytest.raises(ConfigurationError, match="No domains configured"):
+                load_domains(str(tmp_path))
+
+    @pytest.mark.skip(reason="Config is in DB; invalid JSON from file no longer applicable")
     def test_load_invalid_json(self, tmp_path: Path) -> None:
-        """Test loading invalid JSON file."""
+        """Test loading invalid JSON file (skipped: config now in DB)."""
         domains_file = tmp_path / "config.json"
         domains_file.write_text("not valid json")
 
         with pytest.raises(ConfigurationError, match="Invalid JSON"):
             load_domains(str(tmp_path))
 
-    def test_load_no_domains(self, tmp_path: Path) -> None:
-        """Test loading file with no domains."""
-        domains_file = tmp_path / "config.json"
-        domains_file.write_text(json.dumps({"blocklist": []}))
+    def test_load_no_domains_raises(self, tmp_path: Path) -> None:
+        """Test loading when DB has schema but no domains raises."""
+        import nextdns_blocker.database as db
 
-        with pytest.raises(ConfigurationError, match="No domains configured"):
-            load_domains(str(tmp_path))
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            db.init_database()
+            # Empty DB: config_has_domains() returns False
+
+            with pytest.raises(ConfigurationError, match="No domains configured"):
+                load_domains(str(tmp_path))
 
 
 class TestLoadConfig:
     """Tests for loading configuration."""
 
     def test_load_config_success(self, tmp_path: Path) -> None:
-        """Test successful config loading."""
+        """Test successful config loading (API/profile from .env, timezone from DB)."""
+        import nextdns_blocker.database as db
+
         env_file = tmp_path / ".env"
         env_file.write_text(
             "NEXTDNS_API_KEY=test-api-key\nNEXTDNS_PROFILE_ID=abc123\nTIMEZONE=UTC\n"
         )
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            db.init_database()
+            db.set_config("settings", {"timezone": "UTC", "editor": None})
 
-        config = load_config(tmp_path)
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            config = load_config(tmp_path)
 
         assert config["api_key"] == "test-api-key"
         assert config["profile_id"] == "abc123"
@@ -450,30 +467,43 @@ class TestLoadConfig:
                 load_config(tmp_path)
 
     def test_load_config_invalid_timezone(self, tmp_path: Path) -> None:
-        """Test config loading fails with invalid timezone in config.json."""
+        """Test config loading fails with invalid timezone in database."""
+        import nextdns_blocker.database as db
+
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=valid-api-key\nNEXTDNS_PROFILE_ID=abc123\n")
-
-        # config.json with invalid timezone
-        config_file = tmp_path / "config.json"
-        config_file.write_text('{"blocklist": [], "settings": {"timezone": "Invalid/TZ"}}')
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            db.init_database()
+            db.set_config("settings", {"timezone": "Invalid/TZ", "editor": None})
 
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ConfigurationError, match="Invalid TIMEZONE"):
-                load_config(tmp_path)
+            with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+                with pytest.raises(ConfigurationError, match="Invalid TIMEZONE"):
+                    load_config(tmp_path)
 
     def test_load_config_with_quoted_values(self, tmp_path: Path) -> None:
         """Test config loading with quoted values in .env."""
+        import nextdns_blocker.database as db
+
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=\"test-api-key\"\nNEXTDNS_PROFILE_ID='abc123'\n")
-
-        config = load_config(tmp_path)
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            db.init_database()
+            db.set_config("settings", {"timezone": "UTC", "editor": None})
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            config = load_config(tmp_path)
 
         assert config["api_key"] == "test-api-key"
         assert config["profile_id"] == "abc123"
 
     def test_load_config_skips_comments(self, tmp_path: Path) -> None:
         """Test config loading skips comment lines."""
+        import nextdns_blocker.database as db
+
         env_file = tmp_path / ".env"
         env_file.write_text(
             "# This is a comment\n"
@@ -481,13 +511,20 @@ class TestLoadConfig:
             "# Another comment\n"
             "NEXTDNS_PROFILE_ID=abc123\n"
         )
-
-        config = load_config(tmp_path)
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            db.init_database()
+            db.set_config("settings", {"timezone": "UTC", "editor": None})
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            config = load_config(tmp_path)
 
         assert config["api_key"] == "test-api-key"
 
     def test_load_config_handles_malformed_lines(self, tmp_path: Path) -> None:
         """Test config loading handles malformed lines gracefully."""
+        import nextdns_blocker.database as db
+
         env_file = tmp_path / ".env"
         env_file.write_text(
             "NEXTDNS_API_KEY=test-api-key\n"
@@ -495,19 +532,30 @@ class TestLoadConfig:
             "MALFORMED LINE WITHOUT EQUALS\n"
             "=empty_key\n"
         )
-
-        config = load_config(tmp_path)
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            db.init_database()
+            db.set_config("settings", {"timezone": "UTC", "editor": None})
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            config = load_config(tmp_path)
 
         assert config["api_key"] == "test-api-key"
 
     def test_load_config_with_bom(self, tmp_path: Path) -> None:
         """Test config loading handles BOM in .env file."""
+        import nextdns_blocker.database as db
+
         env_file = tmp_path / ".env"
-        # Write with BOM
         with open(env_file, "w", encoding="utf-8-sig") as f:
             f.write("NEXTDNS_API_KEY=test-api-key\n")
             f.write("NEXTDNS_PROFILE_ID=abc123\n")
-
-        config = load_config(tmp_path)
+        db_path = tmp_path / "nextdns-blocker.db"
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            db.close_connection()
+            db.init_database()
+            db.set_config("settings", {"timezone": "UTC", "editor": None})
+        with patch("nextdns_blocker.database.get_db_path", return_value=db_path):
+            config = load_config(tmp_path)
 
         assert config["api_key"] == "test-api-key"

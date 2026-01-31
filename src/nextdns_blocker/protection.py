@@ -344,12 +344,12 @@ def _row_to_unlock_request(row: dict[str, Any]) -> UnlockRequest:
     }
 
 
-def execute_unlock_request(request_id: str, config_path: Path) -> bool:
-    """Execute an unlock request by modifying the config.
+def execute_unlock_request(request_id: str, config_path: Optional[Path] = None) -> bool:
+    """Execute an unlock request by removing the item from the database.
 
     Args:
         request_id: ID of the request to execute
-        config_path: Path to config.json
+        config_path: Unused (kept for API compatibility).
 
     Returns:
         True if successfully executed
@@ -358,7 +358,6 @@ def execute_unlock_request(request_id: str, config_path: Path) -> bool:
     if not request or request.get("status") != "pending":
         return False
 
-    # Check if delay has passed
     try:
         execute_at = ensure_naive_datetime(datetime.fromisoformat(request["execute_at"]))
     except (ValueError, KeyError) as e:
@@ -372,31 +371,21 @@ def execute_unlock_request(request_id: str, config_path: Path) -> bool:
     item_type = request["item_type"]
     item_id = request["item_id"]
 
-    # Load config and remove the locked item
-    try:
-        with open(config_path, encoding="utf-8") as f:
-            config = json.load(f)
-
-        if item_type == "category":
-            categories = config.get("nextdns", {}).get("categories", [])
-            config["nextdns"]["categories"] = [c for c in categories if c.get("id") != item_id]
-        elif item_type == "service":
-            services = config.get("nextdns", {}).get("services", [])
-            config["nextdns"]["services"] = [s for s in services if s.get("id") != item_id]
-
-        # Write updated config
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
-
-        # Mark request as executed
-        db.update_unlock_request_status(request_id, "executed", datetime.now().isoformat())
-
-        audit_log("UNLOCK_EXECUTE", f"{item_type}:{item_id}")
-        return True
-
-    except (json.JSONDecodeError, OSError) as e:
-        logger.error(f"Failed to execute unlock request: {e}")
+    if item_type == "category":
+        removed = db.remove_nextdns_category(item_id)
+    elif item_type == "service":
+        removed = db.remove_nextdns_service(item_id)
+    else:
+        logger.error(f"Unknown item_type for unlock request: {item_type}")
         return False
+
+    if not removed:
+        logger.warning(f"Item {item_type}:{item_id} not found in database")
+        return False
+
+    db.update_unlock_request_status(request_id, "executed", datetime.now().isoformat())
+    audit_log("UNLOCK_EXECUTE", f"{item_type}:{item_id}")
+    return True
 
 
 def validate_protection_config(protection: dict[str, Any]) -> list[str]:

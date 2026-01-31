@@ -36,19 +36,11 @@ def complete_blocklist_domains(
         List of completion items matching the incomplete string
     """
     try:
-        # Import locally to allow patching in tests
         from .config import get_config_dir, load_domains
 
         config_dir = get_config_dir()
-        config_file = config_dir / "config.json"
-
-        if not config_file.exists():
-            return []
-
-        # Get script_dir from .env if available
         env_file = config_dir / ".env"
         script_dir = str(config_dir)
-
         if env_file.exists():
             with open(env_file, encoding="utf-8-sig") as f:
                 for line in f:
@@ -72,8 +64,14 @@ def complete_blocklist_domains(
         return completions
 
     except (FileNotFoundError, PermissionError) as e:
-        # Specific file access errors - log at debug level (common during initial setup)
-        logger.debug(f"Config file not accessible for completion: {e}")
+        logger.debug("Config not accessible for completion: %s", e)
+        return []
+    except Exception as e:
+        from .exceptions import ConfigurationError
+
+        if isinstance(e, ConfigurationError):
+            return []
+        logger.debug("Completion error: %s", e)
         return []
     except json.JSONDecodeError as e:
         # JSON parsing error - more serious, log at warning
@@ -110,15 +108,8 @@ def complete_allowlist_domains(
         from .config import get_config_dir, load_domains
 
         config_dir = get_config_dir()
-        config_file = config_dir / "config.json"
-
-        if not config_file.exists():
-            return []
-
-        # Get script_dir from .env if available
         env_file = config_dir / ".env"
         script_dir = str(config_dir)
-
         if env_file.exists():
             with open(env_file, encoding="utf-8-sig") as f:
                 for line in f:
@@ -140,17 +131,12 @@ def complete_allowlist_domains(
 
         return completions
 
-    except (FileNotFoundError, PermissionError) as e:
-        logger.debug(f"Config file not accessible for allowlist completion: {e}")
-        return []
-    except json.JSONDecodeError as e:
-        logger.warning(f"Invalid JSON in config file for allowlist completion: {e}")
-        return []
-    except (KeyError, TypeError) as e:
-        logger.warning(f"Invalid config structure for allowlist completion: {e}")
-        return []
-    except OSError as e:
-        logger.warning(f"I/O error loading allowlist for completion: {e}")
+    except Exception as e:
+        from .exceptions import ConfigurationError
+
+        if isinstance(e, ConfigurationError):
+            return []
+        logger.debug("Allowlist completion error: %s", e)
         return []
 
 
