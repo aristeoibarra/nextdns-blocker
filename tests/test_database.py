@@ -76,7 +76,6 @@ class TestSchemaManagement:
         tables = {row[0] for row in cursor}
 
         expected_tables = {
-            "schema_version",
             "config",
             "blocked_domains",
             "allowed_domains",
@@ -90,24 +89,17 @@ class TestSchemaManagement:
             "retry_queue",
             "audit_log",
             "daily_stats",
+            "pin_protection",
         }
 
         assert expected_tables.issubset(tables)
-
-    def test_get_schema_version(self, use_temp_database):
-        """Should return current schema version."""
-        db.init_database()
-        version = db.get_schema_version()
-        assert version == db.SCHEMA_VERSION
 
     def test_init_database_is_idempotent(self, use_temp_database):
         """Calling init_database multiple times should be safe."""
         db.init_database()
         db.init_database()
         db.init_database()
-
-        version = db.get_schema_version()
-        assert version == db.SCHEMA_VERSION
+        # Should not raise any errors
 
 
 class TestConfigOperations:
@@ -843,7 +835,6 @@ class TestUtilityFunctions:
 
         export = db.export_to_json()
 
-        assert "schema_version" in export
         assert "blocked_domains" in export
         assert "allowed_domains" in export
         assert "categories" in export

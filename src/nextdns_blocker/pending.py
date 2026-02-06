@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 from . import database as db
 from .common import audit_log
-from .config import UNBLOCK_DELAY_SECONDS, VALID_UNBLOCK_DELAYS
+from .config import parse_duration
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +53,13 @@ def create_pending_action(
     Note:
         Invalid delay values are logged and treated as 'never' (no action created).
     """
-    # Validate delay is a known value
-    if delay not in VALID_UNBLOCK_DELAYS:
+    # Parse delay using flexible duration parser
+    try:
+        delay_seconds = parse_duration(delay)
+    except ValueError:
         logger.warning(f"Invalid delay value '{delay}', no pending action created")
         return None
 
-    delay_seconds = UNBLOCK_DELAY_SECONDS.get(delay)
     if delay_seconds is None:  # 'never' - valid but no action needed
         return None
 

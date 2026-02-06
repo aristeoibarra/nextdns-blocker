@@ -17,7 +17,6 @@ from .common import (
     NEXTDNS_CATEGORIES,
     NEXTDNS_SERVICES,
     VALID_DAYS,
-    get_log_dir,
     parse_env_value,
     safe_int,
     validate_category_id,
@@ -25,9 +24,6 @@ from .common import (
     validate_time_format,
 )
 from .exceptions import ConfigurationError
-
-# Re-export get_log_dir for backward compatibility
-__all__ = ["get_log_dir"]
 
 # =============================================================================
 # CREDENTIAL VALIDATION PATTERNS
@@ -59,19 +55,6 @@ SLACK_WEBHOOK_PATTERN = re.compile(
 # =============================================================================
 # UNBLOCK DELAY SETTINGS
 # =============================================================================
-
-# Valid unblock_delay values (for backward compatibility messages)
-VALID_UNBLOCK_DELAYS = frozenset({"never", "24h", "4h", "30m", "0"})
-
-# Mapping of unblock_delay strings to seconds (None for 'never' = cannot unblock)
-# Kept for backward compatibility - new code should use parse_duration()
-UNBLOCK_DELAY_SECONDS: dict[str, Optional[int]] = {
-    "never": None,
-    "24h": 24 * 60 * 60,
-    "4h": 4 * 60 * 60,
-    "30m": 30 * 60,
-    "0": 0,
-}
 
 # Flexible duration pattern: number followed by unit (m=minutes, h=hours, d=days)
 DURATION_PATTERN = re.compile(r"^(\d+)([mhd])$")
@@ -1556,12 +1539,9 @@ def load_domains(script_dir: str) -> tuple[list[dict[str, Any]], list[dict[str, 
     return final_domains, allowlist
 
 
-def _load_timezone_setting(_config_dir: Optional[Path] = None) -> str:
+def _load_timezone_setting() -> str:
     """
     Load timezone setting from database (settings.timezone) or fall back to default.
-
-    Args:
-        _config_dir: Unused, kept for compatibility.
 
     Returns:
         Timezone string (e.g., 'America/New_York')
@@ -1785,12 +1765,9 @@ def validate_notifications_config(notifications: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _load_notifications_config(_config_dir: Optional[Path] = None) -> dict[str, Any]:
+def _load_notifications_config() -> dict[str, Any]:
     """
     Load notifications configuration from database.
-
-    Args:
-        _config_dir: Unused, kept for compatibility.
 
     Returns:
         Notifications configuration dictionary (empty if not configured)
@@ -1841,10 +1818,10 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
     # Build configuration dictionary
     config = _build_config_dict(config_dir)
 
-    config["timezone"] = _load_timezone_setting(config_dir)
+    config["timezone"] = _load_timezone_setting()
     _validate_required_credentials(config)
     _validate_timezone(config["timezone"])
-    config["notifications"] = _load_notifications_config(config_dir)
+    config["notifications"] = _load_notifications_config()
 
     return config
 

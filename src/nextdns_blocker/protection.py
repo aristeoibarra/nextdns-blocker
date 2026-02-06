@@ -3,12 +3,12 @@
 This module provides:
 - Locked categories/services that cannot be easily removed
 - Unlock request system with configurable delay
+- PIN protection with SQLite-backed storage
 """
 
 import json
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, Optional, cast
 from uuid import uuid4
 
@@ -16,9 +16,6 @@ from . import database as db
 from .common import (
     audit_log,
     ensure_naive_datetime,
-    get_log_dir,
-    read_secure_file,
-    write_secure_file,
 )
 from .types import (
     ItemType,
@@ -344,12 +341,11 @@ def _row_to_unlock_request(row: dict[str, Any]) -> UnlockRequest:
     }
 
 
-def execute_unlock_request(request_id: str, config_path: Optional[Path] = None) -> bool:
+def execute_unlock_request(request_id: str) -> bool:
     """Execute an unlock request by removing the item from the database.
 
     Args:
         request_id: ID of the request to execute
-        config_path: Unused (kept for API compatibility).
 
     Returns:
         True if successfully executed
@@ -429,26 +425,10 @@ PIN_HASH_ITERATIONS = 600_000  # OWASP recommendation for PBKDF2-SHA256
 PIN_REMOVAL_DELAY_HOURS = 24
 
 
-def get_pin_hash_file() -> Path:
-    """Get the PIN hash file path."""
-    return get_log_dir() / ".pin_hash"
-
-
-def get_pin_session_file() -> Path:
-    """Get the PIN session file path."""
-    return get_log_dir() / ".pin_session"
-
-
-def get_pin_attempts_file() -> Path:
-    """Get the PIN failed attempts file path."""
-    return get_log_dir() / ".pin_attempts"
-
-
 def is_pin_enabled() -> bool:
     """Check if PIN protection is enabled."""
-    pin_file = get_pin_hash_file()
-    content = read_secure_file(pin_file)
-    return content is not None and len(content) > 0
+    pin_hash = db.get_pin_value("hash")
+    return pin_hash is not None and len(pin_hash) > 0
 
 
 def _hash_pin(pin: str, salt: Optional[bytes] = None) -> tuple[str, bytes]:
@@ -500,7 +480,7 @@ def set_pin(pin: str) -> bool:
 
     # Store as: salt_hex:hash_hex
     content = f"{salt.hex()}:{hash_hex}"
-    write_secure_file(get_pin_hash_file(), content)
+    db.set_pin_value("hash", content)
 
     # Clear any existing session and attempts
     _clear_pin_session()
@@ -528,7 +508,7 @@ def verify_pin(pin: str) -> bool:
         audit_log("PIN_LOCKED_OUT", "Verification attempted during lockout")
         return False
 
-    content = read_secure_file(get_pin_hash_file())
+    content = db.get_pin_value("hash")
     if not content or ":" not in content:
         return False
 
@@ -573,11 +553,7 @@ def remove_pin(current_pin: str, force: bool = False) -> bool:
 
     if force:
         # Immediate removal (called by pending action executor)
-        pin_file = get_pin_hash_file()
-        if pin_file.exists():
-            pin_file.unlink()
-        _clear_pin_session()
-        _clear_pin_attempts()
+        db.clear_all_pin_data()
         audit_log("PIN_REMOVED", "PIN protection disabled")
         return True
 
@@ -623,7 +599,7 @@ def create_pin_session() -> datetime:
         Session expiration datetime
     """
     expires = datetime.now() + timedelta(minutes=PIN_SESSION_DURATION_MINUTES)
-    write_secure_file(get_pin_session_file(), expires.isoformat())
+    db.set_pin_value("session_expires", expires.isoformat())
     return expires
 
 
@@ -632,7 +608,7 @@ def is_pin_session_valid() -> bool:
     if not is_pin_enabled():
         return True  # No PIN = always valid
 
-    content = read_secure_file(get_pin_session_file())
+    content = db.get_pin_value("session_expires")
     if not content:
         return False
 
@@ -650,9 +626,7 @@ def is_pin_session_valid() -> bool:
 
 def _clear_pin_session() -> None:
     """Clear the current PIN session."""
-    session_file = get_pin_session_file()
-    if session_file.exists():
-        session_file.unlink(missing_ok=True)
+    db.delete_pin_value("session_expires")
 
 
 def get_pin_session_remaining() -> Optional[str]:
@@ -665,7 +639,7 @@ def get_pin_session_remaining() -> Optional[str]:
     if not is_pin_enabled():
         return None
 
-    content = read_secure_file(get_pin_session_file())
+    content = db.get_pin_value("session_expires")
     if not content:
         return None
 
@@ -694,8 +668,8 @@ def _record_failed_attempt() -> int:
     Returns:
         Current number of failed attempts
     """
-    content = read_secure_file(get_pin_attempts_file())
-    attempts = []
+    content = db.get_pin_value("failed_attempts")
+    attempts: list[str] = []
 
     if content:
         try:
@@ -710,21 +684,19 @@ def _record_failed_attempt() -> int:
     cutoff = datetime.now() - timedelta(minutes=PIN_LOCKOUT_MINUTES)
     attempts = [a for a in attempts if datetime.fromisoformat(a) > cutoff]
 
-    write_secure_file(get_pin_attempts_file(), json.dumps(attempts))
+    db.set_pin_value("failed_attempts", json.dumps(attempts))
 
     return len(attempts)
 
 
 def _clear_pin_attempts() -> None:
     """Clear failed PIN attempts."""
-    attempts_file = get_pin_attempts_file()
-    if attempts_file.exists():
-        attempts_file.unlink(missing_ok=True)
+    db.delete_pin_value("failed_attempts")
 
 
 def get_failed_attempts_count() -> int:
     """Get current number of failed attempts in lockout window."""
-    content = read_secure_file(get_pin_attempts_file())
+    content = db.get_pin_value("failed_attempts")
     if not content:
         return 0
 
@@ -752,7 +724,7 @@ def get_lockout_remaining() -> Optional[str]:
     if not is_pin_locked_out():
         return None
 
-    content = read_secure_file(get_pin_attempts_file())
+    content = db.get_pin_value("failed_attempts")
     if not content:
         return None
 

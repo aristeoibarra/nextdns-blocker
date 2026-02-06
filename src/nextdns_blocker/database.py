@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 DB_FILENAME = "nextdns-blocker.db"
-SCHEMA_VERSION = 1
 
 # Thread-local storage for connections
 _local = threading.local()
@@ -44,12 +43,6 @@ def get_db_path() -> Path:
 # =============================================================================
 
 SCHEMA_SQL = """
--- Schema version tracking
-CREATE TABLE IF NOT EXISTS schema_version (
-    version INTEGER PRIMARY KEY,
-    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
 -- Configuration as key-value with JSON support
 CREATE TABLE IF NOT EXISTS config (
     key TEXT PRIMARY KEY,
@@ -130,7 +123,7 @@ CREATE TABLE IF NOT EXISTS schedules (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Pending actions (replaces pending.json)
+-- Pending actions
 CREATE TABLE IF NOT EXISTS pending_actions (
     id TEXT PRIMARY KEY,  -- pnd_{YYYYMMDD}_{HHMMSS}_{random}
     action TEXT NOT NULL,  -- unblock, block, allow, disallow
@@ -147,7 +140,7 @@ CREATE TABLE IF NOT EXISTS pending_actions (
 CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions(status);
 CREATE INDEX IF NOT EXISTS idx_pending_execute_at ON pending_actions(execute_at);
 
--- Unlock requests (replaces unlock_requests.json)
+-- Unlock requests
 CREATE TABLE IF NOT EXISTS unlock_requests (
     id TEXT PRIMARY KEY,
     item_type TEXT NOT NULL,  -- category, service, domain, pin
@@ -164,7 +157,7 @@ CREATE TABLE IF NOT EXISTS unlock_requests (
 CREATE INDEX IF NOT EXISTS idx_unlock_status ON unlock_requests(status);
 CREATE INDEX IF NOT EXISTS idx_unlock_execute_at ON unlock_requests(execute_at);
 
--- Retry queue (replaces retry_queue.json)
+-- Retry queue
 CREATE TABLE IF NOT EXISTS retry_queue (
     id TEXT PRIMARY KEY,
     domain TEXT NOT NULL,
@@ -179,7 +172,7 @@ CREATE TABLE IF NOT EXISTS retry_queue (
 
 CREATE INDEX IF NOT EXISTS idx_retry_next ON retry_queue(next_retry_at);
 
--- Audit log (replaces audit.log)
+-- Audit log
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type TEXT NOT NULL,
@@ -198,6 +191,13 @@ CREATE TABLE IF NOT EXISTS daily_stats (
     unblocks INTEGER DEFAULT 0,
     panic_activations INTEGER DEFAULT 0,
     focus_sessions INTEGER DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- PIN protection
+CREATE TABLE IF NOT EXISTS pin_protection (
+    key TEXT PRIMARY KEY,  -- 'hash', 'session_expires', 'failed_attempts'
+    value TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -268,47 +268,21 @@ def transaction() -> Iterator[sqlite3.Connection]:
 
 
 def init_database() -> None:
-    """Initialize the database schema."""
+    """Initialize the database schema.
+
+    Uses CREATE TABLE IF NOT EXISTS, so it's safe to call multiple times.
+    New tables are added automatically. For column changes, delete the DB.
+    """
     conn = get_connection()
-
-    # Check if schema is already initialized
-    cursor = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
-    )
-    if cursor.fetchone() is None:
-        # First time initialization
-        conn.executescript(SCHEMA_SQL)
-        conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
-        conn.commit()
-        logger.info(f"Database initialized with schema version {SCHEMA_VERSION}")
-    else:
-        # Check for schema migrations
-        cursor = conn.execute("SELECT MAX(version) FROM schema_version")
-        current_version = cursor.fetchone()[0] or 0
-
-        if current_version < SCHEMA_VERSION:
-            _migrate_schema(conn, current_version, SCHEMA_VERSION)
-
-
-def _migrate_schema(conn: sqlite3.Connection, from_version: int, to_version: int) -> None:
-    """Apply schema migrations from one version to another."""
-    logger.info(f"Migrating database schema from v{from_version} to v{to_version}")
-
-    # Add migration logic here as needed
-    # Example:
-    # if from_version < 2:
-    #     conn.execute("ALTER TABLE ...")
-
-    conn.execute("INSERT INTO schema_version (version) VALUES (?)", (to_version,))
+    conn.executescript(SCHEMA_SQL)
     conn.commit()
+    logger.debug("Database schema initialized")
 
-
-def get_schema_version() -> int:
-    """Get the current schema version."""
-    conn = get_connection()
-    cursor = conn.execute("SELECT MAX(version) FROM schema_version")
-    result = cursor.fetchone()
-    return result[0] if result and result[0] else 0
+    # Auto-vacuum if needed
+    try:
+        auto_vacuum_if_needed()
+    except Exception as e:
+        logger.warning("Auto-vacuum check failed: %s", e)
 
 
 # =============================================================================
@@ -1150,6 +1124,50 @@ def remove_schedule(name: str) -> bool:
 
 
 # =============================================================================
+# PIN PROTECTION OPERATIONS
+# =============================================================================
+
+
+def get_pin_value(key: str) -> Optional[str]:
+    """Get a PIN protection value by key (hash, session_expires, failed_attempts)."""
+    conn = get_connection()
+    cursor = conn.execute("SELECT value FROM pin_protection WHERE key = ?", (key,))
+    row = cursor.fetchone()
+    return row["value"] if row else None
+
+
+def set_pin_value(key: str, value: str) -> None:
+    """Set a PIN protection value."""
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO pin_protection (key, value, updated_at)
+        VALUES (?, ?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = datetime('now')
+        """,
+        (key, value),
+    )
+    conn.commit()
+
+
+def delete_pin_value(key: str) -> bool:
+    """Delete a PIN protection value. Returns True if deleted."""
+    conn = get_connection()
+    cursor = conn.execute("DELETE FROM pin_protection WHERE key = ?", (key,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def clear_all_pin_data() -> None:
+    """Clear all PIN protection data (hash, session, attempts)."""
+    conn = get_connection()
+    conn.execute("DELETE FROM pin_protection")
+    conn.commit()
+
+
+# =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
 
@@ -1173,15 +1191,93 @@ def get_database_size() -> int:
 
 
 def vacuum_database() -> None:
-    """Vacuum the database to reclaim space."""
+    """Vacuum the database to reclaim space and record timestamp."""
     conn = get_connection()
     conn.execute("VACUUM")
+    conn.execute("""
+        INSERT INTO config (key, value, updated_at)
+        VALUES ('last_vacuum', datetime('now'), datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET
+            value = datetime('now'),
+            updated_at = datetime('now')
+        """)
+    conn.commit()
+    logger.info("Database vacuumed")
+
+
+AUTO_VACUUM_INTERVAL_DAYS = 30
+
+
+def auto_vacuum_if_needed() -> None:
+    """Run VACUUM if it hasn't been done in AUTO_VACUUM_INTERVAL_DAYS days."""
+    conn = get_connection()
+    cursor = conn.execute("SELECT value FROM config WHERE key = 'last_vacuum'")
+    row = cursor.fetchone()
+    if row is None:
+        vacuum_database()
+        return
+    try:
+        last_vacuum = datetime.fromisoformat(row["value"])
+        if (datetime.now() - last_vacuum).days >= AUTO_VACUUM_INTERVAL_DAYS:
+            vacuum_database()
+    except (ValueError, TypeError):
+        vacuum_database()
+
+
+def backup_database(backup_dir: Optional[Path] = None, max_backups: int = 3) -> Path:
+    """Create a backup of the database using sqlite3 backup API.
+
+    Args:
+        backup_dir: Directory for backups. Defaults to db parent dir / backups.
+        max_backups: Maximum number of backup files to retain.
+
+    Returns:
+        Path to the created backup file.
+    """
+    import sqlite3 as _sqlite3
+
+    db_path = get_db_path()
+    if backup_dir is None:
+        backup_dir = db_path.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = backup_dir / f"nextdns-blocker_{timestamp}.db"
+
+    src = _sqlite3.connect(str(db_path))
+    try:
+        dst = _sqlite3.connect(str(backup_path))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+
+    logger.info("Database backed up to %s", backup_path)
+
+    # Rotate old backups
+    backups = sorted(backup_dir.glob("nextdns-blocker_*.db"))
+    while len(backups) > max_backups:
+        oldest = backups.pop(0)
+        oldest.unlink()
+        logger.info("Removed old backup: %s", oldest)
+
+    return backup_path
+
+
+def auto_backup() -> None:
+    """Create a backup before destructive operations."""
+    try:
+        if get_db_path().exists():
+            backup_database()
+    except Exception as e:
+        logger.warning("Auto-backup failed: %s", e)
 
 
 def export_to_json() -> dict[str, Any]:
     """Export the entire database to a JSON-compatible dictionary."""
     return {
-        "schema_version": get_schema_version(),
         "config": get_all_config(),
         "blocked_domains": get_all_blocked_domains(),
         "allowed_domains": get_all_allowed_domains(),

@@ -589,14 +589,14 @@ class TestMain:
 
     def test_main_no_args(self, runner):
         """Should print usage when no args provided."""
-        result = runner.invoke(watchdog.main, [])
+        result = runner.invoke(watchdog.watchdog_cli, [])
         # Click group without invoke_without_command returns 0 and shows help
         # Exit code may be 0 or 2 depending on Click version/configuration
         assert "Usage:" in result.output or "usage:" in result.output.lower()
 
     def test_main_unknown_command(self, runner):
         """Should print error for unknown command."""
-        result = runner.invoke(watchdog.main, ["unknown"])
+        result = runner.invoke(watchdog.watchdog_cli, ["unknown"])
         assert result.exit_code != 0
 
     def test_main_status_command(self, runner, mock_disabled_file):
@@ -605,19 +605,19 @@ class TestMain:
             with patch.object(watchdog, "is_windows", return_value=False):
                 with patch.object(watchdog, "has_systemd", return_value=False):
                     with patch.object(watchdog, "get_crontab", return_value=""):
-                        result = runner.invoke(watchdog.main, ["status"])
+                        result = runner.invoke(watchdog.watchdog_cli, ["status"])
                         assert result.exit_code == 0
 
     def test_main_check_command(self, runner, mock_disabled_file):
         """Should run check command."""
         crontab = (
-            "*/2 * * * * nextdns-blocker config sync\n* * * * * nextdns-blocker watchdog check\n"
+            "*/2 * * * * nextdns-blocker config push\n* * * * * nextdns-blocker watchdog check\n"
         )
         with patch.object(watchdog, "is_macos", return_value=False):
             with patch.object(watchdog, "is_windows", return_value=False):
                 with patch.object(watchdog, "has_systemd", return_value=False):
                     with patch.object(watchdog, "get_crontab", return_value=crontab):
-                        result = runner.invoke(watchdog.main, ["check"])
+                        result = runner.invoke(watchdog.watchdog_cli, ["check"])
                         assert result.exit_code == 0
 
     def test_main_install_command(self, runner, mock_audit_log_file):
@@ -627,7 +627,7 @@ class TestMain:
                 with patch.object(watchdog, "has_systemd", return_value=False):
                     with patch.object(watchdog, "get_crontab", return_value=""):
                         with patch.object(watchdog, "set_crontab", return_value=True):
-                            result = runner.invoke(watchdog.main, ["install"])
+                            result = runner.invoke(watchdog.watchdog_cli, ["install"])
                             assert result.exit_code == 0
 
     def test_main_uninstall_command(self, runner, mock_audit_log_file):
@@ -637,7 +637,7 @@ class TestMain:
                 with patch.object(watchdog, "has_systemd", return_value=False):
                     with patch.object(watchdog, "get_crontab", return_value=""):
                         with patch.object(watchdog, "set_crontab", return_value=True):
-                            result = runner.invoke(watchdog.main, ["uninstall"])
+                            result = runner.invoke(watchdog.watchdog_cli, ["uninstall"])
                             assert result.exit_code == 0
 
 

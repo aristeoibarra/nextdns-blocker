@@ -31,6 +31,16 @@ class NextDNSBlockerError(Exception):
     pass
 
 
+# =============================================================================
+# EXIT CODES
+# =============================================================================
+
+EXIT_CONFIG_ERROR = 2
+EXIT_API_ERROR = 3
+EXIT_VALIDATION_ERROR = 4
+EXIT_PIN_ERROR = 5
+
+
 class ConfigurationError(NextDNSBlockerError):
     """Raised when configuration is invalid or missing.
 

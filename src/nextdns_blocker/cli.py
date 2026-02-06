@@ -1,7 +1,10 @@
 """Command-line interface for NextDNS Blocker using Click."""
 
+import json as _json
 import logging
+import os
 import re
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -33,7 +36,13 @@ from .config import (
     validate_no_overlap,
 )
 from .config_cli import register_config
-from .exceptions import ConfigurationError, DomainValidationError
+from .exceptions import (
+    EXIT_CONFIG_ERROR,
+    EXIT_PIN_ERROR,
+    EXIT_VALIDATION_ERROR,
+    ConfigurationError,
+    DomainValidationError,
+)
 from .init import run_interactive_wizard, run_non_interactive
 from .nextdns_cli import register_nextdns
 from .notifications import (
@@ -125,7 +134,23 @@ def setup_logging(verbose: bool = False) -> None:
         return
 
     root_logger.setLevel(level)
-    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+
+    if os.environ.get("LOG_FORMAT", "").lower() == "json":
+
+        class _JsonFormatter(logging.Formatter):
+            def format(self, record: logging.LogRecord) -> str:
+                return _json.dumps(
+                    {
+                        "timestamp": self.formatTime(record),
+                        "level": record.levelname,
+                        "logger": record.name,
+                        "message": record.getMessage(),
+                    }
+                )
+
+        formatter: logging.Formatter = _JsonFormatter()
+    else:
+        formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
     # Create secrets redaction filter
     secrets_filter = SecretsRedactionFilter()
@@ -192,7 +217,7 @@ def require_pin_verification(command_name: str) -> bool:
         console.print(
             f"\n  [red]PIN locked out due to failed attempts. Try again in {remaining}[/red]\n"
         )
-        sys.exit(1)
+        sys.exit(EXIT_PIN_ERROR)
 
     # Prompt for PIN
     console.print(f"\n  [yellow]PIN required for '{command_name}'[/yellow]")
@@ -203,7 +228,7 @@ def require_pin_verification(command_name: str) -> bool:
 
     if not pin:
         console.print("\n  [red]PIN verification cancelled[/red]\n")
-        sys.exit(1)
+        sys.exit(EXIT_PIN_ERROR)
 
     if verify_pin(pin):
         return True
@@ -214,19 +239,12 @@ def require_pin_verification(command_name: str) -> bool:
         else:
             attempts_left = PIN_MAX_ATTEMPTS - get_failed_attempts_count()
             console.print(f"\n  [red]Incorrect PIN. {attempts_left} attempts remaining.[/red]\n")
-        sys.exit(1)
+        sys.exit(EXIT_PIN_ERROR)
 
 
 # =============================================================================
 # CONSTANTS
 # =============================================================================
-
-# Port validation constants
-MIN_PORT = 1
-MAX_PORT = 65535
-
-# PyPI API URL for update checking
-PYPI_PACKAGE_URL = "https://pypi.org/pypi/nextdns-blocker/json"
 
 
 # =============================================================================
@@ -240,6 +258,15 @@ PYPI_PACKAGE_URL = "https://pypi.org/pypi/nextdns-blocker/json"
 @click.pass_context
 def main(ctx: click.Context, no_color: bool) -> None:
     """NextDNS Blocker - Domain blocking with per-domain scheduling."""
+
+    def _shutdown_handler(signum: int, frame: Any) -> None:
+        logger.info("Received signal %s, shutting down gracefully", signum)
+        db.close_connection()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown_handler)
+    signal.signal(signal.SIGINT, _shutdown_handler)
+
     if no_color:
         console.no_color = True
 
@@ -373,10 +400,10 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
 
     except ConfigurationError as e:
         console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
+        sys.exit(EXIT_CONFIG_ERROR)
     except DomainValidationError as e:
         console.print(f"\n  [red]Error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
+        sys.exit(EXIT_VALIDATION_ERROR)
 
 
 # =============================================================================
@@ -1342,8 +1369,7 @@ def health(config_dir: Optional[Path]) -> None:
     try:
         db_path = db.get_db_path()
         if db_path.exists():
-            schema_version = db.get_schema_version()
-            console.print(f"  [green][✓][/green] Database initialized (schema v{schema_version})")
+            console.print(f"  [green][✓][/green] Database initialized ({db_path})")
             checks_passed += 1
         else:
             console.print("  [red][✗][/red] Database not initialized")

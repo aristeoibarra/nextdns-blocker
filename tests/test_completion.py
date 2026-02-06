@@ -8,7 +8,6 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from nextdns_blocker.cli import main
 from nextdns_blocker.completion import (
     complete_allowlist_domains,
     complete_blocklist_domains,
@@ -363,47 +362,6 @@ class TestGetCompletionScript:
             get_completion_script("powershell")
 
         assert "Unsupported shell" in str(exc_info.value)
-
-
-class TestCompletionCommand:
-    """Tests for the completion CLI command."""
-
-    def test_completion_bash(self, runner):
-        """Test completion command outputs bash script."""
-        result = runner.invoke(main, ["completion", "bash"])
-
-        assert result.exit_code == 0
-        assert "_NEXTDNS_BLOCKER_COMPLETE=bash_source" in result.output
-
-    def test_completion_zsh(self, runner):
-        """Test completion command outputs zsh script."""
-        result = runner.invoke(main, ["completion", "zsh"])
-
-        assert result.exit_code == 0
-        assert "_NEXTDNS_BLOCKER_COMPLETE=zsh_source" in result.output
-
-    def test_completion_fish(self, runner):
-        """Test completion command outputs fish script."""
-        result = runner.invoke(main, ["completion", "fish"])
-
-        assert result.exit_code == 0
-        assert "_NEXTDNS_BLOCKER_COMPLETE=fish_source" in result.output
-
-    def test_completion_invalid_shell(self, runner):
-        """Test completion command rejects invalid shell."""
-        result = runner.invoke(main, ["completion", "invalid"])
-
-        assert result.exit_code != 0
-        assert "Invalid value" in result.output or "invalid" in result.output.lower()
-
-    def test_completion_help(self, runner):
-        """Test completion command shows help."""
-        result = runner.invoke(main, ["completion", "--help"])
-
-        assert result.exit_code == 0
-        assert "bash" in result.output
-        assert "zsh" in result.output
-        assert "fish" in result.output
 
 
 class TestDetectShell:

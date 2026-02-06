@@ -71,13 +71,14 @@ def test_all_subcommands_available():
 
     expected_commands = [
         "init",
-        "config",  # sync and validate are now under config
+        "config",
         "status",
         "unblock",
-        "allow",
-        "disallow",
         "health",
-        "watchdog",
+        "fix",
+        "nextdns",
+        "protection",
+        "uninstall",
     ]
 
     for cmd in expected_commands:

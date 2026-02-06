@@ -1563,7 +1563,3 @@ def cmd_status() -> None:
 def register_watchdog(main_group: click.Group) -> None:
     """Register watchdog commands as subcommand of main CLI."""
     main_group.add_command(watchdog_cli, name="watchdog")
-
-
-# Alias for backward compatibility with tests
-main = watchdog_cli
