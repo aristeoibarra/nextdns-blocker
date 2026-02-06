@@ -702,36 +702,6 @@ def cmd_push(
     sync_impl(dry_run=dry_run, verbose=verbose, config_dir=config_dir)
 
 
-@config_cli.command("sync")
-@click.option("--dry-run", is_flag=True, help="Show changes without applying")
-@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
-@click.option(
-    "--config-dir",
-    type=click.Path(file_okay=False, path_type=Path),
-    help="Config directory (default: auto-detect)",
-)
-def cmd_sync(
-    dry_run: bool,
-    verbose: bool,
-    config_dir: Optional[Path],
-) -> None:
-    """Synchronize domain blocking with schedules.
-
-    DEPRECATED: Use 'config push' instead. This command will be removed in v8.0.0.
-    """
-    # Import here to avoid circular imports
-    from .cli import sync_impl
-
-    # Show deprecation warning
-    console.print(
-        "\n  [yellow]\u26a0\ufe0f  Warning: 'config sync' is deprecated. "
-        "Use 'config push' instead.[/yellow]"
-    )
-    console.print("  [dim]This command will be removed in v8.0.0.[/dim]\n")
-
-    sync_impl(dry_run=dry_run, verbose=verbose, config_dir=config_dir)
-
-
 @config_cli.command("diff")
 @click.option(
     "--config-dir",
@@ -757,7 +727,6 @@ def cmd_diff(config_dir: Optional[Path], output_json: bool) -> None:
         sys.exit(1)
 
     try:
-
         # Get remote domains
         client = _get_client(config_dir)
         remote_blocklist, remote_allowlist = _get_remote_domains(client)
@@ -891,7 +860,6 @@ def cmd_pull(
 
     config_dir_resolved = get_config_dir_resolved(config_dir)
     try:
-
         # Get remote domains
         client = _get_client(config_dir)
         remote_blocklist, remote_allowlist = _get_remote_domains(client)

@@ -12,7 +12,6 @@ from rich.console import Console
 
 from . import __version__
 from . import database as db
-from .alias_cli import register_alias
 from .client import NextDNSClient
 from .common import (
     audit_log,
@@ -21,12 +20,7 @@ from .common import (
     validate_domain,
 )
 from .completion import (
-    complete_allowlist_domains,
     complete_blocklist_domains,
-    detect_shell,
-    get_completion_script,
-    install_completion,
-    is_completion_installed,
 )
 from .config import (
     _expand_categories,
@@ -1296,100 +1290,6 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
 
 
 @main.command()
-@click.argument("domain")
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Config directory (default: auto-detect)",
-)
-def allow(domain: str, config_dir: Optional[Path]) -> None:
-    """Add DOMAIN to allowlist."""
-    require_pin_verification("allow")
-
-    try:
-        if not validate_domain(domain):
-            console.print(
-                f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False
-            )
-            sys.exit(1)
-
-        config = load_config(config_dir)
-        client = NextDNSClient(
-            config["api_key"], config["profile_id"], config["timeout"], config["retries"]
-        )
-
-        # Warn if domain is in denylist
-        if client.is_blocked(domain):
-            console.print(
-                f"  [yellow]Warning: '{domain}' is currently blocked in denylist[/yellow]"
-            )
-
-        success, was_added = client.allow(domain)
-        if success:
-            if was_added:
-                audit_log("ALLOW", domain)
-                send_notification(EventType.ALLOW, domain, config)
-                console.print(f"\n  [green]Added to allowlist: {domain}[/green]\n")
-            else:
-                console.print(f"\n  [yellow]Already in allowlist: {domain}[/yellow]\n")
-        else:
-            console.print("\n  [red]Error: Failed to add to allowlist[/red]\n", highlight=False)
-            sys.exit(1)
-
-    except ConfigurationError as e:
-        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-    except DomainValidationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-
-
-@main.command()
-@click.argument("domain", shell_complete=complete_allowlist_domains)
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Config directory (default: auto-detect)",
-)
-def disallow(domain: str, config_dir: Optional[Path]) -> None:
-    """Remove DOMAIN from allowlist."""
-    require_pin_verification("disallow")
-
-    try:
-        if not validate_domain(domain):
-            console.print(
-                f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False
-            )
-            sys.exit(1)
-
-        config = load_config(config_dir)
-        client = NextDNSClient(
-            config["api_key"], config["profile_id"], config["timeout"], config["retries"]
-        )
-
-        success, was_removed = client.disallow(domain)
-        if success:
-            if was_removed:
-                audit_log("DISALLOW", domain)
-                send_notification(EventType.DISALLOW, domain, config)
-                console.print(f"\n  [green]Removed from allowlist: {domain}[/green]\n")
-            else:
-                console.print(f"\n  [yellow]Not in allowlist: {domain}[/yellow]\n")
-        else:
-            console.print(
-                "\n  [red]Error: Failed to remove from allowlist[/red]\n", highlight=False
-            )
-            sys.exit(1)
-
-    except ConfigurationError as e:
-        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-    except DomainValidationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-
-
-@main.command()
 @click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -1469,55 +1369,6 @@ def health(config_dir: Optional[Path]) -> None:
         console.print("  Status: [green]HEALTHY[/green]\n")
     else:
         console.print("  Status: [red]DEGRADED[/red]\n")
-        sys.exit(1)
-
-
-@main.command()
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Config directory (default: auto-detect)",
-)
-def test_notifications(config_dir: Optional[Path]) -> None:
-    """Send a test notification to verify notification configuration."""
-    try:
-        config = load_config(config_dir)
-        notifications = config.get("notifications", {})
-
-        if not notifications:
-            console.print(
-                "\n  [red]Error: No notifications configured[/red]",
-                highlight=False,
-            )
-            console.print("      Please add notification configuration.\n", highlight=False)
-            sys.exit(1)
-
-        if not notifications.get("enabled", True):
-            console.print(
-                "\n  [yellow]Warning: Notifications are disabled in config[/yellow]",
-                highlight=False,
-            )
-            sys.exit(1)
-
-        channels = notifications.get("channels", {})
-        enabled_channels = [name for name, cfg in channels.items() if cfg.get("enabled")]
-
-        if not enabled_channels:
-            console.print(
-                "\n  [red]Error: No notification channels enabled[/red]",
-                highlight=False,
-            )
-            console.print("      Enable at least one channel in config\n", highlight=False)
-            sys.exit(1)
-
-        console.print(f"\n  Sending test notification to: {', '.join(enabled_channels)}...")
-
-        send_notification(EventType.TEST, "Test Connection", config)
-
-        console.print("  [green]Notification sent! Check your configured channels.[/green]\n")
-
-    except ConfigurationError as e:
-        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
         sys.exit(1)
 
 
@@ -1731,165 +1582,7 @@ def fix() -> None:
         console.print(f"        Sync: [red]FAILED - {e}[/red]")
 
     # Step 5: Shell completion
-    console.print("  [bold][5/5] Checking shell completion...[/bold]")
-    shell = detect_shell()
-    if shell and not is_windows():
-        if is_completion_installed(shell):
-            console.print("        Completion: [green]OK[/green]")
-        else:
-            success, msg = install_completion(shell)
-            if success:
-                console.print("        Completion: [green]INSTALLED[/green]")
-                console.print(f"        {msg}")
-            else:
-                console.print("        Completion: [yellow]SKIPPED[/yellow]")
-                console.print(f"        {msg}")
-    else:
-        console.print("        Completion: [dim]N/A (Windows or unsupported shell)[/dim]")
-
     console.print("\n  [green]Fix complete![/green]\n")
-
-
-@main.command()
-@click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
-def update(yes: bool) -> None:
-    """Check for updates and upgrade to the latest version.
-
-    Automatically detects installation method (Homebrew, pipx, or pip)
-    and uses the appropriate upgrade command.
-    """
-    import json
-    import ssl
-    import subprocess
-    import urllib.error
-    import urllib.request
-
-    console.print("\n  Checking for updates...")
-
-    current_version = __version__
-
-    # Fetch latest version from PyPI
-    try:
-        with urllib.request.urlopen(PYPI_PACKAGE_URL, timeout=10) as response:  # nosec B310
-            data = json.loads(response.read().decode())
-            # Safely access nested keys
-            info = data.get("info")
-            if not isinstance(info, dict):
-                console.print("  [red]Error: Invalid PyPI response format[/red]\n", highlight=False)
-                sys.exit(1)
-            latest_version = info.get("version")
-            if not isinstance(latest_version, str):
-                console.print(
-                    "  [red]Error: Missing version in PyPI response[/red]\n", highlight=False
-                )
-                sys.exit(1)
-    except ssl.SSLError as e:
-        # SSLError is the base class and includes SSLCertVerificationError
-        console.print(f"  [red]SSL error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-    except urllib.error.URLError as e:
-        console.print(f"  [red]Network error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-    except (json.JSONDecodeError, ValueError) as e:
-        console.print(f"  [red]Error parsing PyPI response: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-    except OSError as e:
-        console.print(f"  [red]Error checking PyPI: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-
-    console.print(f"  Current version: {current_version}")
-    console.print(f"  Latest version:  {latest_version}")
-
-    # Compare versions
-    if current_version == latest_version:
-        console.print("\n  [green]You are already on the latest version.[/green]\n")
-        return
-
-    # Parse versions for comparison (handles semver with suffixes like "1.0.0rc1")
-    def parse_version(v: str) -> tuple[int, ...]:
-        # Extract only the numeric parts (e.g., "1.0.0rc1" -> "1.0.0")
-        # This regex captures digits separated by dots, ignoring suffixes
-        numeric_match = re.match(r"^(\d+(?:\.\d+)*)", v)
-        if not numeric_match:
-            raise ValueError(f"Cannot parse version: {v}")
-        numeric_part = numeric_match.group(1)
-        return tuple(int(x) for x in numeric_part.split("."))
-
-    try:
-        current_tuple = parse_version(current_version)
-        latest_tuple = parse_version(latest_version)
-    except ValueError:
-        # If parsing fails, assume update is available to be safe
-        current_tuple = (0,)
-        latest_tuple = (1,)
-
-    if current_tuple >= latest_tuple:
-        console.print("\n  [green]You are already on the latest version.[/green]\n")
-        return
-
-    console.print(f"\n  [yellow]A new version is available: {latest_version}[/yellow]")
-
-    # Ask for confirmation unless --yes flag is provided
-    if not yes:
-        if not click.confirm("  Do you want to update?"):
-            console.print("  Update cancelled.\n")
-            return
-
-    # Detect installation method (cross-platform)
-    exe_path = get_executable_path()
-
-    # Check for Homebrew installation (macOS/Linux)
-    is_homebrew_install = "/homebrew/" in exe_path.lower() or "/cellar/" in exe_path.lower()
-
-    # Check multiple indicators for pipx installation
-    pipx_venv_unix = Path.home() / ".local" / "pipx" / "venvs" / "nextdns-blocker"
-    pipx_venv_win = Path.home() / "pipx" / "venvs" / "nextdns-blocker"
-    is_pipx_install = (
-        pipx_venv_unix.exists() or pipx_venv_win.exists() or "pipx" in exe_path.lower()
-    )
-
-    # Perform the update
-    console.print("\n  Updating...")
-    try:
-        if is_homebrew_install:
-            console.print("  (detected Homebrew installation)")
-            result = subprocess.run(
-                ["brew", "upgrade", "nextdns-blocker"],
-                capture_output=True,
-                text=True,
-            )
-        elif is_pipx_install:
-            console.print("  (detected pipx installation)")
-            result = subprocess.run(
-                ["pipx", "upgrade", "nextdns-blocker"],
-                capture_output=True,
-                text=True,
-            )
-        else:
-            console.print("  (detected pip installation)")
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", "nextdns-blocker"],
-                capture_output=True,
-                text=True,
-            )
-        if result.returncode == 0:
-            console.print(f"  [green]Successfully updated to version {latest_version}[/green]")
-
-            # Check/install shell completion after update
-            shell = detect_shell()
-            if shell and not is_windows():
-                if not is_completion_installed(shell):
-                    success, msg = install_completion(shell)
-                    if success:
-                        console.print(f"  Shell completion installed: {msg}")
-
-            console.print("  Please restart the application to use the new version.\n")
-        else:
-            console.print(f"  [red]Update failed: {result.stderr}[/red]\n", highlight=False)
-            sys.exit(1)
-    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
-        console.print(f"  [red]Update failed: {e}[/red]\n", highlight=False)
-        sys.exit(1)
 
 
 def validate_impl(output_json: bool, config_dir: Optional[Path]) -> None:
@@ -2073,45 +1766,11 @@ def validate_impl(output_json: bool, config_dir: Optional[Path]) -> None:
 
 
 # =============================================================================
-# SHELL COMPLETION
-# =============================================================================
-
-
-@main.command()
-@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
-def completion(shell: str) -> None:
-    """Generate shell completion script.
-
-    Output the completion script for your shell. To enable completions,
-    add the appropriate line to your shell configuration file.
-
-    Examples:
-
-    \b
-    # Bash - add to ~/.bashrc
-    eval "$(nextdns-blocker completion bash)"
-
-    \b
-    # Zsh - add to ~/.zshrc
-    eval "$(nextdns-blocker completion zsh)"
-
-    \b
-    # Fish - save to completions directory
-    nextdns-blocker completion fish > ~/.config/fish/completions/nextdns-blocker.fish
-    """
-    script = get_completion_script(shell)
-    click.echo(script)
-
-
-# =============================================================================
 # REGISTER COMMAND GROUPS
 # =============================================================================
 
 # Register config command group
 register_config(main)
-
-# Register alias command group
-register_alias(main)
 
 # Register nextdns command group
 register_nextdns(main)
