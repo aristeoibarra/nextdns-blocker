@@ -1341,6 +1341,19 @@ def health(config_dir: Optional[Path]) -> None:
     else:
         console.print("  [red][✗][/red] API connectivity failed")
 
+    # Check database
+    checks_total += 1
+    try:
+        db_path = db.get_db_path()
+        if db_path.exists():
+            schema_version = db.get_schema_version()
+            console.print(f"  [green][✓][/green] Database initialized (schema v{schema_version})")
+            checks_passed += 1
+        else:
+            console.print("  [red][✗][/red] Database not initialized")
+    except Exception as e:
+        console.print(f"  [red][✗][/red] Database error: {e}")
+
     # Check log directory
     checks_total += 1
     try:
