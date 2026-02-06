@@ -1,0 +1,7 @@
+WRN 2026-01-30T17:37:14.751 ?.1207     server_start:193: Failed to start server: operation not permitted: /var/folders/34/4ft85mqj4796bwvx05vbj5g00000gn/T/nvim.aristeoibarra/AJHh0U/nvim.1207.0
+WRN 2026-01-30T18:08:10.988 ?.60061    server_start:193: Failed to start server: operation not permitted: /var/folders/34/4ft85mqj4796bwvx05vbj5g00000gn/T/nvim.aristeoibarra/44Vf4D/nvim.60061.0
+WRN 2026-01-30T18:08:48.322 ?.61996    server_start:193: Failed to start server: operation not permitted: /var/folders/34/4ft85mqj4796bwvx05vbj5g00000gn/T/nvim.aristeoibarra/G59gPn/nvim.61996.0
+WRN 2026-01-30T18:10:10.673 ?.65406    server_start:193: Failed to start server: operation not permitted: /var/folders/34/4ft85mqj4796bwvx05vbj5g00000gn/T/nvim.aristeoibarra/fOe5tF/nvim.65406.0
+WRN 2026-01-30T18:19:25.662 ?.80658    server_start:193: Failed to start server: operation not permitted: /var/folders/34/4ft85mqj4796bwvx05vbj5g00000gn/T/nvim.aristeoibarra/BGkuYz/nvim.80658.0
+WRN 2026-01-30T19:24:21.381 ?.94310    server_start:193: Failed to start server: operation not permitted: /var/folders/34/4ft85mqj4796bwvx05vbj5g00000gn/T/nvim.aristeoibarra/1me7iE/nvim.94310.0
+WRN 2026-01-30T19:26:18.107 ?.96749    server_start:193: Failed to start server: operation not permitted: /var/folders/34/4ft85mqj4796bwvx05vbj5g00000gn/T/nvim.aristeoibarra/uBo5rl/nvim.96749.0

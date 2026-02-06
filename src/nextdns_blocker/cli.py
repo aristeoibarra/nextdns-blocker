@@ -402,6 +402,10 @@ def _sync_denylist(
     """
     Synchronize denylist domains based on schedules.
 
+    SQLite is the single source of truth. This function:
+    1. Syncs local domains to remote (add/remove based on schedule)
+    2. Removes any remote domains not in local config
+
     Args:
         domains: List of domain configurations
         client: NextDNS API client
@@ -417,6 +421,10 @@ def _sync_denylist(
     blocked_count = 0
     unblocked_count = 0
 
+    # Build set of local domains for fast lookup
+    local_domains = {d["domain"] for d in domains}
+
+    # Sync local domains to remote
     for domain_config in domains:
         domain = domain_config["domain"]
         should_block = evaluator.should_block_domain(domain_config)
@@ -439,6 +447,22 @@ def _sync_denylist(
                 domain, domain_config, domains, client, config, dry_run, verbose, nm
             )
             if unblocked:
+                unblocked_count += 1
+
+    # Remove remote domains not in local config (SQLite is source of truth)
+    remote_denylist = client.get_denylist() or []
+    for remote_entry in remote_denylist:
+        remote_domain = remote_entry.get("id", "")
+        if not remote_domain or remote_domain in local_domains:
+            continue
+        if dry_run:
+            console.print(f"  [red]Would REMOVE from remote: {remote_domain}[/red]")
+        else:
+            success, was_removed = client.unblock(remote_domain)
+            if success and was_removed:
+                audit_log("SYNC_CLEANUP", f"{remote_domain} reason=not_in_local")
+                if verbose:
+                    console.print(f"  [red]Removed from remote: {remote_domain}[/red]")
                 unblocked_count += 1
 
     return blocked_count, unblocked_count
@@ -527,6 +551,10 @@ def _sync_allowlist(
     """
     Synchronize allowlist domains based on schedules.
 
+    SQLite is the single source of truth. This function:
+    1. Syncs local allowlist to remote (add/remove based on schedule)
+    2. Removes any remote allowlist entries not in local config
+
     Args:
         allowlist: List of allowlist configurations
         client: NextDNS API client
@@ -542,6 +570,10 @@ def _sync_allowlist(
     allowed_count = 0
     disallowed_count = 0
 
+    # Build set of local allowlist domains for fast lookup
+    local_allowed_domains = {d["domain"] for d in allowlist}
+
+    # Sync local allowlist to remote
     for allowlist_config in allowlist:
         domain = allowlist_config["domain"]
         should_allow = evaluator.should_allow_domain(allowlist_config)
@@ -569,6 +601,22 @@ def _sync_allowlist(
                     nm.queue(EventType.DISALLOW, domain)
                     disallowed_count += 1
 
+    # Remove remote allowlist entries not in local config (SQLite is source of truth)
+    remote_allowlist = client.get_allowlist() or []
+    for remote_entry in remote_allowlist:
+        remote_domain = remote_entry.get("id", "")
+        if not remote_domain or remote_domain in local_allowed_domains:
+            continue
+        if dry_run:
+            console.print(f"  [red]Would REMOVE from remote allowlist: {remote_domain}[/red]")
+        else:
+            success, was_removed = client.disallow(remote_domain)
+            if success and was_removed:
+                audit_log("SYNC_CLEANUP", f"{remote_domain} reason=not_in_local type=allowlist")
+                if verbose:
+                    console.print(f"  [red]Removed from remote allowlist: {remote_domain}[/red]")
+                disallowed_count += 1
+
     return allowed_count, disallowed_count
 
 
@@ -583,6 +631,10 @@ def _sync_nextdns_categories(
 ) -> tuple[int, int]:
     """
     Synchronize NextDNS Parental Control categories based on schedules.
+
+    SQLite is the single source of truth. This function:
+    1. Syncs local categories to remote (activate/deactivate based on schedule)
+    2. Deactivates any remote active categories not in local config
 
     When schedule says "available" (should_block=False) → deactivate category
     When schedule says "blocked" (should_block=True) → activate category
@@ -602,6 +654,10 @@ def _sync_nextdns_categories(
     activated_count = 0
     deactivated_count = 0
 
+    # Build set of local category IDs for fast lookup
+    local_category_ids = {c["id"] for c in categories}
+
+    # Sync local categories to remote
     for category_config in categories:
         category_id = category_config["id"]
         should_block = evaluator.should_block(category_config.get("schedule"))
@@ -633,6 +689,22 @@ def _sync_nextdns_categories(
                     nm.queue(EventType.PC_DEACTIVATE, f"category:{category_id}")
                     deactivated_count += 1
 
+    # Deactivate remote active categories not in local config (SQLite is source of truth)
+    remote_categories = client.get_parental_control_categories() or []
+    for remote_cat in remote_categories:
+        category_id = remote_cat.get("id", "")
+        is_active = remote_cat.get("active", False)
+        if not category_id or category_id in local_category_ids or not is_active:
+            continue
+        if dry_run:
+            console.print(f"  [red]Would DEACTIVATE remote category: {category_id}[/red]")
+        else:
+            if client.deactivate_category(category_id):
+                audit_log("SYNC_CLEANUP", f"category:{category_id} reason=not_in_local")
+                if verbose:
+                    console.print(f"  [red]Deactivated remote category: {category_id}[/red]")
+                deactivated_count += 1
+
     return activated_count, deactivated_count
 
 
@@ -647,6 +719,10 @@ def _sync_nextdns_services(
 ) -> tuple[int, int]:
     """
     Synchronize NextDNS Parental Control services based on schedules.
+
+    SQLite is the single source of truth. This function:
+    1. Syncs local services to remote (activate/deactivate based on schedule)
+    2. Deactivates any remote active services not in local config
 
     When schedule says "available" (should_block=False) → deactivate service
     When schedule says "blocked" (should_block=True) → activate service
@@ -666,6 +742,10 @@ def _sync_nextdns_services(
     activated_count = 0
     deactivated_count = 0
 
+    # Build set of local service IDs for fast lookup
+    local_service_ids = {s["id"] for s in services}
+
+    # Sync local services to remote
     for service_config in services:
         service_id = service_config["id"]
         should_block = evaluator.should_block(service_config.get("schedule"))
@@ -696,6 +776,22 @@ def _sync_nextdns_services(
                     audit_log("PC_DEACTIVATE", f"service:{service_id}")
                     nm.queue(EventType.PC_DEACTIVATE, f"service:{service_id}")
                     deactivated_count += 1
+
+    # Deactivate remote active services not in local config (SQLite is source of truth)
+    remote_services = client.get_parental_control_services() or []
+    for remote_svc in remote_services:
+        service_id = remote_svc.get("id", "")
+        is_active = remote_svc.get("active", False)
+        if not service_id or service_id in local_service_ids or not is_active:
+            continue
+        if dry_run:
+            console.print(f"  [red]Would DEACTIVATE remote service: {service_id}[/red]")
+        else:
+            if client.deactivate_service(service_id):
+                audit_log("SYNC_CLEANUP", f"service:{service_id} reason=not_in_local")
+                if verbose:
+                    console.print(f"  [red]Deactivated remote service: {service_id}[/red]")
+                deactivated_count += 1
 
     return activated_count, deactivated_count
 
