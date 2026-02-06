@@ -599,274 +599,62 @@ class TestValidateApiCredentialsEdgeCases:
         assert "API error: 500" in msg
 
 
-class TestInstallLaunchd:
-    """Tests for _install_launchd function."""
-
-    def test_install_launchd_success(self, tmp_path):
-        """Should successfully install launchd jobs on macOS."""
-        from nextdns_blocker.init import _install_launchd
-
-        launch_agents = tmp_path / "Library" / "LaunchAgents"
-        log_dir = tmp_path / "logs"
-
-        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-            with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
-                with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
-                    with patch("subprocess.run") as mock_run:
-                        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-                        success, result = _install_launchd()
-
-        assert success is True
-        assert result == "launchd"
-        assert launch_agents.exists()
-
-    def test_install_launchd_uses_python_module(self, tmp_path):
-        """Should use python module when exe not found."""
-        from nextdns_blocker.init import _install_launchd
-
-        log_dir = tmp_path / "logs"
-
-        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-            with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
-                with patch("shutil.which", return_value=None):
-                    with patch("subprocess.run") as mock_run:
-                        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-                        success, result = _install_launchd()
-
-        assert success is True
-
-    def test_install_launchd_load_failure(self, tmp_path):
-        """Should return failure when launchctl load fails."""
-        from nextdns_blocker.init import _install_launchd
-
-        log_dir = tmp_path / "logs"
-
-        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-            with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
-                with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
-                    with patch("subprocess.run") as mock_run:
-                        # First two calls (unload) succeed, third (load sync) fails
-                        mock_run.side_effect = [
-                            MagicMock(returncode=0),  # unload sync
-                            MagicMock(returncode=0),  # unload watchdog
-                            MagicMock(returncode=1, stdout="", stderr="error"),  # load sync
-                            MagicMock(returncode=0),  # load watchdog
-                        ]
-                        success, result = _install_launchd()
-
-        assert success is False
-        assert "Failed" in result
-
-    def test_install_launchd_exception(self, tmp_path):
-        """Should handle exceptions during launchd installation."""
-        from nextdns_blocker.init import _install_launchd
-
-        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-            with patch("nextdns_blocker.init.get_log_dir", side_effect=OSError("test error")):
-                success, result = _install_launchd()
-
-        assert success is False
-        assert "launchd error" in result
-
-    def test_install_launchd_uses_pipx_fallback(self, tmp_path):
-        """Should use pipx executable when shutil.which fails but pipx exe exists."""
-        import plistlib
-
-        from nextdns_blocker.init import _install_launchd
-
-        launch_agents = tmp_path / "Library" / "LaunchAgents"
-        log_dir = tmp_path / "logs"
-
-        # Create pipx executable location
-        pipx_bin = tmp_path / ".local" / "bin"
-        pipx_bin.mkdir(parents=True)
-        pipx_exe = pipx_bin / "nextdns-blocker"
-        pipx_exe.touch()
-
-        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-            with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
-                with patch("shutil.which", return_value=None):  # Simulate exe not in PATH
-                    with patch("nextdns_blocker.platform_utils.is_windows", return_value=False):
-                        with patch("subprocess.run") as mock_run:
-                            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-                            success, result = _install_launchd()
-
-        assert success is True
-        assert result == "launchd"
-
-        # Verify plist uses pipx executable path
-        sync_plist_path = launch_agents / "com.nextdns-blocker.sync.plist"
-        assert sync_plist_path.exists()
-        plist_content = plistlib.loads(sync_plist_path.read_bytes())
-        assert plist_content["ProgramArguments"][0] == str(pipx_exe)
-
-    def test_install_launchd_includes_local_bin_in_path(self, tmp_path):
-        """Should include ~/.local/bin in PATH environment variable."""
-        import plistlib
-
-        from nextdns_blocker.init import _install_launchd
-
-        launch_agents = tmp_path / "Library" / "LaunchAgents"
-        log_dir = tmp_path / "logs"
-
-        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-            with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
-                with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
-                    with patch("subprocess.run") as mock_run:
-                        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-                        success, result = _install_launchd()
-
-        assert success is True
-
-        # Verify PATH includes ~/.local/bin
-        sync_plist_path = launch_agents / "com.nextdns-blocker.sync.plist"
-        plist_content = plistlib.loads(sync_plist_path.read_bytes())
-        path_env = plist_content["EnvironmentVariables"]["PATH"]
-        assert "/.local/bin" in path_env
-
-        # Verify watchdog plist too
-        watchdog_plist_path = launch_agents / "com.nextdns-blocker.watchdog.plist"
-        watchdog_content = plistlib.loads(watchdog_plist_path.read_bytes())
-        watchdog_path = watchdog_content["EnvironmentVariables"]["PATH"]
-        assert "/.local/bin" in watchdog_path
-
-
-class TestInstallCron:
-    """Tests for _install_cron function."""
-
-    def test_install_cron_success(self, tmp_path):
-        """Should successfully install cron jobs."""
-        from nextdns_blocker.init import _install_cron
-
-        log_dir = tmp_path / "logs"
-
-        with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
-            with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
-                with patch("subprocess.run") as mock_run:
-                    mock_run.side_effect = [
-                        MagicMock(returncode=0, stdout=""),  # crontab -l
-                        MagicMock(returncode=0),  # crontab -
-                    ]
-                    success, result = _install_cron()
-
-        assert success is True
-        assert result == "cron"
-
-    def test_install_cron_no_existing_crontab(self, tmp_path):
-        """Should handle empty crontab."""
-        from nextdns_blocker.init import _install_cron
-
-        log_dir = tmp_path / "logs"
-
-        with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
-            with patch("shutil.which", return_value=None):
-                with patch("subprocess.run") as mock_run:
-                    mock_run.side_effect = [
-                        MagicMock(returncode=1, stdout=""),  # no crontab
-                        MagicMock(returncode=0),  # set crontab
-                    ]
-                    success, result = _install_cron()
-
-        assert success is True
-
-    def test_install_cron_replaces_existing(self, tmp_path):
-        """Should replace existing nextdns-blocker cron entries."""
-        from nextdns_blocker.init import _install_cron
-
-        log_dir = tmp_path / "logs"
-        existing_crontab = "*/5 * * * * nextdns-blocker sync\n0 * * * * other-task"
-
-        with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
-            with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
-                with patch("subprocess.run") as mock_run:
-                    mock_run.side_effect = [
-                        MagicMock(returncode=0, stdout=existing_crontab),
-                        MagicMock(returncode=0),
-                    ]
-                    success, result = _install_cron()
-
-        assert success is True
-        # Verify the new crontab was set
-        set_call = mock_run.call_args_list[1]
-        new_crontab = set_call[1]["input"]
-        assert "nextdns-blocker sync" in new_crontab
-        assert "nextdns-blocker watchdog" in new_crontab
-
-    def test_install_cron_failure(self, tmp_path):
-        """Should return failure when crontab fails."""
-        from nextdns_blocker.init import _install_cron
-
-        log_dir = tmp_path / "logs"
-
-        with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
-            with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
-                with patch("subprocess.run") as mock_run:
-                    mock_run.side_effect = [
-                        MagicMock(returncode=0, stdout=""),
-                        MagicMock(returncode=1),  # crontab set fails
-                    ]
-                    success, result = _install_cron()
-
-        assert success is False
-        assert "Failed" in result
-
-    def test_install_cron_exception(self, tmp_path):
-        """Should handle exceptions during cron installation."""
-        from nextdns_blocker.init import _install_cron
-
-        with patch("nextdns_blocker.init.get_log_dir", side_effect=OSError("test error")):
-            success, result = _install_cron()
-
-        assert success is False
-        assert "cron error" in result
-
-
 class TestInstallScheduling:
-    """Tests for install_scheduling function."""
+    """Tests for install_scheduling delegation to watchdog."""
 
     def test_install_scheduling_macos(self):
-        """Should use launchd on macOS."""
+        """Should delegate to watchdog's _install_launchd_jobs on macOS."""
         from nextdns_blocker.init import install_scheduling
 
         with patch("nextdns_blocker.init.is_macos", return_value=True):
-            with patch("nextdns_blocker.init._install_launchd") as mock_launchd:
-                mock_launchd.return_value = (True, "launchd")
+            with patch("nextdns_blocker.watchdog._install_launchd_jobs") as mock_install:
                 success, result = install_scheduling()
 
         assert success is True
         assert result == "launchd"
-        mock_launchd.assert_called_once()
+        mock_install.assert_called_once()
 
-    def test_install_scheduling_linux(self):
-        """Should use systemd on Linux when available, cron as fallback."""
+    def test_install_scheduling_linux_systemd(self):
+        """Should delegate to watchdog's _install_systemd_timers on Linux with systemd."""
         from nextdns_blocker.init import install_scheduling
 
-        # Test with systemd available
         with patch("nextdns_blocker.init.is_macos", return_value=False):
             with patch("nextdns_blocker.init.is_windows", return_value=False):
                 with patch("nextdns_blocker.init.has_systemd", return_value=True):
-                    with patch("nextdns_blocker.init._install_systemd") as mock_systemd:
-                        mock_systemd.return_value = (True, "systemd")
+                    with patch("nextdns_blocker.watchdog._install_systemd_timers") as mock_install:
                         success, result = install_scheduling()
 
         assert success is True
         assert result == "systemd"
-        mock_systemd.assert_called_once()
+        mock_install.assert_called_once()
 
     def test_install_scheduling_linux_cron_fallback(self):
-        """Should use cron on Linux when systemd not available."""
+        """Should delegate to watchdog's _install_cron_jobs on Linux without systemd."""
         from nextdns_blocker.init import install_scheduling
 
         with patch("nextdns_blocker.init.is_macos", return_value=False):
             with patch("nextdns_blocker.init.is_windows", return_value=False):
                 with patch("nextdns_blocker.init.has_systemd", return_value=False):
-                    with patch("nextdns_blocker.init._install_cron") as mock_cron:
-                        mock_cron.return_value = (True, "cron")
+                    with patch("nextdns_blocker.watchdog._install_cron_jobs") as mock_install:
                         success, result = install_scheduling()
 
         assert success is True
         assert result == "cron"
-        mock_cron.assert_called_once()
+        mock_install.assert_called_once()
+
+    def test_install_scheduling_failure(self):
+        """Should return failure when watchdog installer raises."""
+        from nextdns_blocker.init import install_scheduling
+
+        with patch("nextdns_blocker.init.is_macos", return_value=True):
+            with patch(
+                "nextdns_blocker.watchdog._install_launchd_jobs",
+                side_effect=SystemExit(1),
+            ):
+                success, result = install_scheduling()
+
+        assert success is False
+        assert "failed" in result
 
 
 class TestCreateEnvFileEdgeCases:

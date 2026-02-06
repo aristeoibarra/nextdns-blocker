@@ -549,7 +549,7 @@ def _install_launchd_jobs() -> None:
     sync_plist = get_sync_plist_path()
     sync_content = generate_plist(
         label=LAUNCHD_SYNC_LABEL,
-        program_args=exe_args + ["config", "sync"],
+        program_args=exe_args + ["config", "push"],
         start_interval=120,  # 2 minutes
         log_file=log_dir / "launchd_sync.log",
     )
@@ -704,7 +704,7 @@ def _create_sync_plist() -> bool:
     sync_plist.parent.mkdir(parents=True, exist_ok=True)
     sync_content = generate_plist(
         label=LAUNCHD_SYNC_LABEL,
-        program_args=exe_args + ["config", "sync"],
+        program_args=exe_args + ["config", "push"],
         start_interval=120,
         log_file=log_dir / "launchd_sync.log",
     )
@@ -733,7 +733,7 @@ def _run_sync_after_restore() -> None:
     try:
         exe_args = get_executable_args()
         result = subprocess.run(
-            exe_args + ["config", "sync"],
+            exe_args + ["config", "push"],
             timeout=SUBPROCESS_TIMEOUT,
             capture_output=True,
             text=True,
@@ -1557,66 +1557,6 @@ def cmd_status() -> None:
         _status_systemd_timers()
     else:
         _status_cron_jobs()
-
-
-@watchdog_cli.command("retry-status")
-def cmd_retry_status() -> None:
-    """Display retry queue status."""
-    from .retry_queue import get_queue_items, get_queue_stats
-
-    stats = get_queue_stats()
-    items = get_queue_items()
-
-    click.echo("\n  Retry Queue Status")
-    click.echo("  " + "-" * 40)
-    click.echo(f"  Total items:    {stats['total']}")
-    click.echo(f"  Ready to retry: {stats['ready']}")
-    click.echo(f"  Pending:        {stats['pending']}")
-    click.echo(f"  Total attempts: {stats['total_attempts']}")
-
-    if stats["by_action"]:
-        click.echo("\n  By Action:")
-        for action, count in stats["by_action"].items():
-            click.echo(f"    {action}: {count}")
-
-    if stats["by_error"]:
-        click.echo("\n  By Error Type:")
-        for error, count in stats["by_error"].items():
-            click.echo(f"    {error}: {count}")
-
-    if items:
-        click.echo("\n  Queue Items:")
-        for item in items:
-            ready_str = "[READY]" if item.is_ready() else f"[next: {item.next_retry_at[:16]}]"
-            click.echo(
-                f"    {item.action} {item.domain} (attempts: {item.attempt_count}, {ready_str})"
-            )
-    click.echo()
-
-
-@watchdog_cli.command("disable")
-@click.argument("minutes", required=False, type=click.IntRange(min=1))
-def cmd_disable(minutes: Optional[int]) -> None:
-    """Disable watchdog temporarily or permanently."""
-    set_disabled(minutes)
-
-    if minutes:
-        disabled_until = datetime.now().replace(microsecond=0) + timedelta(minutes=minutes)
-        click.echo(f"\n  Watchdog disabled for {minutes} minutes")
-        click.echo(f"  Re-enables at: {disabled_until.strftime('%H:%M')}")
-    else:
-        click.echo("\n  Watchdog disabled permanently")
-        click.echo("  Use 'enable' to re-enable")
-    click.echo()
-
-
-@watchdog_cli.command("enable")
-def cmd_enable() -> None:
-    """Re-enable watchdog."""
-    if clear_disabled():
-        click.echo("\n  Watchdog enabled\n")
-    else:
-        click.echo("\n  Watchdog is already enabled\n")
 
 
 # Make watchdog available as subcommand of main CLI

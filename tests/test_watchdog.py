@@ -344,54 +344,6 @@ class TestCmdStatus:
                         assert "DISABLED" in result.output
 
 
-class TestCmdDisable:
-    """Tests for cmd_disable function using CliRunner."""
-
-    @pytest.fixture
-    def runner(self):
-        """Create Click CLI test runner."""
-        from click.testing import CliRunner
-
-        return CliRunner()
-
-    def test_cmd_disable_temporary(self, runner, mock_disabled_file, mock_audit_log_file):
-        """Should disable for specified minutes."""
-        result = runner.invoke(watchdog.cmd_disable, ["30"])
-        assert result.exit_code == 0
-        assert "30 minutes" in result.output
-
-    def test_cmd_disable_permanent(self, runner, mock_disabled_file, mock_audit_log_file):
-        """Should disable permanently."""
-        # No argument means permanent disable
-        result = runner.invoke(watchdog.cmd_disable, [])
-        assert result.exit_code == 0
-        assert "permanently" in result.output
-
-
-class TestCmdEnable:
-    """Tests for cmd_enable function using CliRunner."""
-
-    @pytest.fixture
-    def runner(self):
-        """Create Click CLI test runner."""
-        from click.testing import CliRunner
-
-        return CliRunner()
-
-    def test_cmd_enable_when_disabled(self, runner, mock_disabled_file, mock_audit_log_file):
-        """Should enable when currently disabled."""
-        mock_disabled_file.write_text("permanent")
-        result = runner.invoke(watchdog.cmd_enable)
-        assert result.exit_code == 0
-        assert "enabled" in result.output
-
-    def test_cmd_enable_when_already_enabled(self, runner, mock_disabled_file):
-        """Should indicate already enabled."""
-        result = runner.invoke(watchdog.cmd_enable)
-        assert result.exit_code == 0
-        assert "already enabled" in result.output
-
-
 class TestWriteSecureFile:
     """Tests for write_secure_file function."""
 
@@ -687,36 +639,6 @@ class TestMain:
                         with patch.object(watchdog, "set_crontab", return_value=True):
                             result = runner.invoke(watchdog.main, ["uninstall"])
                             assert result.exit_code == 0
-
-    def test_main_disable_command(self, runner, mock_disabled_file, mock_audit_log_file):
-        """Should run disable command."""
-        result = runner.invoke(watchdog.main, ["disable", "30"])
-        assert result.exit_code == 0
-
-    def test_main_disable_permanent(self, runner, mock_disabled_file, mock_audit_log_file):
-        """Should run disable command without minutes (permanent)."""
-        result = runner.invoke(watchdog.main, ["disable"])
-        assert result.exit_code == 0
-
-    def test_main_enable_command(self, runner, mock_disabled_file, mock_audit_log_file):
-        """Should run enable command."""
-        mock_disabled_file.write_text("permanent")
-        result = runner.invoke(watchdog.main, ["enable"])
-        assert result.exit_code == 0
-
-    def test_main_disable_invalid_minutes(self, runner):
-        """Should error on invalid disable minutes."""
-        result = runner.invoke(watchdog.main, ["disable", "abc"])
-        assert result.exit_code != 0
-        # Click shows its own error message for invalid arguments
-        assert "Invalid value" in result.output or "not a valid" in result.output.lower()
-
-    def test_main_disable_negative_minutes(self, runner):
-        """Should error on negative disable minutes."""
-        result = runner.invoke(watchdog.main, ["disable", "-5"])
-        assert result.exit_code != 0
-        # Click interprets -5 as an option flag, so it shows "No such option" error
-        assert "No such option" in result.output or "Invalid" in result.output
 
 
 # =============================================================================
@@ -1207,7 +1129,7 @@ class TestCreateSyncPlist:
 
         parsed = plistlib.loads(sync_plist.read_bytes())
         assert parsed["Label"] == watchdog.LAUNCHD_SYNC_LABEL
-        assert parsed["ProgramArguments"] == ["/usr/bin/test", "config", "sync"]
+        assert parsed["ProgramArguments"] == ["/usr/bin/test", "config", "push"]
         assert parsed["StartInterval"] == 120
 
     def test_create_sync_plist_failure(self, temp_log_dir):
