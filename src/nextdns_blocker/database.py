@@ -7,9 +7,11 @@ and efficient querying capabilities.
 Database location: ~/.local/share/nextdns-blocker/nextdns-blocker.db
 """
 
+import atexit
 import contextlib
 import json
 import logging
+import os
 import sqlite3
 import threading
 from collections.abc import Iterator
@@ -219,7 +221,7 @@ def get_connection() -> sqlite3.Connection:
         db_path = get_db_path()
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row  # Enable dict-like row access
 
         # Enable WAL mode for better concurrency
@@ -230,7 +232,15 @@ def get_connection() -> sqlite3.Connection:
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
 
+        # Set secure file permissions (owner read/write only) on Unix
+        if os.name != "nt":
+            with contextlib.suppress(OSError):
+                os.chmod(str(db_path), 0o600)
+
         _local.connection = conn
+        with _all_connections_lock:
+            _all_connections.append(conn)
+        _register_cleanup()
 
     return _local.connection  # type: ignore[no-any-return]
 
@@ -240,6 +250,32 @@ def close_connection() -> None:
     if hasattr(_local, "connection") and _local.connection is not None:
         _local.connection.close()
         _local.connection = None
+
+
+_cleanup_registered = False
+
+
+def _register_cleanup() -> None:
+    """Register atexit handler for closing all database connections (once)."""
+    global _cleanup_registered
+    if not _cleanup_registered:
+        atexit.register(close_all_connections)
+        _cleanup_registered = True
+
+
+# Track all connections for cleanup
+_all_connections: list[sqlite3.Connection] = []
+_all_connections_lock = threading.Lock()
+
+
+def close_all_connections() -> None:
+    """Close all database connections. Called at process exit."""
+    close_connection()
+    with _all_connections_lock:
+        for conn in _all_connections:
+            with contextlib.suppress(Exception):
+                conn.close()
+        _all_connections.clear()
 
 
 @contextlib.contextmanager
@@ -303,9 +339,9 @@ def get_config(key: str, default: Any = None) -> Any:
         return row["value"]
 
 
-def set_config(key: str, value: Any) -> None:
+def set_config(key: str, value: Any, _conn: Optional[sqlite3.Connection] = None) -> None:
     """Set a configuration value."""
-    conn = get_connection()
+    conn = _conn or get_connection()
     json_value = json.dumps(value) if not isinstance(value, str) else value
     conn.execute(
         """
@@ -317,7 +353,8 @@ def set_config(key: str, value: Any) -> None:
         """,
         (key, json_value),
     )
-    conn.commit()
+    if _conn is None:
+        conn.commit()
 
 
 def get_all_config() -> dict[str, Any]:
@@ -352,9 +389,10 @@ def add_blocked_domain(
     locked: bool = False,
     unblock_delay: str = "4h",
     schedule: Optional[Union[str, dict[str, Any]]] = None,
+    _conn: Optional[sqlite3.Connection] = None,
 ) -> int:
     """Add a domain to the blocklist. Returns the row ID."""
-    conn = get_connection()
+    conn = _conn or get_connection()
     schedule_json = json.dumps(schedule) if isinstance(schedule, dict) else schedule
     cursor = conn.execute(
         """
@@ -369,7 +407,8 @@ def add_blocked_domain(
         """,
         (domain, description, int(locked), unblock_delay, schedule_json),
     )
-    conn.commit()
+    if _conn is None:
+        conn.commit()
     return cursor.lastrowid or 0
 
 
@@ -413,9 +452,10 @@ def add_allowed_domain(
     description: Optional[str] = None,
     schedule: Optional[Union[str, dict[str, Any]]] = None,
     suppress_subdomain_warning: bool = False,
+    _conn: Optional[sqlite3.Connection] = None,
 ) -> int:
     """Add a domain to the allowlist. Returns the row ID."""
-    conn = get_connection()
+    conn = _conn or get_connection()
     schedule_json = json.dumps(schedule) if isinstance(schedule, dict) else schedule
     cursor = conn.execute(
         """
@@ -429,7 +469,8 @@ def add_allowed_domain(
         """,
         (domain, description, schedule_json, int(suppress_subdomain_warning)),
     )
-    conn.commit()
+    if _conn is None:
+        conn.commit()
     return cursor.lastrowid or 0
 
 
@@ -475,11 +516,12 @@ def add_category(
     schedule: Optional[Union[str, dict[str, Any]]] = None,
     locked: bool = False,
     domains: Optional[list[str]] = None,
+    _conn: Optional[sqlite3.Connection] = None,
 ) -> None:
     """Add or update a user-defined category."""
     schedule_json = json.dumps(schedule) if isinstance(schedule, dict) else schedule
 
-    with transaction() as conn:
+    def _do(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             INSERT INTO categories (id, description, unblock_delay, schedule, locked)
@@ -502,6 +544,12 @@ def add_category(
                     "INSERT INTO category_domains (category_id, domain) VALUES (?, ?)",
                     (category_id, domain),
                 )
+
+    if _conn is not None:
+        _do(_conn)
+    else:
+        with transaction() as conn:
+            _do(conn)
 
 
 def remove_category(category_id: str) -> bool:
@@ -531,18 +579,26 @@ def get_category(category_id: str) -> Optional[dict[str, Any]]:
 
 
 def get_all_categories() -> list[dict[str, Any]]:
-    """Get all categories with their domains."""
+    """Get all categories with their domains (2-query approach, no N+1)."""
     conn = get_connection()
     cursor = conn.execute("SELECT * FROM categories ORDER BY id")
     categories = []
+    cat_map: dict[str, dict[str, Any]] = {}
     for row in cursor:
         cat = dict(row)
-        domain_cursor = conn.execute(
-            "SELECT domain FROM category_domains WHERE category_id = ? ORDER BY domain",
-            (cat["id"],),
-        )
-        cat["domains"] = [r["domain"] for r in domain_cursor]
+        cat["domains"] = []
         categories.append(cat)
+        cat_map[cat["id"]] = cat
+
+    if cat_map:
+        domain_cursor = conn.execute(
+            "SELECT category_id, domain FROM category_domains ORDER BY category_id, domain"
+        )
+        for r in domain_cursor:
+            cid = r["category_id"]
+            if cid in cat_map:
+                cat_map[cid]["domains"].append(r["domain"])
+
     return categories
 
 
@@ -976,9 +1032,10 @@ def set_nextdns_category(
     unblock_delay: str = "never",
     schedule: Optional[Union[str, dict[str, Any]]] = None,
     locked: bool = True,
+    _conn: Optional[sqlite3.Connection] = None,
 ) -> None:
     """Set a NextDNS native category configuration."""
-    conn = get_connection()
+    conn = _conn or get_connection()
     schedule_json = json.dumps(schedule) if isinstance(schedule, dict) else schedule
     conn.execute(
         """
@@ -993,7 +1050,8 @@ def set_nextdns_category(
         """,
         (category_id, description, unblock_delay, schedule_json, int(locked)),
     )
-    conn.commit()
+    if _conn is None:
+        conn.commit()
 
 
 def get_nextdns_category(category_id: str) -> Optional[dict[str, Any]]:
@@ -1017,9 +1075,10 @@ def set_nextdns_service(
     unblock_delay: str = "0",
     schedule: Optional[Union[str, dict[str, Any]]] = None,
     locked: bool = False,
+    _conn: Optional[sqlite3.Connection] = None,
 ) -> None:
     """Set a NextDNS native service configuration."""
-    conn = get_connection()
+    conn = _conn or get_connection()
     schedule_json = json.dumps(schedule) if isinstance(schedule, dict) else schedule
     conn.execute(
         """
@@ -1034,7 +1093,8 @@ def set_nextdns_service(
         """,
         (service_id, description, unblock_delay, schedule_json, int(locked)),
     )
-    conn.commit()
+    if _conn is None:
+        conn.commit()
 
 
 def get_nextdns_service(service_id: str) -> Optional[dict[str, Any]]:
@@ -1073,9 +1133,11 @@ def remove_nextdns_service(service_id: str) -> bool:
 # =============================================================================
 
 
-def add_schedule(name: str, schedule_data: dict[str, Any]) -> None:
+def add_schedule(
+    name: str, schedule_data: dict[str, Any], _conn: Optional[sqlite3.Connection] = None
+) -> None:
     """Add or update a schedule template."""
-    conn = get_connection()
+    conn = _conn or get_connection()
     conn.execute(
         """
         INSERT INTO schedules (name, schedule_data)
@@ -1086,7 +1148,8 @@ def add_schedule(name: str, schedule_data: dict[str, Any]) -> None:
         """,
         (name, json.dumps(schedule_data)),
     )
-    conn.commit()
+    if _conn is None:
+        conn.commit()
 
 
 def get_schedule(name: str) -> Optional[dict[str, Any]]:
@@ -1391,92 +1454,100 @@ def get_full_config_dict() -> dict[str, Any]:
 def save_full_config_dict(config: dict[str, Any]) -> None:
     """
     Replace database content with the given full config dict (same shape as exported config).
-    Clears existing domain/schedule/nextdns data and repopulates.
+    Clears existing domain/schedule/nextdns data and repopulates atomically.
     """
-    conn = get_connection()
-    conn.execute("DELETE FROM blocked_domains")
-    conn.execute("DELETE FROM allowed_domains")
-    conn.execute("DELETE FROM category_domains")
-    conn.execute("DELETE FROM categories")
-    conn.execute("DELETE FROM nextdns_categories")
-    conn.execute("DELETE FROM nextdns_services")
-    conn.execute("DELETE FROM schedules")
-    conn.commit()
+    with transaction() as conn:
+        conn.execute("DELETE FROM blocked_domains")
+        conn.execute("DELETE FROM allowed_domains")
+        conn.execute("DELETE FROM category_domains")
+        conn.execute("DELETE FROM categories")
+        conn.execute("DELETE FROM nextdns_categories")
+        conn.execute("DELETE FROM nextdns_services")
+        conn.execute("DELETE FROM schedules")
 
-    set_config("version", config.get("version", "1.0"))
-    set_config("settings", config.get("settings") or {})
-    set_config("notifications", config.get("notifications") or {})
-    set_config("protection", config.get("protection") or {})
-    set_config("parental_control", (config.get("nextdns") or {}).get("parental_control") or {})
+        set_config("version", config.get("version", "1.0"), _conn=conn)
+        set_config("settings", config.get("settings") or {}, _conn=conn)
+        set_config("notifications", config.get("notifications") or {}, _conn=conn)
+        set_config("protection", config.get("protection") or {}, _conn=conn)
+        set_config(
+            "parental_control",
+            (config.get("nextdns") or {}).get("parental_control") or {},
+            _conn=conn,
+        )
 
-    for name, schedule_data in (config.get("schedules") or {}).items():
-        if isinstance(schedule_data, dict):
-            add_schedule(name, schedule_data)
+        for name, schedule_data in (config.get("schedules") or {}).items():
+            if isinstance(schedule_data, dict):
+                add_schedule(name, schedule_data, _conn=conn)
 
-    nextdns = config.get("nextdns") or {}
-    for c in nextdns.get("categories") or []:
-        sid = c.get("id")
-        if not sid:
-            continue
-        sched = c.get("schedule")
-        if isinstance(sched, dict):
-            sched = json.dumps(sched)
-        set_nextdns_category(
-            sid,
-            c.get("description"),
-            c.get("unblock_delay", "never"),
-            sched,
-            c.get("locked", True),
-        )
-    for s in nextdns.get("services") or []:
-        sid = s.get("id")
-        if not sid:
-            continue
-        sched = s.get("schedule")
-        if isinstance(sched, dict):
-            sched = json.dumps(sched)
-        set_nextdns_service(
-            sid,
-            s.get("description"),
-            s.get("unblock_delay", "0"),
-            sched,
-            s.get("locked", False),
-        )
-    for cat in config.get("categories") or []:
-        cid = cat.get("id")
-        if not cid:
-            continue
-        add_category(
-            cid,
-            cat.get("description"),
-            cat.get("unblock_delay", "0"),
-            cat.get("schedule"),
-            cat.get("locked", False),
-            cat.get("domains") or [],
-        )
-    for b in config.get("blocklist") or []:
-        domain = b.get("domain")
-        if not domain:
-            continue
-        sched = b.get("schedule")
-        add_blocked_domain(
-            domain,
-            b.get("description"),
-            b.get("locked", False),
-            b.get("unblock_delay", "4h"),
-            sched,
-        )
-    for a in config.get("allowlist") or []:
-        domain = a.get("domain")
-        if not domain:
-            continue
-        add_allowed_domain(
-            domain,
-            a.get("description"),
-            a.get("schedule"),
-            a.get("suppress_subdomain_warning", False),
-        )
-    set_config("migrated", True)
+        nextdns = config.get("nextdns") or {}
+        for c in nextdns.get("categories") or []:
+            sid = c.get("id")
+            if not sid:
+                continue
+            sched = c.get("schedule")
+            if isinstance(sched, dict):
+                sched = json.dumps(sched)
+            set_nextdns_category(
+                sid,
+                c.get("description"),
+                c.get("unblock_delay", "never"),
+                sched,
+                c.get("locked", True),
+                _conn=conn,
+            )
+        for s in nextdns.get("services") or []:
+            sid = s.get("id")
+            if not sid:
+                continue
+            sched = s.get("schedule")
+            if isinstance(sched, dict):
+                sched = json.dumps(sched)
+            set_nextdns_service(
+                sid,
+                s.get("description"),
+                s.get("unblock_delay", "0"),
+                sched,
+                s.get("locked", False),
+                _conn=conn,
+            )
+        for cat in config.get("categories") or []:
+            cid = cat.get("id")
+            if not cid:
+                continue
+            add_category(
+                cid,
+                cat.get("description"),
+                cat.get("unblock_delay", "0"),
+                cat.get("schedule"),
+                cat.get("locked", False),
+                cat.get("domains") or [],
+                _conn=conn,
+            )
+        for b in config.get("blocklist") or []:
+            domain = b.get("domain")
+            if not domain:
+                continue
+            sched = b.get("schedule")
+            add_blocked_domain(
+                domain,
+                b.get("description"),
+                b.get("locked", False),
+                b.get("unblock_delay", "4h"),
+                sched,
+                _conn=conn,
+            )
+        for a in config.get("allowlist") or []:
+            domain = a.get("domain")
+            if not domain:
+                continue
+            add_allowed_domain(
+                domain,
+                a.get("description"),
+                a.get("schedule"),
+                a.get("suppress_subdomain_warning", False),
+                _conn=conn,
+            )
+        set_config("migrated", True, _conn=conn)
 
 
 def config_has_domains() -> bool:
@@ -1501,89 +1572,96 @@ def import_config_from_json(path: Path) -> None:
 
     Populates config key-value, blocked_domains, allowed_domains, categories,
     schedules, nextdns_categories, nextdns_services. Sets config key 'migrated' when done.
+    All operations are wrapped in a single transaction for atomicity.
     """
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, dict):
         raise ValueError("Config must be a JSON object")
 
-    set_config("version", data.get("version", "1.0"))
-    set_config("settings", data.get("settings") or {})
-    set_config("notifications", data.get("notifications") or {})
-    set_config("protection", data.get("protection") or {})
-    nextdns = data.get("nextdns") or {}
-    set_config("parental_control", nextdns.get("parental_control") or {})
+    with transaction() as conn:
+        set_config("version", data.get("version", "1.0"), _conn=conn)
+        set_config("settings", data.get("settings") or {}, _conn=conn)
+        set_config("notifications", data.get("notifications") or {}, _conn=conn)
+        set_config("protection", data.get("protection") or {}, _conn=conn)
+        nextdns = data.get("nextdns") or {}
+        set_config("parental_control", nextdns.get("parental_control") or {}, _conn=conn)
 
-    for name, schedule_data in (data.get("schedules") or {}).items():
-        if isinstance(schedule_data, dict):
-            add_schedule(name, schedule_data)
+        for name, schedule_data in (data.get("schedules") or {}).items():
+            if isinstance(schedule_data, dict):
+                add_schedule(name, schedule_data, _conn=conn)
 
-    for c in nextdns.get("categories") or []:
-        sid = c.get("id")
-        if not sid:
-            continue
-        sched = c.get("schedule")
-        if isinstance(sched, dict):
-            sched = json.dumps(sched)
-        set_nextdns_category(
-            sid,
-            c.get("description"),
-            c.get("unblock_delay", "never"),
-            sched,
-            c.get("locked", True),
-        )
+        for c in nextdns.get("categories") or []:
+            sid = c.get("id")
+            if not sid:
+                continue
+            sched = c.get("schedule")
+            if isinstance(sched, dict):
+                sched = json.dumps(sched)
+            set_nextdns_category(
+                sid,
+                c.get("description"),
+                c.get("unblock_delay", "never"),
+                sched,
+                c.get("locked", True),
+                _conn=conn,
+            )
 
-    for s in nextdns.get("services") or []:
-        sid = s.get("id")
-        if not sid:
-            continue
-        sched = s.get("schedule")
-        if isinstance(sched, dict):
-            sched = json.dumps(sched)
-        set_nextdns_service(
-            sid,
-            s.get("description"),
-            s.get("unblock_delay", "0"),
-            sched,
-            s.get("locked", False),
-        )
+        for s in nextdns.get("services") or []:
+            sid = s.get("id")
+            if not sid:
+                continue
+            sched = s.get("schedule")
+            if isinstance(sched, dict):
+                sched = json.dumps(sched)
+            set_nextdns_service(
+                sid,
+                s.get("description"),
+                s.get("unblock_delay", "0"),
+                sched,
+                s.get("locked", False),
+                _conn=conn,
+            )
 
-    for cat in data.get("categories") or []:
-        cid = cat.get("id")
-        if not cid:
-            continue
-        sched = cat.get("schedule")
-        add_category(
-            cid,
-            cat.get("description"),
-            cat.get("unblock_delay", "0"),
-            sched,
-            cat.get("locked", False),
-            cat.get("domains") or [],
-        )
+        for cat in data.get("categories") or []:
+            cid = cat.get("id")
+            if not cid:
+                continue
+            sched = cat.get("schedule")
+            add_category(
+                cid,
+                cat.get("description"),
+                cat.get("unblock_delay", "0"),
+                sched,
+                cat.get("locked", False),
+                cat.get("domains") or [],
+                _conn=conn,
+            )
 
-    for b in data.get("blocklist") or []:
-        domain = b.get("domain")
-        if not domain:
-            continue
-        sched = b.get("schedule")
-        add_blocked_domain(
-            domain,
-            b.get("description"),
-            b.get("locked", False),
-            b.get("unblock_delay", "4h"),
-            sched,
-        )
+        for b in data.get("blocklist") or []:
+            domain = b.get("domain")
+            if not domain:
+                continue
+            sched = b.get("schedule")
+            add_blocked_domain(
+                domain,
+                b.get("description"),
+                b.get("locked", False),
+                b.get("unblock_delay", "4h"),
+                sched,
+                _conn=conn,
+            )
 
-    for a in data.get("allowlist") or []:
-        domain = a.get("domain")
-        if not domain:
-            continue
-        add_allowed_domain(
-            domain,
-            a.get("description"),
-            a.get("schedule"),
-            a.get("suppress_subdomain_warning", False),
-        )
+        for a in data.get("allowlist") or []:
+            domain = a.get("domain")
+            if not domain:
+                continue
+            add_allowed_domain(
+                domain,
+                a.get("description"),
+                a.get("schedule"),
+                a.get("suppress_subdomain_warning", False),
+                _conn=conn,
+            )
 
-    set_config("migrated", True)
+        set_config("migrated", True, _conn=conn)
