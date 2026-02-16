@@ -493,6 +493,8 @@ class NextDNSClient:
         self.timeout = timeout
         self.retries = retries
         self._api_key = api_key  # Store privately to avoid accidental exposure
+        self._session = requests.Session()
+        self._session.verify = True
         self._rate_limiter = RateLimiter()
         self._cache = DenylistCache()
         self._allowlist_cache = AllowlistCache()
@@ -521,6 +523,16 @@ class NextDNSClient:
     def __repr__(self) -> str:
         """Return a safe string representation without exposing API key."""
         return f"NextDNSClient(profile_id={self.profile_id!r}, timeout={self.timeout}, retries={self.retries})"
+
+    def close(self) -> None:
+        """Close the underlying HTTP session."""
+        self._session.close()
+
+    def __enter__(self) -> "NextDNSClient":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
 
     def _calculate_backoff(self, attempt: int) -> float:
         """
@@ -594,14 +606,13 @@ class NextDNSClient:
                 return last_error
 
             try:
-                # Use requests.request() for all methods to reduce code duplication
-                response = requests.request(
+                # Use session for connection pooling and reuse
+                response = self._session.request(
                     method=method_upper,
                     url=url,
                     headers=self._get_headers(),
                     json=data if method_upper in ("POST", "PUT", "PATCH") else None,
                     timeout=self.timeout,
-                    verify=True,  # Explicitly enable SSL/TLS certificate verification
                 )
 
                 response.raise_for_status()

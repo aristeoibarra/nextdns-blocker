@@ -66,24 +66,21 @@ def complete_blocklist_domains(
     except (FileNotFoundError, PermissionError) as e:
         logger.debug("Config not accessible for completion: %s", e)
         return []
+    except json.JSONDecodeError as e:
+        logger.warning("Invalid JSON in config file for completion: %s", e)
+        return []
+    except (KeyError, TypeError) as e:
+        logger.warning("Invalid config structure for completion: %s", e)
+        return []
+    except OSError as e:
+        logger.warning("I/O error loading domains for completion: %s", e)
+        return []
     except Exception as e:
         from .exceptions import ConfigurationError
 
         if isinstance(e, ConfigurationError):
             return []
         logger.debug("Completion error: %s", e)
-        return []
-    except json.JSONDecodeError as e:
-        # JSON parsing error - more serious, log at warning
-        logger.warning(f"Invalid JSON in config file for completion: {e}")
-        return []
-    except (KeyError, TypeError) as e:
-        # Data structure errors - log at warning
-        logger.warning(f"Invalid config structure for completion: {e}")
-        return []
-    except OSError as e:
-        # Other I/O errors - log at warning
-        logger.warning(f"I/O error loading domains for completion: {e}")
         return []
 
 

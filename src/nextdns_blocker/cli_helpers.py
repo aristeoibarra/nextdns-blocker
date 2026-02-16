@@ -6,7 +6,7 @@ import sys
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn, Optional
+from typing import Any, NoReturn, Optional
 
 import requests
 from rich.console import Console
@@ -15,9 +15,6 @@ from .cli_formatter import CLIOutput as out
 from .client import NextDNSClient
 from .config import load_config
 from .exceptions import EXIT_API_ERROR, EXIT_CONFIG_ERROR, EXIT_VALIDATION_ERROR, ConfigurationError
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 

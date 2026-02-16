@@ -112,13 +112,20 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 65
+# 70% threshold is realistic for this project given:
+# - Platform-specific code (Windows/macOS/Linux watchdog installers)
+# - Database migrations and file I/O error handling
+# - API client retry/backoff paths that require mocking
+fail_under = 70
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
     # Don't require coverage for defensive assertions
     "assert ",
+    # Platform-specific blocks are hard to test on all platforms
+    "if sys.platform",
+    "if platform.system",
 ]
 
 [tool.ruff]
@@ -184,6 +191,8 @@ ignore_missing_imports = false
 module = [
     "responses.*",
     "freezegun.*",
+    "tzlocal",
+    "tzlocal.*",
 ]
 ignore_missing_imports = true
 
