@@ -3,28 +3,19 @@
 This module provides:
 - Locked categories/services that cannot be easily removed
 - Unlock request system with configurable delay
+- PIN protection with SQLite-backed storage
 """
 
-import contextlib
 import json
 import logging
-import os
-from collections.abc import Generator
-from contextlib import contextmanager
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, Optional, cast
 from uuid import uuid4
 
+from . import database as db
 from .common import (
-    SECURE_FILE_MODE,
-    _lock_file,
-    _unlock_file,
     audit_log,
     ensure_naive_datetime,
-    get_log_dir,
-    read_secure_file,
-    write_secure_file,
 )
 from .types import (
     ItemType,
@@ -38,75 +29,6 @@ DEFAULT_UNLOCK_DELAY_HOURS = 48
 
 # Minimum unlock delay (prevent bypassing with delay=0)
 MIN_UNLOCK_DELAY_HOURS = 24
-
-
-def get_unlock_requests_file() -> Path:
-    """Get the unlock requests state file path."""
-    return get_log_dir() / "unlock_requests.json"
-
-
-def _get_unlock_requests_lock_file() -> Path:
-    """Get the lock file path for unlock requests."""
-    return get_log_dir() / ".unlock_requests.lock"
-
-
-UNLOCK_REQUESTS_LOCK_TIMEOUT = 10.0  # Maximum time to wait for file lock
-
-
-@contextmanager
-def _unlock_requests_file_lock() -> Generator[None, None, None]:
-    """
-    Context manager for atomic unlock requests file operations.
-
-    Uses a separate lock file to ensure read-modify-write operations
-    are atomic across multiple processes.
-
-    Raises:
-        TimeoutError: If lock cannot be acquired within timeout
-        OSError: If file operations fail
-    """
-    lock_file = _get_unlock_requests_lock_file()
-    lock_file.parent.mkdir(parents=True, exist_ok=True)
-
-    fd = os.open(lock_file, os.O_RDWR | os.O_CREAT, SECURE_FILE_MODE)
-    fd_closed = False
-    try:
-        f = os.fdopen(fd, "r+")
-        fd_closed = True
-        try:
-            _lock_file(f, exclusive=True, timeout=UNLOCK_REQUESTS_LOCK_TIMEOUT)
-            try:
-                yield
-            finally:
-                _unlock_file(f)
-        finally:
-            f.close()
-    except OSError:
-        if not fd_closed:
-            with contextlib.suppress(OSError):
-                os.close(fd)
-        raise
-
-
-def _load_unlock_requests() -> list[UnlockRequest]:
-    """Load pending unlock requests from file (internal, caller must hold lock)."""
-    requests_file = get_unlock_requests_file()
-    content = read_secure_file(requests_file)
-    if not content:
-        return []
-    try:
-        data = json.loads(content)
-        if isinstance(data, list):
-            return cast(list[UnlockRequest], data)
-        return []
-    except json.JSONDecodeError:
-        logger.warning("Invalid unlock requests file, resetting")
-        return []
-
-
-def _save_unlock_requests(requests: list[UnlockRequest]) -> None:
-    """Save unlock requests to file (internal, caller must hold lock)."""
-    write_secure_file(get_unlock_requests_file(), json.dumps(requests, indent=2))
 
 
 def is_locked(item: dict[str, Any]) -> bool:
@@ -312,6 +234,11 @@ def validate_no_locked_weakening(
     return errors
 
 
+# =============================================================================
+# UNLOCK REQUESTS (SQLite-backed)
+# =============================================================================
+
+
 def create_unlock_request(
     item_type: str,
     item_id: str,
@@ -333,28 +260,31 @@ def create_unlock_request(
     delay_hours = max(delay_hours, MIN_UNLOCK_DELAY_HOURS)
 
     request_id = str(uuid4())[:12]
-    execute_at = datetime.now() + timedelta(hours=delay_hours)
+    now = datetime.now()
+    execute_at = now + timedelta(hours=delay_hours)
 
-    request: UnlockRequest = {
+    db.add_unlock_request(
+        request_id=request_id,
+        item_type=item_type,
+        item_id=item_id,
+        created_at=now.isoformat(),
+        execute_at=execute_at.isoformat(),
+        delay_hours=delay_hours,
+        reason=reason,
+    )
+
+    audit_log("UNLOCK_REQUEST", f"{item_type}:{item_id} scheduled for {execute_at.isoformat()}")
+
+    return {
         "id": request_id,
         "item_type": cast(ItemType, item_type),
         "item_id": item_id,
-        "created_at": datetime.now().isoformat(),
+        "created_at": now.isoformat(),
         "execute_at": execute_at.isoformat(),
         "delay_hours": delay_hours,
         "reason": reason,
         "status": "pending",
     }
-
-    # Use file lock for atomic read-modify-write
-    with _unlock_requests_file_lock():
-        requests = _load_unlock_requests()
-        requests.append(request)
-        _save_unlock_requests(requests)
-
-    audit_log("UNLOCK_REQUEST", f"{item_type}:{item_id} scheduled for {execute_at.isoformat()}")
-
-    return request
 
 
 def cancel_unlock_request(request_id: str) -> bool:
@@ -366,114 +296,92 @@ def cancel_unlock_request(request_id: str) -> bool:
     Returns:
         True if request was found and cancelled
     """
-    # Use file lock for atomic read-modify-write
-    with _unlock_requests_file_lock():
-        requests = _load_unlock_requests()
+    # Find request by partial ID
+    pending = get_pending_unlock_requests()
+    for req in pending:
+        if req.get("id", "").startswith(request_id):
+            item_type = req.get("item_type", "unknown")
+            item_id = req.get("item_id", "unknown")
 
-        for i, req in enumerate(requests):
-            if req["id"].startswith(request_id) and req["status"] == "pending":
-                requests[i]["status"] = "cancelled"
-                requests[i]["cancelled_at"] = datetime.now().isoformat()
-                _save_unlock_requests(requests)
-                audit_log("UNLOCK_CANCEL", f"{req['item_type']}:{req['item_id']}")
-                return True
+            # Delete from database
+            conn = db.get_connection()
+            conn.execute("DELETE FROM unlock_requests WHERE id = ?", (req["id"],))
+            conn.commit()
+
+            audit_log("UNLOCK_CANCEL", f"{item_type}:{item_id}")
+            return True
 
     return False
 
 
 def get_pending_unlock_requests() -> list[UnlockRequest]:
     """Get all pending unlock requests."""
-    requests = _load_unlock_requests()
-    return [r for r in requests if r["status"] == "pending"]
+    rows = db.get_unlock_requests("pending")
+    return [_row_to_unlock_request(r) for r in rows]
 
 
 def get_executable_unlock_requests() -> list[UnlockRequest]:
     """Get unlock requests that are ready to execute."""
-    now = datetime.now()
-    requests = _load_unlock_requests()
-
-    executable: list[UnlockRequest] = []
-    for req in requests:
-        if req["status"] != "pending":
-            continue
-        try:
-            execute_at = datetime.fromisoformat(req["execute_at"])
-            if now >= execute_at:
-                executable.append(req)
-        except (ValueError, KeyError) as e:
-            logger.warning(f"Invalid unlock request {req.get('id', 'unknown')}: {e}")
-
-    return executable
+    now = datetime.now().isoformat()
+    rows = db.get_executable_unlock_requests(before=now)
+    return [_row_to_unlock_request(r) for r in rows]
 
 
-def execute_unlock_request(request_id: str, config_path: Path) -> bool:
-    """Execute an unlock request by modifying the config.
+def _row_to_unlock_request(row: dict[str, Any]) -> UnlockRequest:
+    """Convert a database row to an UnlockRequest TypedDict."""
+    return {
+        "id": row["id"],
+        "item_type": cast(ItemType, row["item_type"]),
+        "item_id": row["item_id"],
+        "created_at": row["created_at"],
+        "execute_at": row["execute_at"],
+        "delay_hours": row["delay_hours"],
+        "reason": row.get("reason"),
+        "status": row["status"],
+    }
+
+
+def execute_unlock_request(request_id: str) -> bool:
+    """Execute an unlock request by removing the item from the database.
 
     Args:
         request_id: ID of the request to execute
-        config_path: Path to config.json
 
     Returns:
         True if successfully executed
     """
-    # Use file lock for atomic read-modify-write of unlock requests
-    with _unlock_requests_file_lock():
-        requests = _load_unlock_requests()
+    request = db.get_unlock_request(request_id)
+    if not request or request.get("status") != "pending":
+        return False
 
-        request = None
-        for req in requests:
-            if req["id"] == request_id and req["status"] == "pending":
-                request = req
-                break
+    try:
+        execute_at = ensure_naive_datetime(datetime.fromisoformat(request["execute_at"]))
+    except (ValueError, KeyError) as e:
+        logger.error(f"Invalid execute_at in request {request_id}: {e}")
+        return False
 
-        if not request:
-            return False
+    if datetime.now() < execute_at:
+        logger.warning(f"Request {request_id} not yet executable")
+        return False
 
-        # Check if delay has passed
-        try:
-            execute_at = ensure_naive_datetime(datetime.fromisoformat(request["execute_at"]))
-        except (ValueError, KeyError) as e:
-            logger.error(f"Invalid execute_at in request {request_id}: {e}")
-            return False
+    item_type = request["item_type"]
+    item_id = request["item_id"]
 
-        if datetime.now() < execute_at:
-            logger.warning(f"Request {request_id} not yet executable")
-            return False
+    if item_type == "category":
+        removed = db.remove_nextdns_category(item_id)
+    elif item_type == "service":
+        removed = db.remove_nextdns_service(item_id)
+    else:
+        logger.error(f"Unknown item_type for unlock request: {item_type}")
+        return False
 
-        # Load config and remove the locked item
-        try:
-            with open(config_path, encoding="utf-8") as f:
-                config = json.load(f)
+    if not removed:
+        logger.warning(f"Item {item_type}:{item_id} not found in database")
+        return False
 
-            item_type = request["item_type"]
-            item_id = request["item_id"]
-
-            if item_type == "category":
-                categories = config.get("nextdns", {}).get("categories", [])
-                config["nextdns"]["categories"] = [c for c in categories if c.get("id") != item_id]
-            elif item_type == "service":
-                services = config.get("nextdns", {}).get("services", [])
-                config["nextdns"]["services"] = [s for s in services if s.get("id") != item_id]
-
-            # Write updated config
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2)
-
-            # Mark request as executed
-            for i, req in enumerate(requests):
-                if req["id"] == request_id:
-                    requests[i]["status"] = "executed"
-                    requests[i]["executed_at"] = datetime.now().isoformat()
-                    break
-
-            _save_unlock_requests(requests)
-            audit_log("UNLOCK_EXECUTE", f"{item_type}:{item_id}")
-
-            return True
-
-        except (json.JSONDecodeError, OSError) as e:
-            logger.error(f"Failed to execute unlock request: {e}")
-            return False
+    db.update_unlock_request_status(request_id, "executed", datetime.now().isoformat())
+    audit_log("UNLOCK_EXECUTE", f"{item_type}:{item_id}")
+    return True
 
 
 def validate_protection_config(protection: dict[str, Any]) -> list[str]:
@@ -517,26 +425,10 @@ PIN_HASH_ITERATIONS = 600_000  # OWASP recommendation for PBKDF2-SHA256
 PIN_REMOVAL_DELAY_HOURS = 24
 
 
-def get_pin_hash_file() -> Path:
-    """Get the PIN hash file path."""
-    return get_log_dir() / ".pin_hash"
-
-
-def get_pin_session_file() -> Path:
-    """Get the PIN session file path."""
-    return get_log_dir() / ".pin_session"
-
-
-def get_pin_attempts_file() -> Path:
-    """Get the PIN failed attempts file path."""
-    return get_log_dir() / ".pin_attempts"
-
-
 def is_pin_enabled() -> bool:
     """Check if PIN protection is enabled."""
-    pin_file = get_pin_hash_file()
-    content = read_secure_file(pin_file)
-    return content is not None and len(content) > 0
+    pin_hash = db.get_pin_value("hash")
+    return pin_hash is not None and len(pin_hash) > 0
 
 
 def _hash_pin(pin: str, salt: Optional[bytes] = None) -> tuple[str, bytes]:
@@ -588,7 +480,7 @@ def set_pin(pin: str) -> bool:
 
     # Store as: salt_hex:hash_hex
     content = f"{salt.hex()}:{hash_hex}"
-    write_secure_file(get_pin_hash_file(), content)
+    db.set_pin_value("hash", content)
 
     # Clear any existing session and attempts
     _clear_pin_session()
@@ -616,7 +508,7 @@ def verify_pin(pin: str) -> bool:
         audit_log("PIN_LOCKED_OUT", "Verification attempted during lockout")
         return False
 
-    content = read_secure_file(get_pin_hash_file())
+    content = db.get_pin_value("hash")
     if not content or ":" not in content:
         return False
 
@@ -661,11 +553,7 @@ def remove_pin(current_pin: str, force: bool = False) -> bool:
 
     if force:
         # Immediate removal (called by pending action executor)
-        pin_file = get_pin_hash_file()
-        if pin_file.exists():
-            pin_file.unlink()
-        _clear_pin_session()
-        _clear_pin_attempts()
+        db.clear_all_pin_data()
         audit_log("PIN_REMOVED", "PIN protection disabled")
         return True
 
@@ -685,7 +573,7 @@ def get_pin_removal_request() -> Optional[UnlockRequest]:
     """Get pending PIN removal request if exists."""
     pending = get_pending_unlock_requests()
     for req in pending:
-        if req["item_type"] == "pin" and req["item_id"] == "protection":
+        if req.get("item_type") == "pin" and req.get("item_id") == "protection":
             return req
     return None
 
@@ -711,7 +599,7 @@ def create_pin_session() -> datetime:
         Session expiration datetime
     """
     expires = datetime.now() + timedelta(minutes=PIN_SESSION_DURATION_MINUTES)
-    write_secure_file(get_pin_session_file(), expires.isoformat())
+    db.set_pin_value("session_expires", expires.isoformat())
     return expires
 
 
@@ -720,7 +608,7 @@ def is_pin_session_valid() -> bool:
     if not is_pin_enabled():
         return True  # No PIN = always valid
 
-    content = read_secure_file(get_pin_session_file())
+    content = db.get_pin_value("session_expires")
     if not content:
         return False
 
@@ -738,9 +626,7 @@ def is_pin_session_valid() -> bool:
 
 def _clear_pin_session() -> None:
     """Clear the current PIN session."""
-    session_file = get_pin_session_file()
-    if session_file.exists():
-        session_file.unlink(missing_ok=True)
+    db.delete_pin_value("session_expires")
 
 
 def get_pin_session_remaining() -> Optional[str]:
@@ -753,7 +639,7 @@ def get_pin_session_remaining() -> Optional[str]:
     if not is_pin_enabled():
         return None
 
-    content = read_secure_file(get_pin_session_file())
+    content = db.get_pin_value("session_expires")
     if not content:
         return None
 
@@ -782,8 +668,8 @@ def _record_failed_attempt() -> int:
     Returns:
         Current number of failed attempts
     """
-    content = read_secure_file(get_pin_attempts_file())
-    attempts = []
+    content = db.get_pin_value("failed_attempts")
+    attempts: list[str] = []
 
     if content:
         try:
@@ -798,21 +684,19 @@ def _record_failed_attempt() -> int:
     cutoff = datetime.now() - timedelta(minutes=PIN_LOCKOUT_MINUTES)
     attempts = [a for a in attempts if datetime.fromisoformat(a) > cutoff]
 
-    write_secure_file(get_pin_attempts_file(), json.dumps(attempts))
+    db.set_pin_value("failed_attempts", json.dumps(attempts))
 
     return len(attempts)
 
 
 def _clear_pin_attempts() -> None:
     """Clear failed PIN attempts."""
-    attempts_file = get_pin_attempts_file()
-    if attempts_file.exists():
-        attempts_file.unlink(missing_ok=True)
+    db.delete_pin_value("failed_attempts")
 
 
 def get_failed_attempts_count() -> int:
     """Get current number of failed attempts in lockout window."""
-    content = read_secure_file(get_pin_attempts_file())
+    content = db.get_pin_value("failed_attempts")
     if not content:
         return 0
 
@@ -840,7 +724,7 @@ def get_lockout_remaining() -> Optional[str]:
     if not is_pin_locked_out():
         return None
 
-    content = read_secure_file(get_pin_attempts_file())
+    content = db.get_pin_value("failed_attempts")
     if not content:
         return None
 

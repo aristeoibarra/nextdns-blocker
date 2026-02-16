@@ -119,7 +119,7 @@ def cmd_list(config_dir: Optional[Path], remote: bool) -> None:
             nextdns_config = load_nextdns_config(str(config_dir))
 
             if not nextdns_config:
-                console.print("\n  [dim]No NextDNS section configured in config.json[/dim]")
+                console.print("\n  [dim]No NextDNS section configured in config[/dim]")
                 console.print("  Add a 'nextdns' section to configure Parental Control.\n")
                 return
 

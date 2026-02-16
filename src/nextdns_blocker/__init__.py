@@ -8,10 +8,10 @@ except PackageNotFoundError:
     __version__ = "0.0.0"  # Development without install
 
 from .client import BatchResult, NextDNSClient
+from .common import get_log_dir
 from .config import (
     get_config_dir,
     get_data_dir,
-    get_log_dir,
     get_protected_domains,
     load_config,
     load_domains,

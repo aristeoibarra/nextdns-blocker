@@ -19,6 +19,67 @@ from .config import DEFAULT_RETRIES, DEFAULT_TIMEOUT
 from .exceptions import APIError, DomainValidationError
 
 # =============================================================================
+# CIRCUIT BREAKER
+# =============================================================================
+
+CIRCUIT_BREAKER_THRESHOLD = int(os.environ.get("CIRCUIT_BREAKER_THRESHOLD", "5"))
+CIRCUIT_BREAKER_TIMEOUT = int(os.environ.get("CIRCUIT_BREAKER_TIMEOUT", "60"))
+
+
+class CircuitBreaker:
+    """Simple circuit breaker for API calls.
+
+    States:
+        closed: Normal operation, requests pass through.
+        open: Too many failures, requests fail immediately.
+        half-open: After timeout, allow one request to test recovery.
+    """
+
+    def __init__(
+        self,
+        threshold: int = CIRCUIT_BREAKER_THRESHOLD,
+        timeout: int = CIRCUIT_BREAKER_TIMEOUT,
+    ) -> None:
+        self._threshold = threshold
+        self._timeout = timeout
+        self._failure_count = 0
+        self._last_failure_time: float = 0
+        self._state = "closed"
+        self._lock = threading.Lock()
+
+    @property
+    def state(self) -> str:
+        with self._lock:
+            if self._state == "open":
+                if time.time() - self._last_failure_time >= self._timeout:
+                    self._state = "half-open"
+            return self._state
+
+    def record_success(self) -> None:
+        with self._lock:
+            self._failure_count = 0
+            self._state = "closed"
+
+    def record_failure(self) -> None:
+        with self._lock:
+            self._failure_count += 1
+            self._last_failure_time = time.time()
+            if self._failure_count >= self._threshold:
+                self._state = "open"
+                logging.getLogger(__name__).warning(
+                    "Circuit breaker opened after %d failures", self._failure_count
+                )
+
+    def allow_request(self) -> bool:
+        state = self.state
+        if state == "closed":
+            return True
+        if state == "half-open":
+            return True
+        return False
+
+
+# =============================================================================
 # API RESULT CLASS
 # =============================================================================
 
@@ -432,9 +493,12 @@ class NextDNSClient:
         self.timeout = timeout
         self.retries = retries
         self._api_key = api_key  # Store privately to avoid accidental exposure
+        self._session = requests.Session()
+        self._session.verify = True
         self._rate_limiter = RateLimiter()
         self._cache = DenylistCache()
         self._allowlist_cache = AllowlistCache()
+        self._circuit_breaker = CircuitBreaker()
 
     def _get_headers(self) -> dict[str, str]:
         """
@@ -459,6 +523,16 @@ class NextDNSClient:
     def __repr__(self) -> str:
         """Return a safe string representation without exposing API key."""
         return f"NextDNSClient(profile_id={self.profile_id!r}, timeout={self.timeout}, retries={self.retries})"
+
+    def close(self) -> None:
+        """Close the underlying HTTP session."""
+        self._session.close()
+
+    def __enter__(self) -> "NextDNSClient":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
 
     def _calculate_backoff(self, attempt: int) -> float:
         """
@@ -502,6 +576,13 @@ class NextDNSClient:
                 f"Unsupported HTTP method: {method}. Valid methods: {', '.join(valid_methods)}"
             )
 
+        # Circuit breaker check
+        if not self._circuit_breaker.allow_request():
+            logger.warning("Circuit breaker is open, rejecting %s %s", method_upper, endpoint)
+            return APIRequestResult.http_error(
+                503, "Circuit breaker open - too many recent failures"
+            )
+
         last_error: Optional[APIRequestResult] = None
 
         for attempt in range(self.retries + 1):
@@ -525,14 +606,13 @@ class NextDNSClient:
                 return last_error
 
             try:
-                # Use requests.request() for all methods to reduce code duplication
-                response = requests.request(
+                # Use session for connection pooling and reuse
+                response = self._session.request(
                     method=method_upper,
                     url=url,
                     headers=self._get_headers(),
                     json=data if method_upper in ("POST", "PUT", "PATCH") else None,
                     timeout=self.timeout,
-                    verify=True,  # Explicitly enable SSL/TLS certificate verification
                 )
 
                 response.raise_for_status()
@@ -542,6 +622,7 @@ class NextDNSClient:
                 if not response.text or not response.text.strip():
                     # 204 No Content is explicitly expected to be empty
                     if response.status_code == 204:
+                        self._circuit_breaker.record_success()
                         return APIRequestResult.ok()
                     # For other success codes, log but still treat as success
                     # since raise_for_status() already validated the status
@@ -550,17 +631,20 @@ class NextDNSClient:
                             f"Empty response body for {method} {endpoint} "
                             f"(status: {response.status_code})"
                         )
+                        self._circuit_breaker.record_success()
                         return APIRequestResult.ok()
                     # Unexpected empty response for other status codes
                     logger.warning(
                         f"Unexpected empty response for {method} {endpoint} "
                         f"(status: {response.status_code})"
                     )
+                    self._circuit_breaker.record_success()
                     return APIRequestResult.ok()
 
                 # Parse JSON with error handling
                 try:
                     result_data: dict[str, Any] = response.json()
+                    self._circuit_breaker.record_success()
                     return APIRequestResult.ok(result_data)
                 except json.JSONDecodeError as e:
                     logger.error(f"Invalid JSON response for {method} {endpoint}: {e}")
@@ -577,6 +661,7 @@ class NextDNSClient:
                     time.sleep(backoff)
                     continue
                 logger.error(f"API timeout after {self.retries} retries: {method} {endpoint}")
+                self._circuit_breaker.record_failure()
                 return last_error
 
             except requests.exceptions.HTTPError as e:
@@ -622,6 +707,7 @@ class NextDNSClient:
                         time.sleep(backoff)
                         continue
                 logger.error(f"API HTTP error for {method} {endpoint}: {e}")
+                self._circuit_breaker.record_failure()
                 return last_error
 
             except requests.exceptions.RequestException as e:
@@ -635,6 +721,7 @@ class NextDNSClient:
                     time.sleep(backoff)
                     continue
                 logger.error(f"API request error for {method} {endpoint}: {e}")
+                self._circuit_breaker.record_failure()
                 return last_error
 
         # Should not reach here, but return last error if we do
@@ -665,8 +752,7 @@ class NextDNSClient:
         result = self.request(method, endpoint, data)
         if not result.success:
             raise APIError(
-                f"API request failed: {method} {endpoint} - "
-                f"{result.error_type}: {result.error_msg}"
+                f"API request failed: {method} {endpoint} - {result.error_type}: {result.error_msg}"
             )
         return result.data or {"success": True}
 

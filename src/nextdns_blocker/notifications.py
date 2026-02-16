@@ -491,9 +491,9 @@ class MacOSAdapter(NotificationAdapter):
 
         message = " | ".join(parts) if parts else ""
 
-        # Escape quotes for osascript
-        message = message.replace('"', '\\"')
-        title = title.replace('"', '\\"')
+        # Escape backslashes and quotes for osascript AppleScript strings
+        message = message.replace("\\", "\\\\").replace('"', '\\"')
+        title = title.replace("\\", "\\\\").replace('"', '\\"')
 
         return title, message
 
@@ -518,7 +518,7 @@ class NotificationManager:
     _instance: Optional["NotificationManager"] = None
     _lock = threading.Lock()
     _executor: Optional[ThreadPoolExecutor] = None
-    _pending_futures: list[Future[bool]] = []
+    _pending_futures: list[Future[bool]]
 
     def __init__(self) -> None:
         self._events: list[NotificationEvent] = []
@@ -527,6 +527,7 @@ class NotificationManager:
         self._adapters: list[NotificationAdapter] = []
         self._sync_start: Optional[datetime] = None
         self._enabled = True
+        NotificationManager._pending_futures = []
 
     @classmethod
     def get_instance(cls) -> "NotificationManager":

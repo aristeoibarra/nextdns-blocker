@@ -156,3 +156,18 @@ def reset_notification_rate_limit():
         _reset_rate_limit()
     except ImportError:
         pass
+
+
+@pytest.fixture(autouse=True)
+def cleanup_database_connections():
+    """Close SQLite database connections after each test to avoid ResourceWarning."""
+    yield
+    # Close any open database connections after each test
+    try:
+        from nextdns_blocker import database as db
+
+        db.close_connection()
+    except ImportError:
+        pass  # Module not yet loaded
+    except Exception:
+        pass  # Ignore errors during cleanup

@@ -1,11 +1,10 @@
 """Interactive initialization wizard for NextDNS Blocker."""
 
-import json
 import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 import click
@@ -16,12 +15,10 @@ from .completion import detect_shell, install_completion
 from .config import DEFAULT_TIMEOUT, get_config_dir
 from .platform_utils import (
     get_executable_args,
-    get_executable_path,
     has_systemd,
     is_macos,
     is_windows,
 )
-from .watchdog import _build_task_command, _install_systemd_timers
 
 logger = logging.getLogger(__name__)
 
@@ -179,35 +176,20 @@ NEXTDNS_PROFILE_ID={profile_id}
     return env_file
 
 
-def create_config_file(config_dir: Path, timezone: str) -> Path:
+def create_default_config_in_db(timezone: str) -> None:
     """
-    Create config.json with initial structure.
-
-    Args:
-        config_dir: Directory to create config.json in
-        timezone: Auto-detected timezone string
-
-    Returns:
-        Path to created config.json file
+    Seed the database with default settings (timezone, empty notifications).
+    Marks config as migrated so load_domains considers the DB initialized.
     """
-    config_dir.mkdir(parents=True, exist_ok=True)
+    from . import database as db
 
-    config_file = config_dir / "config.json"
-
-    config = {
-        "_comment": "NextDNS Blocker configuration. See docs for schedule format.",
-        "version": "1.0",
-        "settings": {
-            "timezone": timezone,
-            "editor": None,
-        },
-        "blocklist": [],
-        "allowlist": [],
-    }
-
-    # Use write_secure_file for consistent secure permissions (0o600)
-    write_secure_file(config_file, json.dumps(config, indent=2) + "\n")
-    return config_file
+    db.init_database()
+    db.set_config("version", "1.0")
+    db.set_config("settings", {"timezone": timezone, "editor": None})
+    db.set_config("notifications", {})
+    db.set_config("protection", {})
+    db.set_config("parental_control", {})
+    db.set_config("migrated", True)
 
 
 # =============================================================================
@@ -217,265 +199,46 @@ def create_config_file(config_dir: Path, timezone: str) -> Path:
 
 def install_scheduling() -> tuple[bool, str]:
     """
-    Install scheduling jobs (launchd on macOS, systemd/cron on Linux, Task Scheduler on Windows).
+    Install scheduling jobs by delegating to the watchdog module.
+
+    Uses the watchdog's platform-specific installers (launchd/systemd/cron/Task Scheduler).
 
     Returns:
         Tuple of (success, message)
     """
-    if is_macos():
-        return _install_launchd()
-    elif is_windows():
-        return _install_windows_task()
-    else:
-        # Linux: prefer systemd if available, fall back to cron
-        if has_systemd():
-            return _install_systemd()
-        return _install_cron()
-
-
-def _install_systemd() -> tuple[bool, str]:
-    """Install systemd user timers for Linux."""
-    try:
-        _install_systemd_timers()
-        return True, "systemd timers installed (sync: 2 min, watchdog: 1 min)"
-    except SystemExit:
-        # _install_systemd_timers() calls sys.exit(1) on failure
-        return False, "failed to install systemd timers"
-    except (OSError, subprocess.SubprocessError) as e:
-        logger.error(f"Failed to install systemd timers: {e}")
-        return False, f"failed to install systemd timers: {e}"
-
-
-def _install_launchd() -> tuple[bool, str]:
-    """Install launchd jobs for macOS."""
-    import plistlib
+    from .watchdog import (
+        _install_cron_jobs,
+        _install_launchd_jobs,
+        _install_systemd_timers,
+        _install_windows_tasks,
+    )
 
     try:
-        # Get paths
-        launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
-        launch_agents_dir.mkdir(parents=True, exist_ok=True)
-
-        log_dir = get_log_dir()
-        log_dir.mkdir(parents=True, exist_ok=True)
-
-        # Use centralized executable detection
-        exe_args = get_executable_args()
-
-        # Sync plist
-        sync_plist_path = launch_agents_dir / "com.nextdns-blocker.sync.plist"
-        sync_plist: dict[str, Any] = {
-            "Label": "com.nextdns-blocker.sync",
-            "ProgramArguments": exe_args + ["sync"],
-            "StartInterval": 120,  # 2 minutes
-            "RunAtLoad": True,
-            "KeepAlive": {"SuccessfulExit": False},
-            "StandardOutPath": str(log_dir / "sync.log"),
-            "StandardErrorPath": str(log_dir / "sync.log"),
-            "EnvironmentVariables": {
-                "PATH": f"{Path.home()}/.local/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
-            },
-        }
-
-        # Watchdog plist
-        watchdog_plist_path = launch_agents_dir / "com.nextdns-blocker.watchdog.plist"
-        watchdog_plist: dict[str, Any] = {
-            "Label": "com.nextdns-blocker.watchdog",
-            "ProgramArguments": exe_args + ["watchdog", "check"],
-            "StartInterval": 60,  # 1 minute
-            "RunAtLoad": True,
-            "KeepAlive": {"SuccessfulExit": False},
-            "StandardOutPath": str(log_dir / "watchdog.log"),
-            "StandardErrorPath": str(log_dir / "watchdog.log"),
-            "EnvironmentVariables": {
-                "PATH": f"{Path.home()}/.local/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
-            },
-        }
-        # Write plist files
-        sync_plist_path.write_bytes(plistlib.dumps(sync_plist))
-        sync_plist_path.chmod(0o644)
-
-        watchdog_plist_path.write_bytes(plistlib.dumps(watchdog_plist))
-        watchdog_plist_path.chmod(0o644)
-
-        # Unload existing jobs (ignore errors)
-        subprocess.run(
-            ["launchctl", "unload", str(sync_plist_path)],
-            capture_output=True,
-            timeout=INIT_SUBPROCESS_TIMEOUT,
-        )
-        subprocess.run(
-            ["launchctl", "unload", str(watchdog_plist_path)],
-            capture_output=True,
-            timeout=INIT_SUBPROCESS_TIMEOUT,
-        )
-
-        # Load jobs
-        result_sync = subprocess.run(
-            ["launchctl", "load", str(sync_plist_path)],
-            capture_output=True,
-            text=True,
-            timeout=INIT_SUBPROCESS_TIMEOUT,
-        )
-        result_wd = subprocess.run(
-            ["launchctl", "load", str(watchdog_plist_path)],
-            capture_output=True,
-            text=True,
-            timeout=INIT_SUBPROCESS_TIMEOUT,
-        )
-
-        if result_sync.returncode == 0 and result_wd.returncode == 0:
+        if is_macos():
+            _install_launchd_jobs()
             return True, "launchd"
-        else:
-            return False, "Failed to load launchd jobs"
-
-    except subprocess.TimeoutExpired:
-        return False, "launchd command timed out"
-    except (OSError, subprocess.SubprocessError) as e:
-        return False, f"launchd error: {e}"
-
-
-def _install_cron() -> tuple[bool, str]:
-    """Install cron jobs for Linux."""
-    try:
-        log_dir = get_log_dir()
-        log_dir.mkdir(parents=True, exist_ok=True)
-
-        # Use centralized executable detection
-        exe = get_executable_path()
-
-        # Cron job definitions
-        sync_log = str(log_dir / "sync.log")
-        wd_log = str(log_dir / "watchdog.log")
-        cron_sync = f'*/2 * * * * {exe} sync >> "{sync_log}" 2>&1'
-        cron_wd = f'* * * * * {exe} watchdog check >> "{wd_log}" 2>&1'
-        # Get current crontab
-        result = subprocess.run(
-            ["crontab", "-l"],
-            capture_output=True,
-            text=True,
-            timeout=INIT_SUBPROCESS_TIMEOUT,
-        )
-        current_crontab = result.stdout if result.returncode == 0 else ""
-
-        # Remove existing nextdns-blocker entries
-        lines = [
-            line
-            for line in current_crontab.split("\n")
-            if "nextdns-blocker" not in line and line.strip()
-        ]
-
-        # Add new entries
-        lines.extend([cron_sync, cron_wd])
-        new_crontab = "\n".join(lines) + "\n"
-
-        # Set new crontab
-        result = subprocess.run(
-            ["crontab", "-"],
-            input=new_crontab,
-            text=True,
-            capture_output=True,
-            timeout=INIT_SUBPROCESS_TIMEOUT,
-        )
-
-        if result.returncode == 0:
-            return True, "cron"
-        else:
-            return False, "Failed to set crontab"
-
-    except subprocess.TimeoutExpired:
-        return False, "cron command timed out"
-    except (OSError, subprocess.SubprocessError) as e:
-        return False, f"cron error: {e}"
-
-
-def _install_windows_task() -> tuple[bool, str]:
-    """Install Windows Task Scheduler tasks."""
-    try:
-        log_dir = get_log_dir()
-        log_dir.mkdir(parents=True, exist_ok=True)
-
-        # Use centralized executable detection
-        exe = get_executable_path()
-
-        # Task names
-        sync_task_name = "NextDNS-Blocker-Sync"
-        watchdog_task_name = "NextDNS-Blocker-Watchdog"
-
-        # Delete existing tasks (ignore errors)
-        subprocess.run(
-            ["schtasks", "/delete", "/tn", sync_task_name, "/f"],
-            capture_output=True,
-            timeout=INIT_SUBPROCESS_TIMEOUT,
-        )
-        subprocess.run(
-            ["schtasks", "/delete", "/tn", watchdog_task_name, "/f"],
-            capture_output=True,
-            timeout=INIT_SUBPROCESS_TIMEOUT,
-        )
-
-        # Create sync task (every 2 minutes)
-        sync_log = str(log_dir / "sync.log")
-        sync_cmd = _build_task_command(exe, "sync", sync_log)
-        result_sync = subprocess.run(
-            [
-                "schtasks",
-                "/create",
-                "/tn",
-                sync_task_name,
-                "/tr",
-                sync_cmd,
-                "/sc",
-                "minute",
-                "/mo",
-                "2",
-                "/f",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=INIT_SUBPROCESS_TIMEOUT,
-        )
-
-        # Create watchdog task (every 1 minute)
-        wd_log = str(log_dir / "watchdog.log")
-        wd_cmd = _build_task_command(exe, "watchdog check", wd_log)
-        result_wd = subprocess.run(
-            [
-                "schtasks",
-                "/create",
-                "/tn",
-                watchdog_task_name,
-                "/tr",
-                wd_cmd,
-                "/sc",
-                "minute",
-                "/mo",
-                "1",
-                "/f",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=INIT_SUBPROCESS_TIMEOUT,
-        )
-
-        if result_sync.returncode == 0 and result_wd.returncode == 0:
+        elif is_windows():
+            _install_windows_tasks()
             return True, "Task Scheduler"
+        elif has_systemd():
+            _install_systemd_timers()
+            return True, "systemd"
         else:
-            error_msg = result_sync.stderr or result_wd.stderr or "Unknown error"
-            return False, f"Failed to create scheduled tasks: {error_msg}"
-
-    except subprocess.TimeoutExpired:
-        return False, "Task Scheduler command timed out"
+            _install_cron_jobs()
+            return True, "cron"
+    except SystemExit:
+        return False, "failed to install scheduled jobs"
     except (OSError, subprocess.SubprocessError) as e:
-        return False, f"Task Scheduler error: {e}"
+        logger.error(f"Failed to install scheduling: {e}")
+        return False, f"failed to install scheduling: {e}"
 
 
 def run_initial_sync() -> bool:
-    """Run initial sync command."""
+    """Run initial config push command."""
     try:
-        # Use centralized executable detection
         exe_args = get_executable_args()
         result = subprocess.run(
-            exe_args + ["sync"],
+            exe_args + ["config", "push"],
             capture_output=True,
             text=True,
             timeout=60,
@@ -547,13 +310,14 @@ def run_interactive_wizard(config_dir_override: Optional[Path] = None) -> bool:
     env_file = create_env_file(config_dir, api_key, profile_id)
     click.echo(f"  Created: {env_file}")
 
-    # Create config.json if it doesn't exist
-    config_file = config_dir / "config.json"
-    if not config_file.exists():
-        config_file = create_config_file(config_dir, timezone)
-        click.echo(f"  Created: {config_file}")
+    # Seed database with default settings if not already migrated
+    from . import database as db
+
+    if not db.config_has_domains():
+        create_default_config_in_db(timezone)
+        click.echo("  Database initialized with default settings")
     else:
-        click.echo(f"  Existing config.json found: {config_file}")
+        click.echo("  Database already has configuration")
 
     # Install scheduling (launchd/cron)
     click.echo()
@@ -671,11 +435,11 @@ def run_non_interactive(config_dir_override: Optional[Path] = None) -> bool:
     env_file = create_env_file(config_dir, api_key, profile_id)
     click.echo(f"Configuration saved to: {env_file}")
 
-    # Create config.json if it doesn't exist
-    config_file = config_dir / "config.json"
-    if not config_file.exists():
-        create_config_file(config_dir, timezone)
-        click.echo(f"Created: {config_file}")
+    from . import database as db
+
+    if not db.config_has_domains():
+        create_default_config_in_db(timezone)
+        click.echo("Database initialized with default settings")
 
     # Install scheduling
     sched_success, sched_type = install_scheduling()

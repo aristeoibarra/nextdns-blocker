@@ -57,13 +57,15 @@ def protection() -> None:
 )
 def protection_status(config_dir: Optional[Path]) -> None:
     """Show protection status and locked items."""
-    import json
+    with config_context(config_dir, "loading config") as _config:
+        from . import database as db
 
-    with config_context(config_dir, "loading config") as config:
-        config_path = Path(config["script_dir"]) / "config.json"
-
-        with open(config_path, encoding="utf-8") as f:
-            full_config = json.load(f)
+        if not db.config_has_domains():
+            console.print(
+                "\n  [red]No configuration in database. Run 'nextdns-blocker init'.[/red]\n"
+            )
+            return
+        full_config = db.get_full_config_dict()
 
     protection_config = full_config.get("protection", {})
 
@@ -161,13 +163,15 @@ def unlock_request(
     delay period (default: 48 hours). You can cancel the request at any
     time before it's executed.
     """
-    import json
+    with config_context(config_dir, "loading config") as _config:
+        from . import database as db
 
-    with config_context(config_dir, "loading config") as config:
-        config_path = Path(config["script_dir"]) / "config.json"
-
-        with open(config_path, encoding="utf-8") as f:
-            full_config = json.load(f)
+        if not db.config_has_domains():
+            console.print(
+                "\n  [red]No configuration in database. Run 'nextdns-blocker init'.[/red]\n"
+            )
+            return
+        full_config = db.get_full_config_dict()
 
     protection_config = full_config.get("protection", {})
     delay_hours = protection_config.get("unlock_delay_hours", DEFAULT_UNLOCK_DELAY_HOURS)

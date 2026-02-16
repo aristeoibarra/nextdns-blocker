@@ -6,7 +6,7 @@ import sys
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn, Optional
+from typing import Any, NoReturn, Optional
 
 import requests
 from rich.console import Console
@@ -14,10 +14,7 @@ from rich.console import Console
 from .cli_formatter import CLIOutput as out
 from .client import NextDNSClient
 from .config import load_config
-from .exceptions import ConfigurationError
-
-if TYPE_CHECKING:
-    pass
+from .exceptions import EXIT_API_ERROR, EXIT_CONFIG_ERROR, EXIT_VALIDATION_ERROR, ConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -33,27 +30,34 @@ def handle_error(e: Exception, context: str = "") -> NoReturn:
     """
     prefix = f"{context}: " if context else ""
 
+    exit_code = 1
     if isinstance(e, requests.exceptions.Timeout):
         out.error(f"{prefix}API timeout - please try again")
+        exit_code = EXIT_API_ERROR
     elif isinstance(e, requests.exceptions.ConnectionError):
         out.error(f"{prefix}Connection failed - check your network")
+        exit_code = EXIT_API_ERROR
     elif isinstance(e, requests.exceptions.HTTPError):
         out.error(f"{prefix}API error - {e}")
+        exit_code = EXIT_API_ERROR
     elif isinstance(e, ConfigurationError):
         out.error(f"{prefix}Config error - {e}")
+        exit_code = EXIT_CONFIG_ERROR
     elif isinstance(e, PermissionError):
         out.error(f"{prefix}Permission denied - {getattr(e, 'filename', 'unknown')}")
     elif isinstance(e, FileNotFoundError):
         out.error(f"{prefix}File not found - {getattr(e, 'filename', 'unknown')}")
     elif isinstance(e, json.JSONDecodeError):
         out.error(f"{prefix}Invalid JSON format - {e.msg}")
+        exit_code = EXIT_CONFIG_ERROR
     elif isinstance(e, ValueError):
         out.error(f"{prefix}Invalid value - {e}")
+        exit_code = EXIT_VALIDATION_ERROR
     else:
         logger.error(f"Unexpected error: {e}", exc_info=True)
         out.error(f"{prefix}{e}")
 
-    sys.exit(1)
+    sys.exit(exit_code)
 
 
 def get_client(config_dir: Optional[Path] = None) -> NextDNSClient:

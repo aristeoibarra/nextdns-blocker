@@ -519,7 +519,8 @@ class TestRunSyncAfterRestore:
 
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        assert "sync" in args
+        assert "config" in args
+        assert "push" in args
 
     def test_run_sync_timeout(self, tmp_path):
         """Should handle sync timeout gracefully."""

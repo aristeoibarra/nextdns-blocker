@@ -1,9 +1,12 @@
-"""Tests for retry queue module."""
+"""Tests for retry queue module with SQLite backend."""
 
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from nextdns_blocker import database as db
 from nextdns_blocker.client import APIRequestResult
 from nextdns_blocker.retry_queue import (
     DEFAULT_INITIAL_BACKOFF,
@@ -12,8 +15,6 @@ from nextdns_blocker.retry_queue import (
     RetryItem,
     RetryResult,
     _generate_retry_id,
-    _load_queue_data,
-    _save_queue_data,
     clear_queue,
     enqueue,
     get_queue_items,
@@ -23,6 +24,26 @@ from nextdns_blocker.retry_queue import (
     remove_item,
     update_item,
 )
+
+
+@pytest.fixture(autouse=True)
+def use_temp_database(tmp_path: Path):
+    """Use a temporary database for each test."""
+    test_db_path = tmp_path / "test.db"
+
+    # Patch the database path
+    with patch.object(db, "get_db_path", return_value=test_db_path):
+        # Clear thread-local connection
+        if hasattr(db._local, "connection"):
+            db._local.connection = None
+
+        # Initialize fresh database
+        db.init_database()
+
+        yield
+
+        # Close connection
+        db.close_connection()
 
 
 class TestRetryItem:
@@ -43,8 +64,7 @@ class TestRetryItem:
         assert item.error_type == "timeout"
         assert item.attempt_count == 0
         assert item.backoff_seconds == DEFAULT_INITIAL_BACKOFF
-        assert item.first_attempt  # Should be set automatically
-        assert item.last_attempt
+        assert item.created_at  # Should be set automatically
         assert item.next_retry_at
 
     def test_from_dict(self):
@@ -56,8 +76,7 @@ class TestRetryItem:
             "error_type": "rate_limit",
             "error_msg": "429 Too Many Requests",
             "attempt_count": 2,
-            "first_attempt": "2025-01-17T10:00:00",
-            "last_attempt": "2025-01-17T10:05:00",
+            "created_at": "2025-01-17T10:00:00",
             "next_retry_at": "2025-01-17T10:10:00",
             "backoff_seconds": 120,
         }
@@ -122,7 +141,6 @@ class TestRetryItem:
 
         assert item.attempt_count == original_attempt + 1
         assert item.backoff_seconds == 120  # Doubled
-        assert item.last_attempt  # Should be updated
 
     def test_update_for_retry_max_backoff(self):
         """Should not exceed MAX_BACKOFF."""
@@ -157,56 +175,12 @@ class TestGenerateRetryId:
         assert len(set(ids)) == 100
 
 
-class TestQueueDataIO:
-    """Tests for queue data loading and saving."""
-
-    def test_load_empty_file(self, tmp_path: Path):
-        """Loading non-existent file returns default structure."""
-        with patch(
-            "nextdns_blocker.retry_queue.get_retry_queue_file",
-            return_value=tmp_path / "retry_queue.json",
-        ):
-            data = _load_queue_data()
-            assert data["version"] == "1.0"
-            assert data["retry_entries"] == []
-
-    def test_save_and_load(self, tmp_path: Path):
-        """Saved data can be loaded correctly."""
-        queue_file = tmp_path / "retry_queue.json"
-        with patch("nextdns_blocker.retry_queue.get_retry_queue_file", return_value=queue_file):
-            test_data = {
-                "version": "1.0",
-                "retry_entries": [{"id": "ret_123", "domain": "example.com", "action": "block"}],
-            }
-            assert _save_queue_data(test_data)
-            loaded = _load_queue_data()
-            assert loaded == test_data
-
-    def test_load_invalid_json(self, tmp_path: Path):
-        """Loading invalid JSON returns default structure."""
-        queue_file = tmp_path / "retry_queue.json"
-        queue_file.write_text("invalid json {")
-        with patch("nextdns_blocker.retry_queue.get_retry_queue_file", return_value=queue_file):
-            data = _load_queue_data()
-            assert data["version"] == "1.0"
-            assert data["retry_entries"] == []
-
-
 class TestEnqueue:
     """Tests for enqueue function."""
 
-    def test_enqueue_item(self, tmp_path: Path):
+    def test_enqueue_item(self):
         """Should enqueue an item successfully."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-            patch("nextdns_blocker.retry_queue.audit_log"),
-        ):
+        with patch("nextdns_blocker.retry_queue.audit_log"):
             item_id = enqueue(
                 domain="example.com",
                 action="block",
@@ -222,18 +196,9 @@ class TestEnqueue:
             assert items[0].domain == "example.com"
             assert items[0].action == "block"
 
-    def test_enqueue_duplicate(self, tmp_path: Path):
+    def test_enqueue_duplicate(self):
         """Should not duplicate items for same domain+action."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-            patch("nextdns_blocker.retry_queue.audit_log"),
-        ):
+        with patch("nextdns_blocker.retry_queue.audit_log"):
             id1 = enqueue("example.com", "block", "timeout", "Error 1")
             id2 = enqueue("example.com", "block", "timeout", "Error 2")
 
@@ -245,40 +210,20 @@ class TestEnqueue:
 class TestQueueOperations:
     """Tests for queue operations."""
 
-    def test_get_queue_items(self, tmp_path: Path):
+    def test_get_queue_items(self):
         """Should return all queue items."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-            patch("nextdns_blocker.retry_queue.audit_log"),
-        ):
+        with patch("nextdns_blocker.retry_queue.audit_log"):
             enqueue("example1.com", "block", "timeout", "Error")
             enqueue("example2.com", "unblock", "rate_limit", "Error")
 
             items = get_queue_items()
             assert len(items) == 2
 
-    def test_get_ready_items(self, tmp_path: Path):
+    def test_get_ready_items(self):
         """Should return only ready items."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-            patch("nextdns_blocker.retry_queue.audit_log"),
-        ):
-            # Add item with past retry time
+        with patch("nextdns_blocker.retry_queue.audit_log"):
+            # Add item and make it ready
             enqueue("ready.com", "block", "timeout", "Error")
-
-            # Modify to have future retry time
             items = get_queue_items()
             items[0].next_retry_at = (datetime.now() - timedelta(minutes=5)).isoformat()
             update_item(items[0])
@@ -295,51 +240,25 @@ class TestQueueOperations:
             assert len(ready) == 1
             assert ready[0].domain == "ready.com"
 
-    def test_remove_item(self, tmp_path: Path):
+    def test_remove_item(self):
         """Should remove item from queue."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-            patch("nextdns_blocker.retry_queue.audit_log"),
-        ):
+        with patch("nextdns_blocker.retry_queue.audit_log"):
             item_id = enqueue("example.com", "block", "timeout", "Error")
             assert len(get_queue_items()) == 1
 
+            assert item_id is not None
             result = remove_item(item_id)
             assert result is True
             assert len(get_queue_items()) == 0
 
-    def test_remove_nonexistent_item(self, tmp_path: Path):
+    def test_remove_nonexistent_item(self):
         """Should return False for non-existent item."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-        ):
-            result = remove_item("nonexistent_id")
-            assert result is False
+        result = remove_item("nonexistent_id")
+        assert result is False
 
-    def test_clear_queue(self, tmp_path: Path):
+    def test_clear_queue(self):
         """Should clear all items from queue."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-            patch("nextdns_blocker.retry_queue.audit_log"),
-        ):
+        with patch("nextdns_blocker.retry_queue.audit_log"):
             enqueue("example1.com", "block", "timeout", "Error")
             enqueue("example2.com", "unblock", "rate_limit", "Error")
             assert len(get_queue_items()) == 2
@@ -352,35 +271,17 @@ class TestQueueOperations:
 class TestGetQueueStats:
     """Tests for get_queue_stats function."""
 
-    def test_empty_queue_stats(self, tmp_path: Path):
+    def test_empty_queue_stats(self):
         """Should return zero stats for empty queue."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-        ):
-            stats = get_queue_stats()
-            assert stats["total"] == 0
-            assert stats["ready"] == 0
-            assert stats["pending"] == 0
-            assert stats["total_attempts"] == 0
+        stats = get_queue_stats()
+        assert stats["total"] == 0
+        assert stats["ready"] == 0
+        assert stats["pending"] == 0
+        assert stats["total_attempts"] == 0
 
-    def test_queue_stats_with_items(self, tmp_path: Path):
+    def test_queue_stats_with_items(self):
         """Should return correct stats for queue with items."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-            patch("nextdns_blocker.retry_queue.audit_log"),
-        ):
+        with patch("nextdns_blocker.retry_queue.audit_log"):
             enqueue("example1.com", "block", "timeout", "Error")
             enqueue("example2.com", "unblock", "rate_limit", "Error")
 
@@ -395,36 +296,18 @@ class TestGetQueueStats:
 class TestProcessQueue:
     """Tests for process_queue function."""
 
-    def test_process_empty_queue(self, tmp_path: Path):
+    def test_process_empty_queue(self):
         """Processing empty queue should return empty result."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-        ):
-            mock_client = MagicMock()
-            result = process_queue(mock_client)
+        mock_client = MagicMock()
+        result = process_queue(mock_client)
 
-            assert result.succeeded == []
-            assert result.failed == []
-            assert result.exhausted == []
+        assert result.succeeded == []
+        assert result.failed == []
+        assert result.exhausted == []
 
-    def test_process_successful_retry(self, tmp_path: Path):
+    def test_process_successful_retry(self):
         """Should process successful retry correctly."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-            patch("nextdns_blocker.retry_queue.audit_log"),
-        ):
+        with patch("nextdns_blocker.retry_queue.audit_log"):
             # Enqueue an item
             enqueue("example.com", "block", "timeout", "Error")
 
@@ -443,18 +326,9 @@ class TestProcessQueue:
             assert result.succeeded[0].domain == "example.com"
             assert len(get_queue_items()) == 0  # Item removed
 
-    def test_process_failed_retry_retryable(self, tmp_path: Path):
+    def test_process_failed_retry_retryable(self):
         """Should keep retryable failures in queue."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-            patch("nextdns_blocker.retry_queue.audit_log"),
-        ):
+        with patch("nextdns_blocker.retry_queue.audit_log"):
             # Enqueue an item
             enqueue("example.com", "block", "timeout", "Error")
 
@@ -477,20 +351,11 @@ class TestProcessQueue:
             assert len(get_queue_items()) == 1  # Item still in queue
             # Attempt count should be incremented
             items = get_queue_items()
-            assert items[0].attempt_count == 1
+            assert items[0].attempt_count == 2  # Initial 1 + 1 from retry
 
-    def test_process_exhausted_retries(self, tmp_path: Path):
+    def test_process_exhausted_retries(self):
         """Should remove items after max retries exceeded."""
-        queue_file = tmp_path / "retry_queue.json"
-        lock_file = tmp_path / ".retry_queue.lock"
-        with (
-            patch(
-                "nextdns_blocker.retry_queue.get_retry_queue_file",
-                return_value=queue_file,
-            ),
-            patch("nextdns_blocker.retry_queue._get_lock_file", return_value=lock_file),
-            patch("nextdns_blocker.retry_queue.audit_log"),
-        ):
+        with patch("nextdns_blocker.retry_queue.audit_log"):
             # Enqueue an item
             enqueue("example.com", "block", "timeout", "Error")
 
