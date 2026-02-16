@@ -305,8 +305,17 @@ class TestRunNonInteractive:
             **_get_home_env_vars(),
         }
 
-        with patch.dict(os.environ, env, clear=True):
-            result = run_non_interactive(tmp_path)
+        # Patch database path to use temp directory and initialize schema
+        from nextdns_blocker import database as db
+
+        with patch.object(db, "get_db_path", return_value=tmp_path / "test.db"):
+            db.close_connection()  # Reset any existing connection
+            db.init_database()  # Initialize schema in temp location
+
+            with patch.dict(os.environ, env, clear=True):
+                result = run_non_interactive(tmp_path)
+
+            db.close_connection()  # Cleanup
 
         assert result is True
         assert (tmp_path / ".env").exists()
