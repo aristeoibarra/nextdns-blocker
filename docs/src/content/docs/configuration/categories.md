@@ -229,7 +229,7 @@ See [Schedules](/configuration/schedules/) for details.
 
 - Each domain needs unique settings
 - One-off domains that don't fit a group
-- Legacy configurations
+- Standalone domain entries that don't fit a category
 
 ## Managing Categories
 

@@ -31,11 +31,21 @@ class NextDNSBlockerError(Exception):
     pass
 
 
+# =============================================================================
+# EXIT CODES
+# =============================================================================
+
+EXIT_CONFIG_ERROR = 2
+EXIT_API_ERROR = 3
+EXIT_VALIDATION_ERROR = 4
+EXIT_PIN_ERROR = 5
+
+
 class ConfigurationError(NextDNSBlockerError):
     """Raised when configuration is invalid or missing.
 
     This exception is raised when:
-    - Required configuration files (.env, config.json) are missing
+    - Required configuration (.env and database) is missing
     - API credentials are missing or have invalid format
     - Timezone setting is invalid
     - Domain configuration has validation errors

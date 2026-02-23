@@ -533,13 +533,12 @@ class TestInstallSchedulingWindows:
     """Tests for install_scheduling function with Windows support."""
 
     def test_install_scheduling_windows(self):
-        """Should call _install_windows_task on Windows."""
+        """Should call _install_windows_tasks on Windows."""
         from nextdns_blocker.init import install_scheduling
 
         with patch("nextdns_blocker.init.is_macos", return_value=False):
             with patch("nextdns_blocker.init.is_windows", return_value=True):
-                with patch("nextdns_blocker.init._install_windows_task") as mock_install:
-                    mock_install.return_value = (True, "Task Scheduler")
+                with patch("nextdns_blocker.watchdog._install_windows_tasks") as mock_install:
                     result = install_scheduling()
                     mock_install.assert_called_once()
                     assert result == (True, "Task Scheduler")

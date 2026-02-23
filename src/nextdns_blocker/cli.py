@@ -1,7 +1,10 @@
 """Command-line interface for NextDNS Blocker using Click."""
 
+import json as _json
 import logging
+import os
 import re
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -11,8 +14,7 @@ import click
 from rich.console import Console
 
 from . import __version__
-from .alias_cli import register_alias
-from .analytics_cli import register_stats
+from . import database as db
 from .client import NextDNSClient
 from .common import (
     audit_log,
@@ -21,12 +23,7 @@ from .common import (
     validate_domain,
 )
 from .completion import (
-    complete_allowlist_domains,
     complete_blocklist_domains,
-    detect_shell,
-    get_completion_script,
-    install_completion,
-    is_completion_installed,
 )
 from .config import (
     _expand_categories,
@@ -39,7 +36,13 @@ from .config import (
     validate_no_overlap,
 )
 from .config_cli import register_config
-from .exceptions import ConfigurationError, DomainValidationError
+from .exceptions import (
+    EXIT_CONFIG_ERROR,
+    EXIT_PIN_ERROR,
+    EXIT_VALIDATION_ERROR,
+    ConfigurationError,
+    DomainValidationError,
+)
 from .init import run_interactive_wizard, run_non_interactive
 from .nextdns_cli import register_nextdns
 from .notifications import (
@@ -131,7 +134,23 @@ def setup_logging(verbose: bool = False) -> None:
         return
 
     root_logger.setLevel(level)
-    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+
+    if os.environ.get("LOG_FORMAT", "").lower() == "json":
+
+        class _JsonFormatter(logging.Formatter):
+            def format(self, record: logging.LogRecord) -> str:
+                return _json.dumps(
+                    {
+                        "timestamp": self.formatTime(record),
+                        "level": record.levelname,
+                        "logger": record.name,
+                        "message": record.getMessage(),
+                    }
+                )
+
+        formatter: logging.Formatter = _JsonFormatter()
+    else:
+        formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
     # Create secrets redaction filter
     secrets_filter = SecretsRedactionFilter()
@@ -198,7 +217,7 @@ def require_pin_verification(command_name: str) -> bool:
         console.print(
             f"\n  [red]PIN locked out due to failed attempts. Try again in {remaining}[/red]\n"
         )
-        sys.exit(1)
+        sys.exit(EXIT_PIN_ERROR)
 
     # Prompt for PIN
     console.print(f"\n  [yellow]PIN required for '{command_name}'[/yellow]")
@@ -209,7 +228,7 @@ def require_pin_verification(command_name: str) -> bool:
 
     if not pin:
         console.print("\n  [red]PIN verification cancelled[/red]\n")
-        sys.exit(1)
+        sys.exit(EXIT_PIN_ERROR)
 
     if verify_pin(pin):
         return True
@@ -220,19 +239,12 @@ def require_pin_verification(command_name: str) -> bool:
         else:
             attempts_left = PIN_MAX_ATTEMPTS - get_failed_attempts_count()
             console.print(f"\n  [red]Incorrect PIN. {attempts_left} attempts remaining.[/red]\n")
-        sys.exit(1)
+        sys.exit(EXIT_PIN_ERROR)
 
 
 # =============================================================================
 # CONSTANTS
 # =============================================================================
-
-# Port validation constants
-MIN_PORT = 1
-MAX_PORT = 65535
-
-# PyPI API URL for update checking
-PYPI_PACKAGE_URL = "https://pypi.org/pypi/nextdns-blocker/json"
 
 
 # =============================================================================
@@ -246,8 +258,30 @@ PYPI_PACKAGE_URL = "https://pypi.org/pypi/nextdns-blocker/json"
 @click.pass_context
 def main(ctx: click.Context, no_color: bool) -> None:
     """NextDNS Blocker - Domain blocking with per-domain scheduling."""
+
+    def _shutdown_handler(signum: int, frame: Any) -> None:
+        logger.info("Received signal %s, shutting down gracefully", signum)
+        db.close_connection()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown_handler)
+    signal.signal(signal.SIGINT, _shutdown_handler)
+
     if no_color:
         console.no_color = True
+
+    try:
+        db.init_database()
+        config_dir = get_config_dir()
+        json_config_path = config_dir / "config.json"
+        if json_config_path.exists() and not db.config_has_domains():
+            try:
+                db.import_config_from_json(json_config_path)
+                logging.getLogger(__name__).info("Imported config from JSON file into database")
+            except Exception as e:
+                logging.getLogger(__name__).warning("Import from JSON config file failed: %s", e)
+    except Exception as e:
+        logging.getLogger(__name__).warning("Database initialization failed: %s", e)
 
     if ctx.invoked_subcommand is None:
         console.print(ctx.get_help())
@@ -366,10 +400,10 @@ def unblock(domain: str, config_dir: Optional[Path], force: bool) -> None:
 
     except ConfigurationError as e:
         console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
+        sys.exit(EXIT_CONFIG_ERROR)
     except DomainValidationError as e:
         console.print(f"\n  [red]Error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
+        sys.exit(EXIT_VALIDATION_ERROR)
 
 
 # =============================================================================
@@ -389,6 +423,10 @@ def _sync_denylist(
     """
     Synchronize denylist domains based on schedules.
 
+    SQLite is the single source of truth. This function:
+    1. Syncs local domains to remote (add/remove based on schedule)
+    2. Removes any remote domains not in local config
+
     Args:
         domains: List of domain configurations
         client: NextDNS API client
@@ -404,6 +442,10 @@ def _sync_denylist(
     blocked_count = 0
     unblocked_count = 0
 
+    # Build set of local domains for fast lookup
+    local_domains = {d["domain"] for d in domains}
+
+    # Sync local domains to remote
     for domain_config in domains:
         domain = domain_config["domain"]
         should_block = evaluator.should_block_domain(domain_config)
@@ -426,6 +468,22 @@ def _sync_denylist(
                 domain, domain_config, domains, client, config, dry_run, verbose, nm
             )
             if unblocked:
+                unblocked_count += 1
+
+    # Remove remote domains not in local config (SQLite is source of truth)
+    remote_denylist = client.get_denylist() or []
+    for remote_entry in remote_denylist:
+        remote_domain = remote_entry.get("id", "")
+        if not remote_domain or remote_domain in local_domains:
+            continue
+        if dry_run:
+            console.print(f"  [red]Would REMOVE from remote: {remote_domain}[/red]")
+        else:
+            success, was_removed = client.unblock(remote_domain)
+            if success and was_removed:
+                audit_log("SYNC_CLEANUP", f"{remote_domain} reason=not_in_local")
+                if verbose:
+                    console.print(f"  [red]Removed from remote: {remote_domain}[/red]")
                 unblocked_count += 1
 
     return blocked_count, unblocked_count
@@ -514,6 +572,10 @@ def _sync_allowlist(
     """
     Synchronize allowlist domains based on schedules.
 
+    SQLite is the single source of truth. This function:
+    1. Syncs local allowlist to remote (add/remove based on schedule)
+    2. Removes any remote allowlist entries not in local config
+
     Args:
         allowlist: List of allowlist configurations
         client: NextDNS API client
@@ -529,6 +591,10 @@ def _sync_allowlist(
     allowed_count = 0
     disallowed_count = 0
 
+    # Build set of local allowlist domains for fast lookup
+    local_allowed_domains = {d["domain"] for d in allowlist}
+
+    # Sync local allowlist to remote
     for allowlist_config in allowlist:
         domain = allowlist_config["domain"]
         should_allow = evaluator.should_allow_domain(allowlist_config)
@@ -556,6 +622,22 @@ def _sync_allowlist(
                     nm.queue(EventType.DISALLOW, domain)
                     disallowed_count += 1
 
+    # Remove remote allowlist entries not in local config (SQLite is source of truth)
+    remote_allowlist = client.get_allowlist() or []
+    for remote_entry in remote_allowlist:
+        remote_domain = remote_entry.get("id", "")
+        if not remote_domain or remote_domain in local_allowed_domains:
+            continue
+        if dry_run:
+            console.print(f"  [red]Would REMOVE from remote allowlist: {remote_domain}[/red]")
+        else:
+            success, was_removed = client.disallow(remote_domain)
+            if success and was_removed:
+                audit_log("SYNC_CLEANUP", f"{remote_domain} reason=not_in_local type=allowlist")
+                if verbose:
+                    console.print(f"  [red]Removed from remote allowlist: {remote_domain}[/red]")
+                disallowed_count += 1
+
     return allowed_count, disallowed_count
 
 
@@ -570,6 +652,10 @@ def _sync_nextdns_categories(
 ) -> tuple[int, int]:
     """
     Synchronize NextDNS Parental Control categories based on schedules.
+
+    SQLite is the single source of truth. This function:
+    1. Syncs local categories to remote (activate/deactivate based on schedule)
+    2. Deactivates any remote active categories not in local config
 
     When schedule says "available" (should_block=False) → deactivate category
     When schedule says "blocked" (should_block=True) → activate category
@@ -589,6 +675,10 @@ def _sync_nextdns_categories(
     activated_count = 0
     deactivated_count = 0
 
+    # Build set of local category IDs for fast lookup
+    local_category_ids = {c["id"] for c in categories}
+
+    # Sync local categories to remote
     for category_config in categories:
         category_id = category_config["id"]
         should_block = evaluator.should_block(category_config.get("schedule"))
@@ -620,6 +710,22 @@ def _sync_nextdns_categories(
                     nm.queue(EventType.PC_DEACTIVATE, f"category:{category_id}")
                     deactivated_count += 1
 
+    # Deactivate remote active categories not in local config (SQLite is source of truth)
+    remote_categories = client.get_parental_control_categories() or []
+    for remote_cat in remote_categories:
+        category_id = remote_cat.get("id", "")
+        is_active = remote_cat.get("active", False)
+        if not category_id or category_id in local_category_ids or not is_active:
+            continue
+        if dry_run:
+            console.print(f"  [red]Would DEACTIVATE remote category: {category_id}[/red]")
+        else:
+            if client.deactivate_category(category_id):
+                audit_log("SYNC_CLEANUP", f"category:{category_id} reason=not_in_local")
+                if verbose:
+                    console.print(f"  [red]Deactivated remote category: {category_id}[/red]")
+                deactivated_count += 1
+
     return activated_count, deactivated_count
 
 
@@ -634,6 +740,10 @@ def _sync_nextdns_services(
 ) -> tuple[int, int]:
     """
     Synchronize NextDNS Parental Control services based on schedules.
+
+    SQLite is the single source of truth. This function:
+    1. Syncs local services to remote (activate/deactivate based on schedule)
+    2. Deactivates any remote active services not in local config
 
     When schedule says "available" (should_block=False) → deactivate service
     When schedule says "blocked" (should_block=True) → activate service
@@ -653,6 +763,10 @@ def _sync_nextdns_services(
     activated_count = 0
     deactivated_count = 0
 
+    # Build set of local service IDs for fast lookup
+    local_service_ids = {s["id"] for s in services}
+
+    # Sync local services to remote
     for service_config in services:
         service_id = service_config["id"]
         should_block = evaluator.should_block(service_config.get("schedule"))
@@ -684,6 +798,22 @@ def _sync_nextdns_services(
                     nm.queue(EventType.PC_DEACTIVATE, f"service:{service_id}")
                     deactivated_count += 1
 
+    # Deactivate remote active services not in local config (SQLite is source of truth)
+    remote_services = client.get_parental_control_services() or []
+    for remote_svc in remote_services:
+        service_id = remote_svc.get("id", "")
+        is_active = remote_svc.get("active", False)
+        if not service_id or service_id in local_service_ids or not is_active:
+            continue
+        if dry_run:
+            console.print(f"  [red]Would DEACTIVATE remote service: {service_id}[/red]")
+        else:
+            if client.deactivate_service(service_id):
+                audit_log("SYNC_CLEANUP", f"service:{service_id} reason=not_in_local")
+                if verbose:
+                    console.print(f"  [red]Deactivated remote service: {service_id}[/red]")
+                deactivated_count += 1
+
     return activated_count, deactivated_count
 
 
@@ -698,7 +828,7 @@ def _sync_nextdns_parental_control(
     Sync NextDNS Parental Control global settings.
 
     Args:
-        nextdns_config: The 'nextdns' section from config.json
+        nextdns_config: The 'nextdns' section from config
         client: NextDNS API client
         config: Application configuration
         dry_run: If True, only show what would be done
@@ -1187,100 +1317,6 @@ def status(config_dir: Optional[Path], no_update_check: bool, show_list: bool) -
 
 
 @main.command()
-@click.argument("domain")
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Config directory (default: auto-detect)",
-)
-def allow(domain: str, config_dir: Optional[Path]) -> None:
-    """Add DOMAIN to allowlist."""
-    require_pin_verification("allow")
-
-    try:
-        if not validate_domain(domain):
-            console.print(
-                f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False
-            )
-            sys.exit(1)
-
-        config = load_config(config_dir)
-        client = NextDNSClient(
-            config["api_key"], config["profile_id"], config["timeout"], config["retries"]
-        )
-
-        # Warn if domain is in denylist
-        if client.is_blocked(domain):
-            console.print(
-                f"  [yellow]Warning: '{domain}' is currently blocked in denylist[/yellow]"
-            )
-
-        success, was_added = client.allow(domain)
-        if success:
-            if was_added:
-                audit_log("ALLOW", domain)
-                send_notification(EventType.ALLOW, domain, config)
-                console.print(f"\n  [green]Added to allowlist: {domain}[/green]\n")
-            else:
-                console.print(f"\n  [yellow]Already in allowlist: {domain}[/yellow]\n")
-        else:
-            console.print("\n  [red]Error: Failed to add to allowlist[/red]\n", highlight=False)
-            sys.exit(1)
-
-    except ConfigurationError as e:
-        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-    except DomainValidationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-
-
-@main.command()
-@click.argument("domain", shell_complete=complete_allowlist_domains)
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Config directory (default: auto-detect)",
-)
-def disallow(domain: str, config_dir: Optional[Path]) -> None:
-    """Remove DOMAIN from allowlist."""
-    require_pin_verification("disallow")
-
-    try:
-        if not validate_domain(domain):
-            console.print(
-                f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False
-            )
-            sys.exit(1)
-
-        config = load_config(config_dir)
-        client = NextDNSClient(
-            config["api_key"], config["profile_id"], config["timeout"], config["retries"]
-        )
-
-        success, was_removed = client.disallow(domain)
-        if success:
-            if was_removed:
-                audit_log("DISALLOW", domain)
-                send_notification(EventType.DISALLOW, domain, config)
-                console.print(f"\n  [green]Removed from allowlist: {domain}[/green]\n")
-            else:
-                console.print(f"\n  [yellow]Not in allowlist: {domain}[/yellow]\n")
-        else:
-            console.print(
-                "\n  [red]Error: Failed to remove from allowlist[/red]\n", highlight=False
-            )
-            sys.exit(1)
-
-    except ConfigurationError as e:
-        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-    except DomainValidationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-
-
-@main.command()
 @click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -1304,7 +1340,7 @@ def health(config_dir: Optional[Path]) -> None:
         console.print(f"  [red][✗][/red] Configuration: {e}")
         sys.exit(1)
 
-    # Check config.json
+    # Check domains (from database)
     checks_total += 1
     try:
         domains, allowlist = load_domains(config["script_dir"])
@@ -1327,6 +1363,18 @@ def health(config_dir: Optional[Path]) -> None:
         checks_passed += 1
     else:
         console.print("  [red][✗][/red] API connectivity failed")
+
+    # Check database
+    checks_total += 1
+    try:
+        db_path = db.get_db_path()
+        if db_path.exists():
+            console.print(f"  [green][✓][/green] Database initialized ({db_path})")
+            checks_passed += 1
+        else:
+            console.print("  [red][✗][/red] Database not initialized")
+    except Exception as e:
+        console.print(f"  [red][✗][/red] Database error: {e}")
 
     # Check log directory
     checks_total += 1
@@ -1351,62 +1399,13 @@ def health(config_dir: Optional[Path]) -> None:
 
 
 @main.command()
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Config directory (default: auto-detect)",
-)
-def test_notifications(config_dir: Optional[Path]) -> None:
-    """Send a test notification to verify notification configuration."""
-    try:
-        config = load_config(config_dir)
-        notifications = config.get("notifications", {})
-
-        if not notifications:
-            console.print(
-                "\n  [red]Error: No 'notifications' section in config.json[/red]",
-                highlight=False,
-            )
-            console.print("      Please add notification configuration.\n", highlight=False)
-            sys.exit(1)
-
-        if not notifications.get("enabled", True):
-            console.print(
-                "\n  [yellow]Warning: Notifications are disabled in config[/yellow]",
-                highlight=False,
-            )
-            sys.exit(1)
-
-        channels = notifications.get("channels", {})
-        enabled_channels = [name for name, cfg in channels.items() if cfg.get("enabled")]
-
-        if not enabled_channels:
-            console.print(
-                "\n  [red]Error: No notification channels enabled[/red]",
-                highlight=False,
-            )
-            console.print("      Enable at least one channel in config.json\n", highlight=False)
-            sys.exit(1)
-
-        console.print(f"\n  Sending test notification to: {', '.join(enabled_channels)}...")
-
-        send_notification(EventType.TEST, "Test Connection", config)
-
-        console.print("  [green]Notification sent! Check your configured channels.[/green]\n")
-
-    except ConfigurationError as e:
-        console.print(f"\n  [red]Config error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-
-
-@main.command()
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
 def uninstall(yes: bool) -> None:
     """Completely remove NextDNS Blocker and all its data.
 
     This command will:
     - Remove all scheduled jobs (launchd/cron/Task Scheduler)
-    - Delete configuration files (.env, config.json)
+    - Delete configuration (.env and database)
     - Delete all logs, cache, and data files
 
     After running this command, you will need to reinstall the package
@@ -1609,175 +1608,16 @@ def fix() -> None:
         console.print(f"        Sync: [red]FAILED - {e}[/red]")
 
     # Step 5: Shell completion
-    console.print("  [bold][5/5] Checking shell completion...[/bold]")
-    shell = detect_shell()
-    if shell and not is_windows():
-        if is_completion_installed(shell):
-            console.print("        Completion: [green]OK[/green]")
-        else:
-            success, msg = install_completion(shell)
-            if success:
-                console.print("        Completion: [green]INSTALLED[/green]")
-                console.print(f"        {msg}")
-            else:
-                console.print("        Completion: [yellow]SKIPPED[/yellow]")
-                console.print(f"        {msg}")
-    else:
-        console.print("        Completion: [dim]N/A (Windows or unsupported shell)[/dim]")
-
     console.print("\n  [green]Fix complete![/green]\n")
-
-
-@main.command()
-@click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
-def update(yes: bool) -> None:
-    """Check for updates and upgrade to the latest version.
-
-    Automatically detects installation method (Homebrew, pipx, or pip)
-    and uses the appropriate upgrade command.
-    """
-    import json
-    import ssl
-    import subprocess
-    import urllib.error
-    import urllib.request
-
-    console.print("\n  Checking for updates...")
-
-    current_version = __version__
-
-    # Fetch latest version from PyPI
-    try:
-        with urllib.request.urlopen(PYPI_PACKAGE_URL, timeout=10) as response:  # nosec B310
-            data = json.loads(response.read().decode())
-            # Safely access nested keys
-            info = data.get("info")
-            if not isinstance(info, dict):
-                console.print("  [red]Error: Invalid PyPI response format[/red]\n", highlight=False)
-                sys.exit(1)
-            latest_version = info.get("version")
-            if not isinstance(latest_version, str):
-                console.print(
-                    "  [red]Error: Missing version in PyPI response[/red]\n", highlight=False
-                )
-                sys.exit(1)
-    except ssl.SSLError as e:
-        # SSLError is the base class and includes SSLCertVerificationError
-        console.print(f"  [red]SSL error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-    except urllib.error.URLError as e:
-        console.print(f"  [red]Network error: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-    except (json.JSONDecodeError, ValueError) as e:
-        console.print(f"  [red]Error parsing PyPI response: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-    except OSError as e:
-        console.print(f"  [red]Error checking PyPI: {e}[/red]\n", highlight=False)
-        sys.exit(1)
-
-    console.print(f"  Current version: {current_version}")
-    console.print(f"  Latest version:  {latest_version}")
-
-    # Compare versions
-    if current_version == latest_version:
-        console.print("\n  [green]You are already on the latest version.[/green]\n")
-        return
-
-    # Parse versions for comparison (handles semver with suffixes like "1.0.0rc1")
-    def parse_version(v: str) -> tuple[int, ...]:
-        # Extract only the numeric parts (e.g., "1.0.0rc1" -> "1.0.0")
-        # This regex captures digits separated by dots, ignoring suffixes
-        numeric_match = re.match(r"^(\d+(?:\.\d+)*)", v)
-        if not numeric_match:
-            raise ValueError(f"Cannot parse version: {v}")
-        numeric_part = numeric_match.group(1)
-        return tuple(int(x) for x in numeric_part.split("."))
-
-    try:
-        current_tuple = parse_version(current_version)
-        latest_tuple = parse_version(latest_version)
-    except ValueError:
-        # If parsing fails, assume update is available to be safe
-        current_tuple = (0,)
-        latest_tuple = (1,)
-
-    if current_tuple >= latest_tuple:
-        console.print("\n  [green]You are already on the latest version.[/green]\n")
-        return
-
-    console.print(f"\n  [yellow]A new version is available: {latest_version}[/yellow]")
-
-    # Ask for confirmation unless --yes flag is provided
-    if not yes:
-        if not click.confirm("  Do you want to update?"):
-            console.print("  Update cancelled.\n")
-            return
-
-    # Detect installation method (cross-platform)
-    exe_path = get_executable_path()
-
-    # Check for Homebrew installation (macOS/Linux)
-    is_homebrew_install = "/homebrew/" in exe_path.lower() or "/cellar/" in exe_path.lower()
-
-    # Check multiple indicators for pipx installation
-    pipx_venv_unix = Path.home() / ".local" / "pipx" / "venvs" / "nextdns-blocker"
-    pipx_venv_win = Path.home() / "pipx" / "venvs" / "nextdns-blocker"
-    is_pipx_install = (
-        pipx_venv_unix.exists() or pipx_venv_win.exists() or "pipx" in exe_path.lower()
-    )
-
-    # Perform the update
-    console.print("\n  Updating...")
-    try:
-        if is_homebrew_install:
-            console.print("  (detected Homebrew installation)")
-            result = subprocess.run(
-                ["brew", "upgrade", "nextdns-blocker"],
-                capture_output=True,
-                text=True,
-            )
-        elif is_pipx_install:
-            console.print("  (detected pipx installation)")
-            result = subprocess.run(
-                ["pipx", "upgrade", "nextdns-blocker"],
-                capture_output=True,
-                text=True,
-            )
-        else:
-            console.print("  (detected pip installation)")
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", "nextdns-blocker"],
-                capture_output=True,
-                text=True,
-            )
-        if result.returncode == 0:
-            console.print(f"  [green]Successfully updated to version {latest_version}[/green]")
-
-            # Check/install shell completion after update
-            shell = detect_shell()
-            if shell and not is_windows():
-                if not is_completion_installed(shell):
-                    success, msg = install_completion(shell)
-                    if success:
-                        console.print(f"  Shell completion installed: {msg}")
-
-            console.print("  Please restart the application to use the new version.\n")
-        else:
-            console.print(f"  [red]Update failed: {result.stderr}[/red]\n", highlight=False)
-            sys.exit(1)
-    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
-        console.print(f"  [red]Update failed: {e}[/red]\n", highlight=False)
-        sys.exit(1)
 
 
 def validate_impl(output_json: bool, config_dir: Optional[Path]) -> None:
     """
-    Validate configuration files before deployment.
+    Validate configuration before deployment.
 
     This is the implementation function called by config_cli.py.
 
-    Checks config.json for:
-    - Valid JSON syntax
+    Validates config:
     - Valid domain formats
     - Valid schedule time formats (HH:MM)
     - No denylist/allowlist conflicts
@@ -1808,23 +1648,18 @@ def validate_impl(output_json: bool, config_dir: Optional[Path]) -> None:
     def add_warning(message: str) -> None:
         results["warnings"].append(message)
 
-    # Check 1: config.json exists and has valid JSON syntax
-    config_file = config_dir / "config.json"
+    # Check 1: database has configuration
     domains_data = None
-
-    if config_file.exists():
+    if db.config_has_domains():
         try:
-            with open(config_file, encoding="utf-8") as f:
-                domains_data = json_module.load(f)
-            add_check("config.json", True, "valid JSON syntax")
-        except json_module.JSONDecodeError as e:
-            add_check("config.json", False, f"invalid JSON: {e}")
-            add_error(f"JSON syntax error: {e}")
+            domains_data = db.get_full_config_dict()
+            add_check("database", True, "config loaded")
+        except Exception as e:
+            add_check("database", False, str(e))
+            add_error(f"Failed to load config from database: {e}")
     else:
-        add_check("config.json", False, "file not found")
-        add_error(
-            f"Config file not found: {config_file}\nRun 'nextdns-blocker init' to create one."
-        )
+        add_check("database", False, "no configuration")
+        add_error("No configuration in database. Run 'nextdns-blocker init' to create one.")
 
     if domains_data is None:
         # Cannot proceed without valid domains data
@@ -1957,54 +1792,17 @@ def validate_impl(output_json: bool, config_dir: Optional[Path]) -> None:
 
 
 # =============================================================================
-# SHELL COMPLETION
-# =============================================================================
-
-
-@main.command()
-@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
-def completion(shell: str) -> None:
-    """Generate shell completion script.
-
-    Output the completion script for your shell. To enable completions,
-    add the appropriate line to your shell configuration file.
-
-    Examples:
-
-    \b
-    # Bash - add to ~/.bashrc
-    eval "$(nextdns-blocker completion bash)"
-
-    \b
-    # Zsh - add to ~/.zshrc
-    eval "$(nextdns-blocker completion zsh)"
-
-    \b
-    # Fish - save to completions directory
-    nextdns-blocker completion fish > ~/.config/fish/completions/nextdns-blocker.fish
-    """
-    script = get_completion_script(shell)
-    click.echo(script)
-
-
-# =============================================================================
 # REGISTER COMMAND GROUPS
 # =============================================================================
 
 # Register config command group
 register_config(main)
 
-# Register alias command group
-register_alias(main)
-
 # Register nextdns command group
 register_nextdns(main)
 
 # Register protection command group
 register_protection(main)
-
-# Register stats command group
-register_stats(main)
 
 
 if __name__ == "__main__":
