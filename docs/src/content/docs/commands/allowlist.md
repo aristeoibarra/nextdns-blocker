@@ -267,9 +267,9 @@ nextdns-blocker allowlist import work-domains.txt
 
 ---
 
-## Legacy Commands: allow / disallow
+## Commands: allow / disallow
 
-The single-domain `allow` and `disallow` commands are still available for quick operations.
+The single-domain `allow` and `disallow` commands are available for quick operations.
 
 ## Overview
 

@@ -150,8 +150,8 @@ class TestValidateUnblockDelay:
         """Test '0' is valid."""
         assert validate_unblock_delay("0") is True
 
-    def test_valid_legacy_values(self):
-        """Test legacy values still work."""
+    def test_valid_short_form_values(self):
+        """Test short-form unblock_delay values still work."""
         assert validate_unblock_delay("24h") is True
         assert validate_unblock_delay("4h") is True
         assert validate_unblock_delay("30m") is True

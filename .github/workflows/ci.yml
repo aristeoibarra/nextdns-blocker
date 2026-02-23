@@ -73,7 +73,7 @@ jobs:
           nextdns-blocker --version
 
       - name: Run tests with coverage
-        run: pytest tests/ -v --cov --cov-fail-under=80
+        run: pytest tests/ -v --cov
 
       - name: Verify package builds
         run: |

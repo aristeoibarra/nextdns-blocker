@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
+from nextdns_blocker import database as db
 from nextdns_blocker.common import (
     SECURE_FILE_MODE,
     _lock_file,
@@ -22,56 +23,49 @@ from nextdns_blocker.common import (
 
 
 class TestAuditLogErrorHandling:
-    """Tests for audit_log error handling."""
+    """Tests for audit_log error handling when writing to SQLite."""
 
-    def test_audit_log_handles_oserror_on_mkdir(self, tmp_path):
-        """Should handle OSError when creating log directory."""
-        fake_log_dir = tmp_path / "logs"
+    @pytest.fixture(autouse=True)
+    def use_temp_database(self, tmp_path: Path):
+        """Use a temporary database for each test."""
+        test_db_path = tmp_path / "test.db"
 
-        with patch("nextdns_blocker.common.get_log_dir", return_value=fake_log_dir):
-            with patch(
-                "nextdns_blocker.common.ensure_log_dir", side_effect=OSError("Permission denied")
-            ):
-                # Should not raise exception
-                audit_log("TEST_ACTION", "test detail")
+        with patch.object(db, "get_db_path", return_value=test_db_path):
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+            db.init_database()
+            yield
+            db.close_connection()
 
-    def test_audit_log_handles_oserror_on_write(self, tmp_path):
-        """Should handle OSError when writing to audit file."""
-        log_dir = tmp_path / "logs"
-        log_dir.mkdir(parents=True)
+    def test_audit_log_writes_to_database(self):
+        """Should write to SQLite database."""
+        audit_log("TEST_ACTION", "test detail")
 
-        with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
-            with patch("builtins.open", side_effect=OSError("Disk full")):
-                # Should not raise exception
-                audit_log("TEST_ACTION", "test detail")
+        logs = db.get_audit_logs(limit=1)
+        assert len(logs) == 1
+        assert logs[0]["event_type"] == "TEST_ACTION"
 
-    def test_audit_log_handles_oserror_on_touch(self, tmp_path):
-        """Should handle OSError when creating audit file."""
-        log_dir = tmp_path / "logs"
-        log_dir.mkdir(parents=True)
+    def test_audit_log_handles_database_error(self):
+        """Should handle database error gracefully."""
+        with patch.object(db, "add_audit_log", side_effect=Exception("DB error")):
+            # Should not raise exception
+            audit_log("TEST_ACTION", "test detail")
 
-        audit_file = log_dir / "audit.log"
+    def test_audit_log_with_prefix(self):
+        """Should include prefix in event_type."""
+        audit_log("TEST_ACTION", "test detail", prefix="WD")
 
-        with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
-            with patch("nextdns_blocker.common.get_audit_log_file", return_value=audit_file):
-                with patch.object(Path, "touch", side_effect=OSError("Permission denied")):
-                    # Should not raise exception
-                    audit_log("TEST_ACTION", "test detail")
+        logs = db.get_audit_logs(limit=1)
+        assert len(logs) == 1
+        assert logs[0]["event_type"] == "WD_TEST_ACTION"
 
-    def test_audit_log_with_prefix(self, tmp_path):
-        """Should include prefix in log entry."""
-        log_dir = tmp_path / "logs"
-        log_dir.mkdir(parents=True)
-        audit_file = log_dir / "audit.log"
+    def test_audit_log_parses_domain_from_detail(self):
+        """Should extract domain from detail."""
+        audit_log("BLOCK", "example.com extra info")
 
-        with patch("nextdns_blocker.common.get_log_dir", return_value=log_dir):
-            with patch("nextdns_blocker.common.get_audit_log_file", return_value=audit_file):
-                audit_log("TEST_ACTION", "test detail", prefix="WD")
-
-        content = audit_file.read_text()
-        assert "WD" in content
-        assert "TEST_ACTION" in content
-        assert "test detail" in content
+        logs = db.get_audit_logs(limit=1)
+        assert len(logs) == 1
+        assert logs[0]["domain"] == "example.com"
 
 
 class TestWriteSecureFileErrorHandling:

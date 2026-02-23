@@ -1,13 +1,13 @@
-"""Tests for pending action module."""
+"""Tests for pending action module with SQLite backend."""
 
-import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+from nextdns_blocker import database as db
 from nextdns_blocker.pending import (
-    _load_pending_data,
-    _save_pending_data,
     cancel_pending_action,
     cleanup_old_actions,
     create_pending_action,
@@ -17,6 +17,26 @@ from nextdns_blocker.pending import (
     get_ready_actions,
     mark_action_executed,
 )
+
+
+@pytest.fixture(autouse=True)
+def use_temp_database(tmp_path: Path):
+    """Use a temporary database for each test."""
+    test_db_path = tmp_path / "test.db"
+
+    # Patch the database path
+    with patch.object(db, "get_db_path", return_value=test_db_path):
+        # Clear thread-local connection
+        if hasattr(db._local, "connection"):
+            db._local.connection = None
+
+        # Initialize fresh database
+        db.init_database()
+
+        yield
+
+        # Close connection
+        db.close_connection()
 
 
 class TestGenerateActionId:
@@ -39,52 +59,12 @@ class TestGenerateActionId:
         assert len(set(ids)) == 100
 
 
-class TestPendingDataIO:
-    """Tests for pending data loading and saving."""
-
-    def test_load_empty_file(self, tmp_path: Path):
-        """Loading non-existent file returns default structure."""
-        with patch(
-            "nextdns_blocker.pending.get_pending_file", return_value=tmp_path / "pending.json"
-        ):
-            data = _load_pending_data()
-            assert data["version"] == "1.0"
-            assert data["pending_actions"] == []
-
-    def test_save_and_load(self, tmp_path: Path):
-        """Saved data can be loaded correctly."""
-        pending_file = tmp_path / "pending.json"
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
-            test_data = {
-                "version": "1.0",
-                "pending_actions": [
-                    {"id": "test_123", "domain": "example.com", "status": "pending"}
-                ],
-            }
-            assert _save_pending_data(test_data)
-            loaded = _load_pending_data()
-            assert loaded == test_data
-
-    def test_load_invalid_json(self, tmp_path: Path):
-        """Loading invalid JSON returns default structure."""
-        pending_file = tmp_path / "pending.json"
-        pending_file.write_text("invalid json {")
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
-            data = _load_pending_data()
-            assert data["version"] == "1.0"
-            assert data["pending_actions"] == []
-
-
 class TestCreatePendingAction:
     """Tests for create_pending_action function."""
 
-    def test_create_action_with_delay(self, tmp_path: Path):
+    def test_create_action_with_delay(self):
         """Creating action with valid delay."""
-        pending_file = tmp_path / "pending.json"
-        with (
-            patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file),
-            patch("nextdns_blocker.pending.audit_log"),
-        ):
+        with patch("nextdns_blocker.pending.audit_log"):
             action = create_pending_action("example.com", "4h", "cli")
             assert action is not None
             assert action["domain"] == "example.com"
@@ -93,38 +73,26 @@ class TestCreatePendingAction:
             assert action["requested_by"] == "cli"
             assert action["id"].startswith("pnd_")
 
-    def test_create_action_never_returns_none(self, tmp_path: Path):
+    def test_create_action_never_returns_none(self):
         """Creating action with 'never' delay returns None."""
-        pending_file = tmp_path / "pending.json"
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
-            action = create_pending_action("example.com", "never", "cli")
-            assert action is None
+        action = create_pending_action("example.com", "never", "cli")
+        assert action is None
 
-    def test_create_action_invalid_delay(self, tmp_path: Path):
+    def test_create_action_invalid_delay(self):
         """Creating action with invalid delay returns None."""
-        pending_file = tmp_path / "pending.json"
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
-            action = create_pending_action("example.com", "invalid", "cli")
-            assert action is None
+        action = create_pending_action("example.com", "invalid", "cli")
+        assert action is None
 
-    def test_create_duplicate_returns_existing(self, tmp_path: Path):
+    def test_create_duplicate_returns_existing(self):
         """Creating duplicate action returns existing one."""
-        pending_file = tmp_path / "pending.json"
-        with (
-            patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file),
-            patch("nextdns_blocker.pending.audit_log"),
-        ):
+        with patch("nextdns_blocker.pending.audit_log"):
             action1 = create_pending_action("example.com", "4h", "cli")
             action2 = create_pending_action("example.com", "24h", "cli")
             assert action1["id"] == action2["id"]
 
-    def test_execute_at_calculated_correctly(self, tmp_path: Path):
+    def test_execute_at_calculated_correctly(self):
         """Execute time is calculated correctly based on delay."""
-        pending_file = tmp_path / "pending.json"
-        with (
-            patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file),
-            patch("nextdns_blocker.pending.audit_log"),
-        ):
+        with patch("nextdns_blocker.pending.audit_log"):
             before = datetime.now()
             action = create_pending_action("example.com", "30m", "cli")
             after = datetime.now()
@@ -139,133 +107,86 @@ class TestCreatePendingAction:
 class TestGetPendingActions:
     """Tests for get_pending_actions function."""
 
-    def test_get_all_actions(self, tmp_path: Path):
+    def test_get_all_actions(self):
         """Get all pending actions."""
-        pending_file = tmp_path / "pending.json"
-        test_data = {
-            "version": "1.0",
-            "pending_actions": [
-                {"id": "1", "domain": "a.com", "status": "pending"},
-                {"id": "2", "domain": "b.com", "status": "executed"},
-            ],
-        }
-        pending_file.write_text(json.dumps(test_data))
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
+        with patch("nextdns_blocker.pending.audit_log"):
+            create_pending_action("a.com", "4h", "cli")
+            create_pending_action("b.com", "4h", "cli")
+
             actions = get_pending_actions()
             assert len(actions) == 2
 
-    def test_filter_by_status(self, tmp_path: Path):
+    def test_filter_by_status(self):
         """Filter actions by status."""
-        pending_file = tmp_path / "pending.json"
-        test_data = {
-            "version": "1.0",
-            "pending_actions": [
-                {"id": "1", "domain": "a.com", "status": "pending"},
-                {"id": "2", "domain": "b.com", "status": "executed"},
-            ],
-        }
-        pending_file.write_text(json.dumps(test_data))
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
+        with patch("nextdns_blocker.pending.audit_log"):
+            action = create_pending_action("a.com", "4h", "cli")
+            mark_action_executed(action["id"])
+
+            create_pending_action("b.com", "4h", "cli")
+
             pending = get_pending_actions(status="pending")
             assert len(pending) == 1
-            assert pending[0]["id"] == "1"
+            assert pending[0]["domain"] == "b.com"
 
 
 class TestGetPendingForDomain:
     """Tests for get_pending_for_domain function."""
 
-    def test_find_existing_domain(self, tmp_path: Path):
+    def test_find_existing_domain(self):
         """Find pending action for domain."""
-        pending_file = tmp_path / "pending.json"
-        test_data = {
-            "version": "1.0",
-            "pending_actions": [
-                {"id": "1", "domain": "example.com", "status": "pending"},
-            ],
-        }
-        pending_file.write_text(json.dumps(test_data))
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
+        with patch("nextdns_blocker.pending.audit_log"):
+            created = create_pending_action("example.com", "4h", "cli")
             action = get_pending_for_domain("example.com")
             assert action is not None
-            assert action["id"] == "1"
+            assert action["id"] == created["id"]
 
-    def test_domain_not_found(self, tmp_path: Path):
+    def test_domain_not_found(self):
         """Return None for non-existent domain."""
-        pending_file = tmp_path / "pending.json"
-        test_data = {"version": "1.0", "pending_actions": []}
-        pending_file.write_text(json.dumps(test_data))
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
-            action = get_pending_for_domain("example.com")
-            assert action is None
+        action = get_pending_for_domain("example.com")
+        assert action is None
 
 
 class TestCancelPendingAction:
     """Tests for cancel_pending_action function."""
 
-    def test_cancel_existing_action(self, tmp_path: Path):
+    def test_cancel_existing_action(self):
         """Cancel existing pending action."""
-        pending_file = tmp_path / "pending.json"
-        test_data = {
-            "version": "1.0",
-            "pending_actions": [
-                {"id": "test_123", "domain": "example.com", "status": "pending"},
-            ],
-        }
-        pending_file.write_text(json.dumps(test_data))
-        with (
-            patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file),
-            patch("nextdns_blocker.pending.audit_log"),
-        ):
-            result = cancel_pending_action("test_123")
+        with patch("nextdns_blocker.pending.audit_log"):
+            action = create_pending_action("example.com", "4h", "cli")
+            result = cancel_pending_action(action["id"])
             assert result is True
 
             # Verify action was removed
             actions = get_pending_actions()
             assert len(actions) == 0
 
-    def test_cancel_non_existent_action(self, tmp_path: Path):
+    def test_cancel_non_existent_action(self):
         """Cancelling non-existent action returns False."""
-        pending_file = tmp_path / "pending.json"
-        test_data = {"version": "1.0", "pending_actions": []}
-        pending_file.write_text(json.dumps(test_data))
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
-            result = cancel_pending_action("nonexistent")
-            assert result is False
+        result = cancel_pending_action("nonexistent")
+        assert result is False
 
 
 class TestGetReadyActions:
     """Tests for get_ready_actions function."""
 
-    def test_get_ready_actions(self, tmp_path: Path):
+    def test_get_ready_actions(self):
         """Get actions ready for execution."""
-        pending_file = tmp_path / "pending.json"
-        past_time = (datetime.now() - timedelta(hours=1)).isoformat()
-        future_time = (datetime.now() + timedelta(hours=1)).isoformat()
-        test_data = {
-            "version": "1.0",
-            "pending_actions": [
-                {"id": "1", "domain": "a.com", "status": "pending", "execute_at": past_time},
-                {"id": "2", "domain": "b.com", "status": "pending", "execute_at": future_time},
-            ],
-        }
-        pending_file.write_text(json.dumps(test_data))
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
+        with patch("nextdns_blocker.pending.audit_log"):
+            # Create action with 0 delay (ready immediately)
+            create_pending_action("a.com", "0", "cli")
+            # Create action with future execution
+            create_pending_action("b.com", "4h", "cli")
+
             ready = get_ready_actions()
             assert len(ready) == 1
-            assert ready[0]["id"] == "1"
+            assert ready[0]["domain"] == "a.com"
 
-    def test_skip_non_pending_status(self, tmp_path: Path):
+    def test_skip_non_pending_status(self):
         """Skip actions that are not in pending status."""
-        pending_file = tmp_path / "pending.json"
-        past_time = (datetime.now() - timedelta(hours=1)).isoformat()
-        test_data = {
-            "version": "1.0",
-            "pending_actions": [
-                {"id": "1", "domain": "a.com", "status": "executed", "execute_at": past_time},
-            ],
-        }
-        pending_file.write_text(json.dumps(test_data))
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
+        with patch("nextdns_blocker.pending.audit_log"):
+            action = create_pending_action("a.com", "0", "cli")
+            mark_action_executed(action["id"])
+
             ready = get_ready_actions()
             assert len(ready) == 0
 
@@ -273,56 +194,44 @@ class TestGetReadyActions:
 class TestMarkActionExecuted:
     """Tests for mark_action_executed function."""
 
-    def test_mark_executed_removes_action(self, tmp_path: Path):
-        """Marking action as executed removes it from file."""
-        pending_file = tmp_path / "pending.json"
-        test_data = {
-            "version": "1.0",
-            "pending_actions": [
-                {"id": "test_123", "domain": "example.com", "status": "pending"},
-            ],
-        }
-        pending_file.write_text(json.dumps(test_data))
-        with (
-            patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file),
-            patch("nextdns_blocker.pending.audit_log"),
-        ):
-            result = mark_action_executed("test_123")
+    def test_mark_executed_removes_action(self):
+        """Marking action as executed removes it from database."""
+        with patch("nextdns_blocker.pending.audit_log"):
+            action = create_pending_action("example.com", "4h", "cli")
+            result = mark_action_executed(action["id"])
             assert result is True
 
             actions = get_pending_actions()
             assert len(actions) == 0
 
+    def test_mark_non_existent_action(self):
+        """Marking non-existent action returns False."""
+        with patch("nextdns_blocker.pending.audit_log"):
+            result = mark_action_executed("nonexistent")
+            assert result is False
+
 
 class TestCleanupOldActions:
     """Tests for cleanup_old_actions function."""
 
-    def test_cleanup_old_actions(self, tmp_path: Path):
+    def test_cleanup_old_actions(self):
         """Clean up actions older than max_age_days."""
-        pending_file = tmp_path / "pending.json"
-        old_time = (datetime.now() - timedelta(days=10)).isoformat()
-        recent_time = (datetime.now() - timedelta(days=1)).isoformat()
-        test_data = {
-            "version": "1.0",
-            "pending_actions": [
-                {
-                    "id": "1",
-                    "domain": "old.com",
-                    "status": "pending",
-                    "created_at": old_time,
-                    "execute_at": old_time,
-                },
-                {
-                    "id": "2",
-                    "domain": "recent.com",
-                    "status": "pending",
-                    "created_at": recent_time,
-                    "execute_at": recent_time,
-                },
-            ],
-        }
-        pending_file.write_text(json.dumps(test_data))
-        with patch("nextdns_blocker.pending.get_pending_file", return_value=pending_file):
+        with patch("nextdns_blocker.pending.audit_log"):
+            # Create an action
+            action = create_pending_action("old.com", "4h", "cli")
+
+            # Manually update its created_at to be old
+            conn = db.get_connection()
+            old_time = (datetime.now() - timedelta(days=10)).isoformat()
+            conn.execute(
+                "UPDATE pending_actions SET created_at = ? WHERE id = ?",
+                (old_time, action["id"]),
+            )
+            conn.commit()
+
+            # Create a recent action
+            create_pending_action("recent.com", "4h", "cli")
+
             removed = cleanup_old_actions(max_age_days=7)
             assert removed == 1
 
