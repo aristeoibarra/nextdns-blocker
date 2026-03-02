@@ -292,11 +292,8 @@ class RateLimiter:
                     return total_waited
 
                 # Calculate wait time until oldest request expires
-                # Safety check: if deque is empty after cleanup, we can proceed
-                if not self._requests:
-                    self._requests.append(now)
-                    return total_waited
-
+                # Note: self._requests is guaranteed non-empty here because
+                # len(self._requests) >= self.max_requests (checked above)
                 wait_time = self._requests[0] - cutoff
                 if wait_time <= 0:
                     # Oldest request already expired, try again
@@ -353,11 +350,11 @@ class DomainCache:
             return self._is_valid_unlocked()
 
     def get(self) -> Optional[list[dict[str, Any]]]:
-        """Get cached data if valid. Returns a copy to prevent external modification."""
+        """Get cached data if valid. Returns a deep copy to prevent external modification."""
         with self._lock:
             if self._is_valid_unlocked():
-                # Return a shallow copy to prevent callers from modifying cache data
-                return list(self._data) if self._data else None
+                # Return a deep copy to prevent callers from mutating cached dicts
+                return [dict(item) for item in self._data] if self._data else None
             return None
 
     def set(self, data: list[dict[str, Any]]) -> None:

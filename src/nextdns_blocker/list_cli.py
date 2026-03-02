@@ -74,7 +74,7 @@ def _parse_import_file(
                     domains.append(d)
         return domains, errors
     except json.JSONDecodeError:
-        pass
+        logger.debug("Import file is not valid JSON, trying CSV format")
 
     # Try CSV
     try:
@@ -89,7 +89,7 @@ def _parse_import_file(
         if domains:
             return domains, errors
     except (csv.Error, KeyError):
-        pass
+        logger.debug("Import file is not valid CSV, trying plain text format")
 
     # Try plain text (one domain per line)
     for line in content.splitlines():

@@ -593,7 +593,7 @@ def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
             metadata=metadata,
         )
     except Exception as e:
-        logger.warning(f"Failed to write audit log to database: {e}")
+        logger.warning(f"Failed to write audit log to database: {e}", exc_info=True)
 
 
 def write_secure_file(path: Path, content: str) -> None:

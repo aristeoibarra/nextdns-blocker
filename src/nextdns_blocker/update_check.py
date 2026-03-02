@@ -165,9 +165,12 @@ def _fetch_latest_version() -> Optional[str]:
         # Security: Using urllib.request.urlopen with hardcoded HTTPS URL to PyPI.
         # This is safe because:
         # 1. URL is hardcoded constant, not user-controlled
-        # 2. Uses HTTPS with certificate validation
+        # 2. Uses HTTPS with explicit SSL certificate validation
         # 3. Only fetches public package metadata (read-only)
-        with urllib.request.urlopen(PYPI_URL, timeout=PYPI_TIMEOUT) as response:  # nosec B310
+        ssl_context = ssl.create_default_context()
+        with urllib.request.urlopen(
+            PYPI_URL, timeout=PYPI_TIMEOUT, context=ssl_context
+        ) as response:  # nosec B310
             data: dict[str, Any] = json.loads(response.read().decode())
             # Safely access nested keys
             info = data.get("info")

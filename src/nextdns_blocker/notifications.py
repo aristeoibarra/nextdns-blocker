@@ -249,9 +249,18 @@ class TelegramAdapter(NotificationAdapter):
             response.raise_for_status()
             logger.debug(f"Telegram notification sent with {len(batch.events)} events")
             return True
+        except requests.exceptions.Timeout:
+            logger.warning(f"Telegram notification timeout ({NOTIF_TIMEOUT}s)")
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"Telegram notification connection error: {e}")
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"Telegram notification HTTP error: {e}")
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Telegram notification failed: {e}")
         except Exception as e:
-            logger.warning(f"Telegram notification failed: {e}", exc_info=True)
-            return False
+            logger.error(f"Unexpected Telegram error: {type(e).__name__}: {e}", exc_info=True)
+
+        return False
 
     def format_batch(self, batch: BatchedNotification) -> str:
         """Format batch for Telegram markdown."""
@@ -298,9 +307,18 @@ class SlackAdapter(NotificationAdapter):
             response.raise_for_status()
             logger.debug(f"Slack notification sent with {len(batch.events)} events")
             return True
+        except requests.exceptions.Timeout:
+            logger.warning(f"Slack notification timeout ({NOTIF_TIMEOUT}s)")
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"Slack notification connection error: {e}")
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"Slack notification HTTP error: {e}")
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Slack notification failed: {e}")
         except Exception as e:
-            logger.warning(f"Slack notification failed: {e}", exc_info=True)
-            return False
+            logger.error(f"Unexpected Slack error: {type(e).__name__}: {e}", exc_info=True)
+
+        return False
 
     def format_batch(self, batch: BatchedNotification) -> dict[str, Any]:
         """Format batch for Slack Block Kit."""
@@ -359,9 +377,18 @@ class NtfyAdapter(NotificationAdapter):
             response.raise_for_status()
             logger.debug(f"Ntfy notification sent with {len(batch.events)} events")
             return True
+        except requests.exceptions.Timeout:
+            logger.warning(f"Ntfy notification timeout ({NOTIF_TIMEOUT}s)")
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"Ntfy notification connection error: {e}")
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"Ntfy notification HTTP error: {e}")
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Ntfy notification failed: {e}")
         except Exception as e:
-            logger.warning(f"Ntfy notification failed: {e}", exc_info=True)
-            return False
+            logger.error(f"Unexpected Ntfy error: {type(e).__name__}: {e}", exc_info=True)
+
+        return False
 
     def format_batch(self, batch: BatchedNotification) -> str:
         """Format batch for Ntfy simple text."""
@@ -550,13 +577,15 @@ class NotificationManager:
 
     @classmethod
     def _get_executor(cls) -> ThreadPoolExecutor:
-        """Get or create the thread pool executor."""
+        """Get or create the thread pool executor (thread-safe)."""
         if cls._executor is None:
-            cls._executor = ThreadPoolExecutor(
-                max_workers=2,
-                thread_name_prefix="notification-",
-            )
-            atexit.register(cls._shutdown_executor)
+            with cls._lock:
+                if cls._executor is None:
+                    cls._executor = ThreadPoolExecutor(
+                        max_workers=2,
+                        thread_name_prefix="notification-",
+                    )
+                    atexit.register(cls._shutdown_executor)
         return cls._executor
 
     @classmethod
