@@ -5,16 +5,14 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-import click
-from rich.console import Console
+import rich_click as click
 from rich.table import Table
 
 from .cli_formatter import CLIOutput as out
+from .cli_formatter import console
 from .common import audit_log, validate_category_id, validate_domain
 
 logger = logging.getLogger(__name__)
-
-console = Console(highlight=False)  # Keep for tables and complex output
 
 
 # =============================================================================

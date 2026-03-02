@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
-import click
+import rich_click as click
 
 from .common import audit_log as _base_audit_log
 from .common import (

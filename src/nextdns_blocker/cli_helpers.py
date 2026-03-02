@@ -9,16 +9,14 @@ from pathlib import Path
 from typing import Any, NoReturn, Optional
 
 import requests
-from rich.console import Console
 
 from .cli_formatter import CLIOutput as out
+from .cli_formatter import console
 from .client import NextDNSClient
 from .config import load_config
 from .exceptions import EXIT_API_ERROR, EXIT_CONFIG_ERROR, EXIT_VALIDATION_ERROR, ConfigurationError
 
 logger = logging.getLogger(__name__)
-
-console = Console(highlight=False)
 
 
 def handle_error(e: Exception, context: str = "") -> NoReturn:

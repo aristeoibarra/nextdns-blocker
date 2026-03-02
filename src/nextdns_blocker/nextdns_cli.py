@@ -5,18 +5,17 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-import click
-from rich.console import Console
+import rich_click as click
 from rich.table import Table
 
+from .cli_formatter import CLIOutput as out
+from .cli_formatter import console
 from .client import NextDNSClient
 from .common import NEXTDNS_CATEGORIES, NEXTDNS_SERVICES, audit_log
 from .config import get_config_dir, load_config, load_nextdns_config
 from .exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
-
-console = Console(highlight=False)
 
 
 # =============================================================================
@@ -183,7 +182,7 @@ def cmd_list(config_dir: Optional[Path], remote: bool) -> None:
             console.print()
 
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
 
@@ -224,7 +223,7 @@ def cmd_add_category(category_id: str, config_dir: Optional[Path]) -> None:
             sys.exit(1)
 
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
 
@@ -259,7 +258,7 @@ def cmd_remove_category(category_id: str, config_dir: Optional[Path]) -> None:
             sys.exit(1)
 
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
 
@@ -300,7 +299,7 @@ def cmd_add_service(service_id: str, config_dir: Optional[Path]) -> None:
             sys.exit(1)
 
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
 
@@ -334,7 +333,7 @@ def cmd_remove_service(service_id: str, config_dir: Optional[Path]) -> None:
             sys.exit(1)
 
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
 
@@ -468,7 +467,7 @@ def cmd_status(config_dir: Optional[Path]) -> None:
         console.print()
 
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
 

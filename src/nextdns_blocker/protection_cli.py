@@ -5,10 +5,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import click
-from rich.console import Console
+import rich_click as click
 from rich.table import Table
 
+from .cli_formatter import console
 from .cli_helpers import config_context
 from .protection import (
     DEFAULT_UNLOCK_DELAY_HOURS,
@@ -30,8 +30,6 @@ from .protection import (
     set_pin,
     verify_pin,
 )
-
-console = Console(highlight=False)
 
 
 def register_protection(main_group: click.Group) -> None:

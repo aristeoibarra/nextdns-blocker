@@ -12,9 +12,10 @@ from pathlib import Path
 # Type checking imports
 from typing import TYPE_CHECKING, Any, Optional
 
-import click
-from rich.console import Console
+import rich_click as click
 
+from .cli_formatter import CLIOutput as out
+from .cli_formatter import console
 from .common import audit_log
 from .config import get_config_dir
 from .exceptions import ConfigurationError
@@ -23,8 +24,6 @@ if TYPE_CHECKING:
     from .client import NextDNSClient
 
 logger = logging.getLogger(__name__)
-
-console = Console(highlight=False)
 
 # =============================================================================
 # CONSTANTS
@@ -170,7 +169,7 @@ def config_cli() -> None:
 )
 def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
     """Open config file in editor."""
-    from .cli import require_pin_verification
+    from .pin_helpers import require_pin_verification
     from .protection import (
         validate_no_locked_removal,
         validate_no_locked_weakening,
@@ -182,7 +181,7 @@ def cmd_edit(editor: Optional[str], config_dir: Optional[Path]) -> None:
     try:
         original_config = load_config_from_db()
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
     import tempfile
@@ -462,7 +461,7 @@ def cmd_show(config_dir: Optional[Path], output_json: bool) -> None:
     try:
         config_data = load_config_from_db()
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
     if output_json:
@@ -622,7 +621,7 @@ def cmd_set(key: str, value: str, config_dir: Optional[Path]) -> None:
     try:
         config_data = load_config_from_db()
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
     if "settings" not in config_data:
@@ -665,8 +664,7 @@ def cmd_validate(output_json: bool, config_dir: Optional[Path]) -> None:
     - Valid schedule time formats (HH:MM)
     - No blocklist/allowlist conflicts
     """
-    # Import here to avoid circular imports
-    from .cli import validate_impl
+    from .validate_cli import validate_impl
 
     validate_impl(output_json=output_json, config_dir=config_dir)
 
@@ -696,8 +694,7 @@ def cmd_push(
         ndb config push --dry-run   # Preview changes
         ndb config push -v          # Verbose output
     """
-    # Import here to avoid circular imports
-    from .cli import sync_impl
+    from .sync_cli import sync_impl
 
     sync_impl(dry_run=dry_run, verbose=verbose, config_dir=config_dir)
 
@@ -723,7 +720,7 @@ def cmd_diff(config_dir: Optional[Path], output_json: bool) -> None:
     try:
         local_blocklist, local_allowlist = _get_local_domains()
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
     try:
@@ -818,7 +815,7 @@ def cmd_diff(config_dir: Optional[Path], output_json: bool) -> None:
         console.print(f"\n  [red]Error: {e}[/red]\n")
         sys.exit(1)
     except ConfigurationError as e:
-        console.print(f"\n  [red]Config error: {e}[/red]\n")
+        out.error(str(e), prefix="Config error")
         sys.exit(1)
 
 
@@ -847,12 +844,12 @@ def cmd_pull(
         ndb config pull --merge        # Add new domains, keep existing
         ndb config pull -y             # Skip confirmation
     """
-    from .cli import require_pin_verification
+    from .pin_helpers import require_pin_verification
 
     try:
         config = load_config_from_db()
     except ConfigurationError as e:
-        console.print(f"\n  [red]Error: {e}[/red]\n")
+        out.error(str(e))
         sys.exit(1)
 
     if not dry_run:
@@ -928,7 +925,7 @@ def cmd_pull(
         console.print(f"\n  [red]Error: {e}[/red]\n")
         sys.exit(1)
     except ConfigurationError as e:
-        console.print(f"\n  [red]Config error: {e}[/red]\n")
+        out.error(str(e), prefix="Config error")
         sys.exit(1)
 
 

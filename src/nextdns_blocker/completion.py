@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-import click
+import rich_click as click
 from click.shell_completion import CompletionItem
 
 from .exceptions import ConfigurationError

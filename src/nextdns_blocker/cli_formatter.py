@@ -4,11 +4,14 @@ This module provides consistent formatting for all CLI output messages.
 All CLI modules should use CLIOutput instead of direct console.print calls.
 """
 
-from typing import Union
+from typing import TYPE_CHECKING, Union
 
 from rich.console import Console
 
-console = Console()
+if TYPE_CHECKING:
+    from rich.table import Table
+
+console = Console(highlight=False)
 
 
 class CLIOutput:
@@ -17,7 +20,7 @@ class CLIOutput:
     @staticmethod
     def error(msg: str, prefix: str = "Error") -> None:
         """Print error message in red."""
-        console.print(f"\n  [red]{prefix}: {msg}[/red]\n", highlight=False)
+        console.print(f"\n  [red]{prefix}: {msg}[/red]\n")
 
     @staticmethod
     def warning(msg: str, prefix: str = "Warning") -> None:
@@ -84,6 +87,33 @@ class CLIOutput:
     def stat(label: str, value: Union[int, str], color: str = "white") -> None:
         """Print a statistic with label and value."""
         console.print(f"    {label}: [{color}]{value}[/{color}]")
+
+    @staticmethod
+    def table(table: "Table") -> None:
+        """Print a Rich table with consistent spacing."""
+        console.print()
+        console.print(table)
+        console.print()
+
+    @staticmethod
+    def result_summary(
+        added: int = 0,
+        removed: int = 0,
+        skipped: int = 0,
+        failed: int = 0,
+    ) -> None:
+        """Print a standardized operation summary."""
+        parts = []
+        if added > 0:
+            parts.append(f"[green]{added} added[/green]")
+        if removed > 0:
+            parts.append(f"[red]{removed} removed[/red]")
+        if skipped > 0:
+            parts.append(f"[yellow]{skipped} skipped[/yellow]")
+        if failed > 0:
+            parts.append(f"[red]{failed} failed[/red]")
+        summary = ", ".join(parts) if parts else "no changes"
+        console.print(f"\n  {summary}\n")
 
 
 # Convenience alias for shorter imports

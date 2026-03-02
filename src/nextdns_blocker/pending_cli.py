@@ -5,10 +5,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import click
-from rich.console import Console
+import rich_click as click
 from rich.table import Table
 
+from .cli_formatter import console
 from .completion import complete_pending_action_ids
 from .pending import (
     cancel_pending_action,
@@ -16,8 +16,6 @@ from .pending import (
 )
 
 logger = logging.getLogger(__name__)
-
-console = Console(highlight=False)
 
 
 @click.group()

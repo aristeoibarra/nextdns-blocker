@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-import click
 import requests
+import rich_click as click
 
 from .common import get_log_dir, write_secure_file
 from .completion import detect_shell, install_completion
