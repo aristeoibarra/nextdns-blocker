@@ -10,6 +10,8 @@ from typing import Optional
 import click
 from click.shell_completion import CompletionItem
 
+from .exceptions import ConfigurationError
+
 logger = logging.getLogger(__name__)
 
 # Completion marker to identify our completion line
@@ -75,11 +77,9 @@ def complete_blocklist_domains(
     except OSError as e:
         logger.warning("I/O error loading domains for completion: %s", e)
         return []
+    except ConfigurationError:
+        return []
     except Exception as e:
-        from .exceptions import ConfigurationError
-
-        if isinstance(e, ConfigurationError):
-            return []
         logger.debug("Completion error: %s", e)
         return []
 
@@ -128,11 +128,9 @@ def complete_allowlist_domains(
 
         return completions
 
+    except ConfigurationError:
+        return []
     except Exception as e:
-        from .exceptions import ConfigurationError
-
-        if isinstance(e, ConfigurationError):
-            return []
         logger.debug("Allowlist completion error: %s", e)
         return []
 

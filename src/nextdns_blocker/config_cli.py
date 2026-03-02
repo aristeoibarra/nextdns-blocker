@@ -126,7 +126,7 @@ def _parse_editor_command(editor: str) -> list[str]:
         if "not in the safe editors list" in str(e) or "Editor command" in str(e):
             raise
         # shlex.split can raise ValueError on malformed input (unclosed quotes)
-        raise ValueError(f"Invalid editor command format: {e}")
+        raise ValueError(f"Invalid editor command format: {e}") from e
 
 
 def load_config_from_db() -> dict[str, Any]:

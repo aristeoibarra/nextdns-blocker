@@ -51,9 +51,11 @@ try:
                 try:
                     fcntl.flock(f.fileno(), lock_type | fcntl.LOCK_NB)
                     return  # Lock acquired
-                except BlockingIOError:
+                except BlockingIOError as exc:
                     if time.monotonic() >= deadline:
-                        raise TimeoutError(f"Failed to acquire file lock within {timeout}s")
+                        raise TimeoutError(
+                            f"Failed to acquire file lock within {timeout}s"
+                        ) from exc
                     time.sleep(sleep_interval)
                     sleep_interval = min(sleep_interval * 2, max_sleep)
 
@@ -109,7 +111,7 @@ except ImportError:
                     if e.errno not in (13, 33, 36):
                         raise
                     if time.monotonic() >= deadline:
-                        raise TimeoutError(f"Failed to acquire file lock within {timeout}s")
+                        raise TimeoutError(f"Failed to acquire file lock within {timeout}s") from e
                     time.sleep(sleep_interval)
                     sleep_interval = min(sleep_interval * 2, max_sleep)
 
@@ -540,8 +542,8 @@ def safe_int(value: Optional[str], default: int, name: str = "value") -> int:
         if result < 0:
             raise ConfigurationError(f"{name} must be a non-negative integer, got: {value}")
         return result
-    except ValueError:
-        raise ConfigurationError(f"{name} must be a valid integer, got: {value}")
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be a valid integer, got: {value}") from exc
 
 
 # =============================================================================

@@ -36,7 +36,7 @@ class EventType(Enum):
     TEST = "test"
 
 
-@dataclass
+@dataclass(frozen=True)
 class NotificationEvent:
     """Represents a single notification event."""
 
@@ -749,11 +749,13 @@ def send_notification(
         return
 
     event = NotificationEvent(event_type=event_type, domain=domain, metadata=metadata)
+    now = datetime.now(timezone.utc)
     batch = BatchedNotification(
         events=[event],
         profile_id=config.get("profile_id", ""),
+        sync_start=now,
+        sync_end=now,
     )
-    batch.sync_end = batch.sync_start
 
     # Send synchronously for immediate feedback
     nm._send_batch(batch)

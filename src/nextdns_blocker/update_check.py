@@ -31,7 +31,7 @@ def _get_cache_file() -> Path:
     return Path(user_data_dir(APP_NAME)) / ".update_check"
 
 
-@dataclass
+@dataclass(frozen=True)
 class UpdateInfo:
     """Information about an available update."""
 

@@ -147,7 +147,6 @@ select = [
 ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # do not perform function calls in argument defaults
-    "B904",   # raise from within except - too many to fix now
     "SIM102", # nested if - sometimes clearer
     "SIM103", # return condition directly - sometimes clearer
     "SIM108", # use ternary operator instead of if-else

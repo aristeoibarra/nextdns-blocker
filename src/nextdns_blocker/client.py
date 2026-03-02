@@ -84,7 +84,7 @@ class CircuitBreaker:
 # =============================================================================
 
 
-@dataclass
+@dataclass(frozen=True)
 class BatchResult:
     """Result of a batch operation on multiple domains.
 
@@ -119,7 +119,7 @@ class BatchResult:
         return len(self.failed) == 0
 
 
-@dataclass
+@dataclass(frozen=True)
 class APIRequestResult:
     """Result of an API request with error context.
 

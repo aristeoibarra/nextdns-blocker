@@ -265,7 +265,7 @@ def get_config_dir(override: Optional[Path] = None) -> Path:
         try:
             resolved = override_path.resolve()
         except (OSError, RuntimeError) as e:
-            raise ConfigurationError(f"Invalid config path: {e}")
+            raise ConfigurationError(f"Invalid config path: {e}") from e
 
         # Security: Ensure the path is within user's home directory or standard config locations
         import tempfile
