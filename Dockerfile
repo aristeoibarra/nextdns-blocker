@@ -1,7 +1,7 @@
 # NextDNS Blocker - Docker Image
 # Lightweight Python Alpine image for minimal footprint
 
-FROM python:3.12-alpine
+FROM python:3.14-alpine
 
 # Labels
 LABEL maintainer="aristeoibarra"
