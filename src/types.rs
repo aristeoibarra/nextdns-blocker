@@ -78,6 +78,7 @@ pub struct BlockedDomain {
     pub schedule: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    pub in_nextdns: bool,
 }
 
 /// Allowed domain entry.
@@ -89,6 +90,7 @@ pub struct AllowedDomain {
     pub description: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    pub in_nextdns: bool,
 }
 
 /// Category for grouping domains.

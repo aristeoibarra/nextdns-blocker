@@ -35,15 +35,31 @@ pub fn remove_blocked(conn: &Connection, domain: &str) -> Result<bool, rusqlite:
 pub fn deactivate_blocked(conn: &Connection, domain: &str) -> Result<bool, rusqlite::Error> {
     let now = now_unix();
     let rows = conn.execute(
-        "UPDATE blocked_domains SET active = 0, updated_at = ?1 WHERE domain = ?2 AND active = 1",
+        "UPDATE blocked_domains SET active = 0, in_nextdns = 0, updated_at = ?1 WHERE domain = ?2 AND active = 1",
         params![now, domain],
     )?;
     Ok(rows > 0)
 }
 
+pub fn set_in_nextdns_blocked(conn: &Connection, domain: &str, value: bool) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE blocked_domains SET in_nextdns = ?1 WHERE domain = ?2",
+        params![value as i64, domain],
+    )?;
+    Ok(())
+}
+
+pub fn set_in_nextdns_allowed(conn: &Connection, domain: &str, value: bool) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE allowed_domains SET in_nextdns = ?1 WHERE domain = ?2",
+        params![value as i64, domain],
+    )?;
+    Ok(())
+}
+
 pub fn get_blocked(conn: &Connection, domain: &str) -> Result<Option<BlockedDomain>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, domain, active, description, category, schedule, created_at, updated_at
+        "SELECT id, domain, active, description, category, schedule, created_at, updated_at, in_nextdns
          FROM blocked_domains WHERE domain = ?1",
     )?;
     let mut rows = stmt.query_map(params![domain], map_blocked)?;
@@ -52,10 +68,10 @@ pub fn get_blocked(conn: &Connection, domain: &str) -> Result<Option<BlockedDoma
 
 pub fn list_blocked(conn: &Connection, active_only: bool) -> Result<Vec<BlockedDomain>, rusqlite::Error> {
     let sql = if active_only {
-        "SELECT id, domain, active, description, category, schedule, created_at, updated_at
+        "SELECT id, domain, active, description, category, schedule, created_at, updated_at, in_nextdns
          FROM blocked_domains WHERE active = 1 ORDER BY domain"
     } else {
-        "SELECT id, domain, active, description, category, schedule, created_at, updated_at
+        "SELECT id, domain, active, description, category, schedule, created_at, updated_at, in_nextdns
          FROM blocked_domains ORDER BY domain"
     };
     let mut stmt = conn.prepare(sql)?;
@@ -89,6 +105,7 @@ fn map_blocked(row: &rusqlite::Row) -> Result<BlockedDomain, rusqlite::Error> {
         schedule: row.get(5)?,
         created_at: row.get(6)?,
         updated_at: row.get(7)?,
+        in_nextdns: row.get::<_, i64>(8)? != 0,
     })
 }
 
@@ -119,7 +136,7 @@ pub fn remove_allowed(conn: &Connection, domain: &str) -> Result<bool, rusqlite:
 
 pub fn get_allowed(conn: &Connection, domain: &str) -> Result<Option<AllowedDomain>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, domain, active, description, created_at, updated_at
+        "SELECT id, domain, active, description, created_at, updated_at, in_nextdns
          FROM allowed_domains WHERE domain = ?1",
     )?;
     let mut rows = stmt.query_map(params![domain], map_allowed)?;
@@ -128,10 +145,10 @@ pub fn get_allowed(conn: &Connection, domain: &str) -> Result<Option<AllowedDoma
 
 pub fn list_allowed(conn: &Connection, active_only: bool) -> Result<Vec<AllowedDomain>, rusqlite::Error> {
     let sql = if active_only {
-        "SELECT id, domain, active, description, created_at, updated_at
+        "SELECT id, domain, active, description, created_at, updated_at, in_nextdns
          FROM allowed_domains WHERE active = 1 ORDER BY domain"
     } else {
-        "SELECT id, domain, active, description, created_at, updated_at
+        "SELECT id, domain, active, description, created_at, updated_at, in_nextdns
          FROM allowed_domains ORDER BY domain"
     };
     let mut stmt = conn.prepare(sql)?;
@@ -163,5 +180,6 @@ fn map_allowed(row: &rusqlite::Row) -> Result<AllowedDomain, rusqlite::Error> {
         description: row.get(3)?,
         created_at: row.get(4)?,
         updated_at: row.get(5)?,
+        in_nextdns: row.get::<_, i64>(6)? != 0,
     })
 }

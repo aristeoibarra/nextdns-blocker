@@ -42,6 +42,12 @@ fn handle_add_category(db: &Database, args: NextdnsAddCategoryArgs) -> Result<Ex
     db.with_conn(|conn| crate::db::nextdns::add_nextdns_category(conn, &args.id))?;
     db.with_conn(|conn| crate::db::audit::log_action(conn, "add", "nextdns_category", &args.id, None))?;
 
+    if let Ok(env) = crate::config::types::EnvConfig::from_env() {
+        if let Ok(client) = crate::api::NextDnsClient::new(&env.api_key, env.profile_id) {
+            crate::sync::eager_push_category(db, &client, &args.id, true);
+        }
+    }
+
     let result = SimpleMsg { command: "nextdns add-category", data: serde_json::json!({ "id": args.id }) };
     output::render(&result);
     Ok(ExitCode::Success)
@@ -54,6 +60,12 @@ fn handle_remove_category(db: &Database, args: NextdnsRemoveCategoryArgs) -> Res
     }
     db.with_conn(|conn| crate::db::audit::log_action(conn, "remove", "nextdns_category", &args.id, None))?;
 
+    if let Ok(env) = crate::config::types::EnvConfig::from_env() {
+        if let Ok(client) = crate::api::NextDnsClient::new(&env.api_key, env.profile_id) {
+            crate::sync::eager_push_category(db, &client, &args.id, false);
+        }
+    }
+
     let result = SimpleMsg { command: "nextdns remove-category", data: serde_json::json!({ "id": args.id }) };
     output::render(&result);
     Ok(ExitCode::Success)
@@ -63,6 +75,12 @@ fn handle_add_service(db: &Database, args: NextdnsAddServiceArgs) -> Result<Exit
     validate_service_id(&args.id)?;
     db.with_conn(|conn| crate::db::nextdns::add_nextdns_service(conn, &args.id))?;
     db.with_conn(|conn| crate::db::audit::log_action(conn, "add", "nextdns_service", &args.id, None))?;
+
+    if let Ok(env) = crate::config::types::EnvConfig::from_env() {
+        if let Ok(client) = crate::api::NextDnsClient::new(&env.api_key, env.profile_id) {
+            crate::sync::eager_push_service(db, &client, &args.id, true);
+        }
+    }
 
     let result = SimpleMsg { command: "nextdns add-service", data: serde_json::json!({ "id": args.id }) };
     output::render(&result);
@@ -75,6 +93,12 @@ fn handle_remove_service(db: &Database, args: NextdnsRemoveServiceArgs) -> Resul
         return Err(AppError::NotFound { message: format!("NextDNS service '{}' not found", args.id), hint: None });
     }
     db.with_conn(|conn| crate::db::audit::log_action(conn, "remove", "nextdns_service", &args.id, None))?;
+
+    if let Ok(env) = crate::config::types::EnvConfig::from_env() {
+        if let Ok(client) = crate::api::NextDnsClient::new(&env.api_key, env.profile_id) {
+            crate::sync::eager_push_service(db, &client, &args.id, false);
+        }
+    }
 
     let result = SimpleMsg { command: "nextdns remove-service", data: serde_json::json!({ "id": args.id }) };
     output::render(&result);

@@ -55,3 +55,9 @@ pub const KNOWN_KEYS: &[(&str, &str)] = &[
 pub fn is_known_key(key: &str) -> bool {
     KNOWN_KEYS.iter().any(|(k, _)| *k == key)
 }
+
+pub fn get_last_drift_check(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    Ok(get_value(conn, "last_drift_check")?
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0))
+}

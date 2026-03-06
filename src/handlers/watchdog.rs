@@ -61,7 +61,17 @@ fn handle_run() -> Result<ExitCode, AppError> {
 
     let sound = db.with_conn(crate::db::config::get_notification_sound)?;
 
-    let sync_result = crate::sync::execute_sync(&db, &client, &evaluator, false)?;
+    // Lightweight schedule sync on every cycle — zero GETs, only writes when schedule changes
+    let schedule_result = crate::sync::execute_schedule_sync(&db, &client, &evaluator)?;
+
+    // Full drift sync every 30 min — detects web UI changes via GET+diff
+    let drift_result = if crate::sync::drift_check_due(&db) {
+        crate::sync::record_drift_check(&db);
+        Some(crate::sync::execute_drift_sync(&db, &client, &evaluator, false)?)
+    } else {
+        None
+    };
+
     let pending_result = crate::pending::process_pending(&db, &client)?;
     let retry_result = crate::retry::process_retries(&db, &client)?;
 
@@ -69,10 +79,13 @@ fn handle_run() -> Result<ExitCode, AppError> {
     let apps_killed = crate::app_blocker::enforce_blocked_apps(&db).unwrap_or_default();
 
     // Collect success metrics
-    let sync_changes = sync_result.denylist.added.len() + sync_result.denylist.removed.len()
-        + sync_result.allowlist.added.len() + sync_result.allowlist.removed.len()
-        + sync_result.categories.added.len() + sync_result.categories.removed.len()
-        + sync_result.services.added.len() + sync_result.services.removed.len();
+    let schedule_changes = schedule_result.added.len() + schedule_result.removed.len();
+    let drift_changes = drift_result.as_ref().map(|r| {
+        r.denylist.added.len() + r.denylist.removed.len()
+            + r.allowlist.added.len() + r.allowlist.removed.len()
+            + r.categories.added.len() + r.categories.removed.len()
+            + r.services.added.len() + r.services.removed.len()
+    }).unwrap_or(0);
     let pending_changes = pending_result.executed;
     let retry_changes = retry_result.succeeded;
     let apps_enforced = apps_killed.len();
@@ -96,9 +109,11 @@ fn handle_run() -> Result<ExitCode, AppError> {
     }
 
     // Notify successes with configured sound
-    if sync_changes + pending_changes + retry_changes + apps_enforced > 0 {
+    let total_changes = schedule_changes + drift_changes + pending_changes + retry_changes + apps_enforced;
+    if total_changes > 0 {
         let mut parts = Vec::new();
-        if sync_changes > 0 { parts.push(format!("{sync_changes} sync")); }
+        if schedule_changes > 0 { parts.push(format!("{schedule_changes} schedule")); }
+        if drift_changes > 0 { parts.push(format!("{drift_changes} drift")); }
         if pending_changes > 0 { parts.push(format!("{pending_changes} pending")); }
         if retry_changes > 0 { parts.push(format!("{retry_changes} retries")); }
         if apps_enforced > 0 { parts.push(format!("{apps_enforced} apps killed")); }
@@ -112,7 +127,8 @@ fn handle_run() -> Result<ExitCode, AppError> {
     let result = WdResult {
         command: "watchdog run",
         data: serde_json::json!({
-            "sync": sync_result.to_json(),
+            "schedule_sync": schedule_result,
+            "drift_sync": drift_result.as_ref().map(crate::output::Renderable::to_json),
             "pending": pending_result,
             "retries": retry_result,
             "apps_killed": apps_killed,

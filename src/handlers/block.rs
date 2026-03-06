@@ -59,6 +59,15 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         }
     }
 
+    // Eager push newly added domains to NextDNS API immediately
+    if !added.is_empty() {
+        if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
+            if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id) {
+                crate::sync::eager_push_denylist(&db, &client, &added, true);
+            }
+        }
+    }
+
     // Block mapped apps for newly added domains
     let apps_blocked = crate::app_blocker::block_apps_for_domains(&db, &added).unwrap_or_default();
     for app in &apps_blocked {

@@ -18,7 +18,8 @@ pub fn handle(args: SyncArgs) -> Result<ExitCode, AppError> {
 
     let evaluator = crate::scheduler::ScheduleEvaluator::new(tz);
 
-    let result = crate::sync::execute_sync(&db, &client, &evaluator, args.dry_run)?;
+    let result = crate::sync::execute_drift_sync(&db, &client, &evaluator, args.dry_run)?;
+    crate::sync::record_drift_check(&db);
     output::render(&result);
 
     Ok(ExitCode::Success)

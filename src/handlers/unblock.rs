@@ -28,6 +28,14 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
+    // Eager push removal to NextDNS API immediately
+    let api_client: Option<(crate::config::types::EnvConfig, crate::api::NextDnsClient)> =
+        crate::config::types::EnvConfig::from_env().ok().and_then(|env| {
+            crate::api::NextDnsClient::new(&env.api_key, env.profile_id.clone())
+                .ok()
+                .map(|c| (env, c))
+        });
+
     if let Some(ref dur_str) = args.duration {
         let duration = crate::common::time::parse_duration(dur_str)?;
         let execute_at = crate::common::time::now_unix() + duration.as_secs() as i64;
@@ -39,6 +47,9 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                 conn, &id, "add", Some(&args.target), "denylist", execute_at,
                 Some(&format!("Auto re-block after {dur_str}")),
             ))?;
+            if let Some((_, ref client)) = api_client {
+                crate::sync::eager_push_denylist(&db, client, &[args.target.clone()], false);
+            }
         }
 
         db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", if is_domain { "domain" } else { "category" }, &args.target, Some(dur_str)))?;
@@ -55,6 +66,9 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
     } else {
         if is_domain {
             db.with_conn(|conn| crate::db::domains::remove_blocked(conn, &args.target))?;
+            if let Some((_, ref client)) = api_client {
+                crate::sync::eager_push_denylist(&db, client, &[args.target.clone()], false);
+            }
         }
         db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", if is_domain { "domain" } else { "category" }, &args.target, None))?;
 

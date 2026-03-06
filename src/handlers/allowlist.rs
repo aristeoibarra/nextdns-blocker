@@ -39,6 +39,14 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
         Ok(())
     })?;
 
+    if !added.is_empty() {
+        if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
+            if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id) {
+                crate::sync::eager_push_allowlist(db, &client, &added, true);
+            }
+        }
+    }
+
     let result = ListModResult { command: "allowlist add", added, skipped, errors: errors.iter().map(|(d,r)| format!("{d}: {r}")).collect() };
     output::render(&result);
     Ok(ExitCode::Success)
@@ -60,6 +68,14 @@ fn handle_remove(db: &Database, args: AllowlistRemoveArgs) -> Result<ExitCode, A
         }
         Ok(())
     })?;
+
+    if !removed.is_empty() {
+        if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
+            if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id) {
+                crate::sync::eager_push_allowlist(db, &client, &removed, false);
+            }
+        }
+    }
 
     let result = RemoveResult { command: "allowlist remove", removed, not_found };
     output::render(&result);

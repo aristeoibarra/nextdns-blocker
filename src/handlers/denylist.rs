@@ -50,6 +50,14 @@ fn handle_add(db: &Database, args: DenylistAddArgs) -> Result<ExitCode, AppError
         Ok(())
     })?;
 
+    if !added.is_empty() {
+        if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
+            if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id) {
+                crate::sync::eager_push_denylist(db, &client, &added, true);
+            }
+        }
+    }
+
     let result = DenylistAddResult {
         added, skipped,
         errors: errors.iter().map(|(d, r)| format!("{d}: {r}")).collect(),
@@ -85,6 +93,14 @@ fn handle_remove(db: &Database, args: DenylistRemoveArgs) -> Result<ExitCode, Ap
         }
         Ok(())
     })?;
+
+    if !removed.is_empty() {
+        if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
+            if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id) {
+                crate::sync::eager_push_denylist(db, &client, &removed, false);
+            }
+        }
+    }
 
     let result = DenylistRemoveResult { removed, not_found };
     output::render(&result);

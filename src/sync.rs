@@ -8,7 +8,12 @@ use crate::scheduler::ScheduleEvaluator;
 
 const RETRY_MAX_ATTEMPTS: i32 = 5;
 
-/// Result of a sync operation.
+/// How often (seconds) to do a full GET-based drift check against NextDNS API.
+const DRIFT_CHECK_INTERVAL_SECS: i64 = 1800; // 30 minutes
+
+// === Result types ===
+
+/// Result of a full drift-detection sync (GET + diff).
 #[derive(Debug, serde::Serialize)]
 pub struct SyncResult {
     pub denylist: SyncListResult,
@@ -29,6 +34,14 @@ pub struct SyncListResult {
 pub struct SyncError {
     pub domain: String,
     pub error: String,
+}
+
+/// Result of a lightweight schedule-based sync (no GETs).
+#[derive(Debug, serde::Serialize)]
+pub struct ScheduleSyncResult {
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub errors: Vec<SyncError>,
 }
 
 impl Renderable for SyncResult {
@@ -56,8 +69,138 @@ impl Renderable for SyncResult {
     }
 }
 
-/// Execute a full sync between local DB and NextDNS API.
-pub fn execute_sync(
+// === Eager push helpers (called from command handlers) ===
+
+/// Immediately push denylist changes to NextDNS.
+/// On success, updates `in_nextdns`. On failure, silently enqueues retry.
+pub fn eager_push_denylist(db: &Database, client: &NextDnsClient, domains: &[String], add: bool) {
+    for domain in domains {
+        let result = if add {
+            client.add_to_denylist(domain)
+        } else {
+            client.remove_from_denylist(domain)
+        };
+        match result {
+            Ok(()) => {
+                if add {
+                    let _ = db.with_conn(|conn| {
+                        crate::db::domains::set_in_nextdns_blocked(conn, domain, true)
+                    });
+                }
+            }
+            Err(_) => enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "denylist"),
+        }
+    }
+}
+
+/// Immediately push allowlist changes to NextDNS.
+/// On success, updates `in_nextdns`. On failure, silently enqueues retry.
+pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[String], add: bool) {
+    for domain in domains {
+        let result = if add {
+            client.add_to_allowlist(domain)
+        } else {
+            client.remove_from_allowlist(domain)
+        };
+        match result {
+            Ok(()) => {
+                if add {
+                    let _ = db.with_conn(|conn| {
+                        crate::db::domains::set_in_nextdns_allowed(conn, domain, true)
+                    });
+                }
+            }
+            Err(_) => enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "allowlist"),
+        }
+    }
+}
+
+/// Immediately push a parental control category change. On failure, enqueues retry.
+pub fn eager_push_category(db: &Database, client: &NextDnsClient, id: &str, add: bool) {
+    if client.set_parental_category(id, add).is_err() {
+        enqueue_retry(db, if add { "add" } else { "remove" }, Some(id), "category");
+    }
+}
+
+/// Immediately push a parental control service change. On failure, enqueues retry.
+pub fn eager_push_service(db: &Database, client: &NextDnsClient, id: &str, add: bool) {
+    if client.set_parental_service(id, add).is_err() {
+        enqueue_retry(db, if add { "add" } else { "remove" }, Some(id), "service");
+    }
+}
+
+fn enqueue_retry(db: &Database, action: &str, target: Option<&str>, list_type: &str) {
+    let retry_at = crate::common::time::now_unix() + 60;
+    let id = uuid::Uuid::new_v4().to_string();
+    let _ = db.with_conn(|conn| {
+        crate::db::retry::enqueue_retry(
+            conn, &id, action, target, list_type, None, RETRY_MAX_ATTEMPTS, retry_at,
+        )
+    });
+}
+
+// === Schedule sync (lightweight, no GETs) ===
+
+/// Evaluate time-based schedule rules against `in_nextdns` state.
+/// Only makes API calls when schedule state actually changes — zero GETs.
+/// Run this every watchdog cycle.
+pub fn execute_schedule_sync(
+    db: &Database,
+    client: &NextDnsClient,
+    evaluator: &ScheduleEvaluator,
+) -> Result<ScheduleSyncResult, AppError> {
+    let domains = db.with_conn(|conn| crate::db::domains::list_blocked(conn, true))?;
+
+    let mut added = Vec::new();
+    let mut removed = Vec::new();
+    let mut errors = Vec::new();
+
+    for domain in &domains {
+        let schedule = domain.schedule.as_deref().and_then(|s| {
+            serde_json::from_str::<crate::config::types::Schedule>(s).ok()
+        });
+        let parsed = schedule.as_ref().and_then(crate::scheduler::parse_config_schedule);
+        let should_be_in_nextdns = evaluator.should_block(parsed.as_ref());
+
+        if should_be_in_nextdns && !domain.in_nextdns {
+            match client.add_to_denylist(&domain.domain) {
+                Ok(()) => {
+                    let _ = db.with_conn(|conn| {
+                        crate::db::domains::set_in_nextdns_blocked(conn, &domain.domain, true)
+                    });
+                    added.push(domain.domain.clone());
+                }
+                Err(e) => {
+                    enqueue_retry(db, "add", Some(&domain.domain), "denylist");
+                    errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string() });
+                }
+            }
+        } else if !should_be_in_nextdns && domain.in_nextdns {
+            match client.remove_from_denylist(&domain.domain) {
+                Ok(()) => {
+                    let _ = db.with_conn(|conn| {
+                        crate::db::domains::set_in_nextdns_blocked(conn, &domain.domain, false)
+                    });
+                    removed.push(domain.domain.clone());
+                }
+                Err(e) => {
+                    enqueue_retry(db, "remove", Some(&domain.domain), "denylist");
+                    errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string() });
+                }
+            }
+        }
+        // State is already correct — no API call needed
+    }
+
+    Ok(ScheduleSyncResult { added, removed, errors })
+}
+
+// === Drift sync (full GET + diff, run every 30 min) ===
+
+/// Full GET-based sync against NextDNS API. Detects drift from web UI changes.
+/// Updates `in_nextdns` for all domains to reflect confirmed remote state.
+/// Run this infrequently (every 30 min). For manual `ndb sync`, always runs.
+pub fn execute_drift_sync(
     db: &Database,
     client: &NextDnsClient,
     evaluator: &ScheduleEvaluator,
@@ -134,14 +277,20 @@ pub fn execute_sync(
     let mut denylist_added = Vec::new();
     for domain in &to_add_blocked {
         match client.add_to_denylist(domain) {
-            Ok(()) => denylist_added.push(domain.clone()),
+            Ok(()) => {
+                let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_blocked(conn, domain, true));
+                denylist_added.push(domain.clone());
+            }
             Err(e) => denylist_errors.push(SyncError { domain: domain.clone(), error: e.to_string() }),
         }
     }
     let mut denylist_removed = Vec::new();
     for domain in &to_remove_blocked {
         match client.remove_from_denylist(domain) {
-            Ok(()) => denylist_removed.push(domain.clone()),
+            Ok(()) => {
+                let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_blocked(conn, domain, false));
+                denylist_removed.push(domain.clone());
+            }
             Err(e) => denylist_errors.push(SyncError { domain: domain.clone(), error: e.to_string() }),
         }
     }
@@ -151,16 +300,30 @@ pub fn execute_sync(
     let mut allowlist_added = Vec::new();
     for domain in &to_add_allowed {
         match client.add_to_allowlist(domain) {
-            Ok(()) => allowlist_added.push(domain.clone()),
+            Ok(()) => {
+                let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_allowed(conn, domain, true));
+                allowlist_added.push(domain.clone());
+            }
             Err(e) => allowlist_errors.push(SyncError { domain: domain.clone(), error: e.to_string() }),
         }
     }
     let mut allowlist_removed = Vec::new();
     for domain in &to_remove_allowed {
         match client.remove_from_allowlist(domain) {
-            Ok(()) => allowlist_removed.push(domain.clone()),
+            Ok(()) => {
+                let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_allowed(conn, domain, false));
+                allowlist_removed.push(domain.clone());
+            }
             Err(e) => allowlist_errors.push(SyncError { domain: domain.clone(), error: e.to_string() }),
         }
+    }
+
+    // Confirm unchanged domains are marked as in_nextdns
+    for domain in should_block.intersection(&remote_blocked_set) {
+        let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_blocked(conn, domain, true));
+    }
+    for domain in should_allow.intersection(&remote_allowed_set) {
+        let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_allowed(conn, domain, true));
     }
 
     // === Execute categories sync ===
@@ -235,4 +398,16 @@ pub fn execute_sync(
             unchanged: local_svc_set.intersection(&remote_svc_set).count(), errors: svc_errors,
         },
     })
+}
+
+/// Whether a drift check is due based on the last recorded timestamp.
+pub fn drift_check_due(db: &Database) -> bool {
+    let last = db.with_conn(crate::db::config::get_last_drift_check).unwrap_or(0);
+    crate::common::time::now_unix() - last >= DRIFT_CHECK_INTERVAL_SECS
+}
+
+/// Record the current time as the last drift check timestamp.
+pub fn record_drift_check(db: &Database) {
+    let now = crate::common::time::now_unix().to_string();
+    let _ = db.with_conn(|conn| crate::db::config::set_value(conn, "last_drift_check", &now));
 }

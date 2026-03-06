@@ -25,5 +25,10 @@ pub fn get_migrations() -> Vec<(i64, &'static str, &'static str)> {
             "app_blocking",
             include_str!("../../migrations/004_app_blocking.sql"),
         ),
+        (
+            5,
+            "remote_sync_state",
+            include_str!("../../migrations/005_remote_sync_state.sql"),
+        ),
     ]
 }
