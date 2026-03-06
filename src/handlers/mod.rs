@@ -6,6 +6,7 @@ pub mod category;
 pub mod config;
 pub mod denylist;
 pub mod fix;
+pub mod hosts;
 pub mod init;
 pub mod nextdns;
 pub mod pending;

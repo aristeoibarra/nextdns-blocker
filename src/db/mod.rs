@@ -3,7 +3,7 @@ pub mod audit;
 pub mod categories;
 pub mod config;
 pub mod domains;
-
+pub mod hosts;
 pub mod nextdns;
 pub mod pending;
 

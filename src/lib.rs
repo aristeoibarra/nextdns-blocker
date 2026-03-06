@@ -6,6 +6,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod handlers;
+pub mod hosts_blocker;
 pub mod notifications;
 pub mod output;
 pub mod pending;

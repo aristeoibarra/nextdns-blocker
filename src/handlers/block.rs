@@ -76,12 +76,20 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
+    // Block domains in /etc/hosts
+    let hosts_blocked = crate::hosts_blocker::block_hosts_for_domains(&db, &added).unwrap_or_default();
+    for domain in &hosts_blocked {
+        let _ = db.with_conn(|conn| {
+            crate::db::audit::log_action(conn, "block_hosts", "hosts", domain, None)
+        });
+    }
+
     let result = BlockResult {
         added, skipped,
         errors: errors.iter().map(|(d, r)| format!("{d}: {r}")).collect(),
         duration: args.duration,
         pending_id, watchdog_warning,
-        apps_blocked,
+        apps_blocked, hosts_blocked,
     };
     output::render(&result);
     Ok(ExitCode::Success)
@@ -95,6 +103,7 @@ struct BlockResult {
     pending_id: Option<String>,
     watchdog_warning: Option<String>,
     apps_blocked: Vec<crate::app_blocker::AppBlockResult>,
+    hosts_blocked: Vec<String>,
 }
 
 impl Renderable for BlockResult {
@@ -106,10 +115,12 @@ impl Renderable for BlockResult {
                 "duration": self.duration, "pending_id": self.pending_id,
                 "watchdog_warning": self.watchdog_warning,
                 "apps_blocked": self.apps_blocked,
+                "hosts_blocked": self.hosts_blocked,
             },
             "summary": {
                 "added": self.added.len(), "skipped": self.skipped.len(),
                 "errors": self.errors.len(), "apps_blocked": self.apps_blocked.len(),
+                "hosts_blocked": self.hosts_blocked.len(),
             }
         })
     }

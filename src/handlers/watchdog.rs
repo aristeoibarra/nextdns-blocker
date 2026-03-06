@@ -78,6 +78,9 @@ fn handle_run() -> Result<ExitCode, AppError> {
     // Enforce blocked apps: kill any that are somehow running
     let apps_killed = crate::app_blocker::enforce_blocked_apps(&db).unwrap_or_default();
 
+    // Enforce /etc/hosts entries
+    let hosts_enforced = crate::hosts_blocker::enforce_hosts_entries(&db).unwrap_or_default();
+
     // Collect success metrics
     let schedule_changes = schedule_result.added.len() + schedule_result.removed.len();
     let drift_changes = drift_result.as_ref().map(|r| {
@@ -89,6 +92,7 @@ fn handle_run() -> Result<ExitCode, AppError> {
     let pending_changes = pending_result.executed;
     let retry_changes = retry_result.succeeded;
     let apps_enforced = apps_killed.len();
+    let hosts_enforced_count = hosts_enforced.len();
 
     // Collect failure metrics
     let pending_failures = pending_result.failed;
@@ -109,7 +113,7 @@ fn handle_run() -> Result<ExitCode, AppError> {
     }
 
     // Notify successes with configured sound
-    let total_changes = schedule_changes + drift_changes + pending_changes + retry_changes + apps_enforced;
+    let total_changes = schedule_changes + drift_changes + pending_changes + retry_changes + apps_enforced + hosts_enforced_count;
     if total_changes > 0 {
         let mut parts = Vec::new();
         if schedule_changes > 0 { parts.push(format!("{schedule_changes} schedule")); }
@@ -117,6 +121,7 @@ fn handle_run() -> Result<ExitCode, AppError> {
         if pending_changes > 0 { parts.push(format!("{pending_changes} pending")); }
         if retry_changes > 0 { parts.push(format!("{retry_changes} retries")); }
         if apps_enforced > 0 { parts.push(format!("{apps_enforced} apps killed")); }
+        if hosts_enforced_count > 0 { parts.push(format!("{hosts_enforced_count} hosts enforced")); }
 
         let notification = crate::notifications::Notification::new("ndb watchdog", parts.join(", "))
             .subtitle("Sync complete")
@@ -132,6 +137,7 @@ fn handle_run() -> Result<ExitCode, AppError> {
             "pending": pending_result,
             "retries": retry_result,
             "apps_killed": apps_killed,
+            "hosts_enforced": hosts_enforced,
         }),
     };
     output::render(&result);

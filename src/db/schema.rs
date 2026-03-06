@@ -30,5 +30,10 @@ pub fn get_migrations() -> Vec<(i64, &'static str, &'static str)> {
             "remote_sync_state",
             include_str!("../../migrations/005_remote_sync_state.sql"),
         ),
+        (
+            6,
+            "hosts_blocking",
+            include_str!("../../migrations/006_hosts_blocking.sql"),
+        ),
     ]
 }

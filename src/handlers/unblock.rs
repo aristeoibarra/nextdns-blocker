@@ -28,6 +28,18 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
+    // Unblock from /etc/hosts
+    let hosts_unblocked = if is_domain {
+        crate::hosts_blocker::unblock_hosts_for_domain(&db, &args.target).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    for domain in &hosts_unblocked {
+        let _ = db.with_conn(|conn| {
+            crate::db::audit::log_action(conn, "unblock_hosts", "hosts", domain, None)
+        });
+    }
+
     // Eager push removal to NextDNS API immediately
     let api_client: Option<(crate::config::types::EnvConfig, crate::api::NextDnsClient)> =
         crate::config::types::EnvConfig::from_env().ok().and_then(|env| {
@@ -61,7 +73,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
             }
         }
 
-        let result = UnblockResult { target: args.target, duration: Some(dur_str.clone()), pending_id: Some(id), watchdog_warning, apps_unblocked };
+        let result = UnblockResult { target: args.target, duration: Some(dur_str.clone()), pending_id: Some(id), watchdog_warning, apps_unblocked, hosts_unblocked };
         output::render(&result);
     } else {
         if is_domain {
@@ -72,7 +84,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         }
         db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", if is_domain { "domain" } else { "category" }, &args.target, None))?;
 
-        let result = UnblockResult { target: args.target, duration: None, pending_id: None, watchdog_warning: None, apps_unblocked };
+        let result = UnblockResult { target: args.target, duration: None, pending_id: None, watchdog_warning: None, apps_unblocked, hosts_unblocked };
         output::render(&result);
     }
 
@@ -85,6 +97,7 @@ struct UnblockResult {
     pending_id: Option<String>,
     watchdog_warning: Option<String>,
     apps_unblocked: Vec<crate::app_blocker::AppUnblockResult>,
+    hosts_unblocked: Vec<String>,
 }
 impl Renderable for UnblockResult {
     fn command_name(&self) -> &str { "unblock" }
@@ -94,8 +107,9 @@ impl Renderable for UnblockResult {
                 "target": self.target, "duration": self.duration,
                 "pending_id": self.pending_id, "watchdog_warning": self.watchdog_warning,
                 "apps_unblocked": self.apps_unblocked,
+                "hosts_unblocked": self.hosts_unblocked,
             },
-            "summary": { "unblocked": 1, "apps_unblocked": self.apps_unblocked.len() }
+            "summary": { "unblocked": 1, "apps_unblocked": self.apps_unblocked.len(), "hosts_unblocked": self.hosts_unblocked.len() }
         })
     }
 }
