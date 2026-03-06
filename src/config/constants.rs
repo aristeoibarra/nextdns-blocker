@@ -81,11 +81,3 @@ pub const RETRY_BASE_DELAY_SECS: u64 = 1;
 /// Maximum delay for exponential backoff (seconds).
 pub const RETRY_MAX_DELAY_SECS: u64 = 30;
 
-/// PIN session duration in seconds (30 minutes).
-pub const PIN_SESSION_DURATION_SECS: i64 = 1800;
-
-/// PIN lockout duration in seconds (15 minutes).
-pub const PIN_LOCKOUT_DURATION_SECS: i64 = 900;
-
-/// Maximum PIN attempts before lockout.
-pub const PIN_MAX_ATTEMPTS: i32 = 3;

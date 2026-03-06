@@ -1,9 +1,9 @@
 [command]
 name = "denylist remove"
 binary_path = ["denylist", "remove"]
-description = "Remove domains from the NextDNS denylist"
-requires_config = true
-requires_api = true
+description = "Remove domains from the denylist"
+requires_config = false
+requires_api = false
 requires_pin = false
 
 [[args]]
@@ -12,19 +12,13 @@ type = "string[]"
 required = true
 validation = "rfc1123_domain"
 
-[[flags]]
-name = "--pin"
-type = "string"
-required = false
-description = "PIN for protected domains"
-
 [output.success]
 schema = """
 {
   "ok": true,
   "command": "denylist remove",
-  "data": { "removed": ["example.com"], "skipped": [], "protected": [] },
-  "summary": { "removed": 1 },
+  "data": { "removed": ["example.com"], "not_found": [] },
+  "summary": { "removed": 1, "not_found": 0 },
   "timestamp": "..."
 }
 """
@@ -32,18 +26,6 @@ schema = """
 [[exit_codes]]
 code = 0
 name = "success"
-
-[[exit_codes]]
-code = 5
-name = "permission_error"
-
-[[exit_codes]]
-code = 7
-name = "not_found"
-
-[[side_effects]]
-target = "nextdns_api"
-operation = "DELETE /profiles/{id}/denylist/{domain}"
 
 [[examples]]
 description = "Remove a domain"

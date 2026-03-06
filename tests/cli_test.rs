@@ -54,7 +54,7 @@ fn schema_exit_codes_json() {
         .as_array()
         .expect("data.exit_codes should be an array");
 
-    assert_eq!(exit_codes.len(), 9, "expected 9 exit codes");
+    assert_eq!(exit_codes.len(), 8, "expected 8 exit codes");
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +165,7 @@ fn all_subcommands_have_help() {
         "init",
         "status",
         "sync",
+        "block",
         "unblock",
         "fix",
         "denylist",
@@ -173,7 +174,7 @@ fn all_subcommands_have_help() {
         "nextdns",
         "config",
         "pending",
-        "protection",
+        "audit",
         "watchdog",
         "schema",
     ];

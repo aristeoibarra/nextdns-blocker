@@ -39,9 +39,6 @@ pub struct DenylistRemoveArgs {
     #[arg(required = true)]
     pub domains: Vec<String>,
 
-    /// PIN for protected items
-    #[arg(long)]
-    pub pin: Option<String>,
 }
 
 #[derive(Args)]

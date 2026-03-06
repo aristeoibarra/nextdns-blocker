@@ -2,14 +2,14 @@ pub mod audit;
 pub mod categories;
 pub mod config;
 pub mod domains;
-pub mod import_export;
+
 pub mod nextdns;
 pub mod pending;
-pub mod pin;
+
 pub mod retry;
 pub mod schema;
-pub mod stats;
-pub mod unlock;
+
+
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -115,12 +115,23 @@ impl Database {
         f(&conn).map_err(AppError::from)
     }
 
-    /// Execute a closure with mutable access to the database connection.
-    pub fn with_conn_mut<F, T>(&self, f: F) -> Result<T, AppError>
+    /// Execute a closure inside an explicit SQLite transaction.
+    /// Commits on Ok, rolls back on Err.
+    pub fn with_transaction<F, T>(&self, f: F) -> Result<T, AppError>
     where
-        F: FnOnce(&Connection) -> Result<T, rusqlite::Error>,
+        F: FnOnce(&Connection) -> Result<T, AppError>,
     {
         let conn = self.lock_conn()?;
-        f(&conn).map_err(AppError::from)
+        conn.execute_batch("BEGIN")?;
+        match f(&conn) {
+            Ok(val) => {
+                conn.execute_batch("COMMIT")?;
+                Ok(val)
+            }
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
     }
 }

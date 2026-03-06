@@ -1,4 +1,6 @@
 pub mod allowlist;
+pub mod audit;
+pub mod block;
 pub mod category;
 pub mod config;
 pub mod denylist;
@@ -6,7 +8,6 @@ pub mod fix;
 pub mod init;
 pub mod nextdns;
 pub mod pending;
-pub mod protection;
 pub mod schema;
 pub mod status;
 pub mod sync;
@@ -19,7 +20,7 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "ndb",
     version = env!("CARGO_PKG_VERSION"),
-    about = "NextDNS domain blocker with scheduling, protection, and notifications",
+    about = "NextDNS domain blocker with scheduling and notifications",
     long_about = None,
     after_help = "Use `ndb <command> --help` for more information about a command."
 )]
@@ -39,7 +40,10 @@ pub enum Commands {
     /// Sync local configuration to NextDNS API
     Sync(sync::SyncArgs),
 
-    /// Temporarily unblock a domain or category
+    /// Block one or more domains
+    Block(block::BlockArgs),
+
+    /// Unblock a domain or category
     Unblock(unblock::UnblockArgs),
 
     /// Diagnose and fix common issues
@@ -69,9 +73,9 @@ pub enum Commands {
     #[command(subcommand)]
     Pending(pending::PendingCommands),
 
-    /// Manage protection settings and PIN
+    /// View audit log
     #[command(subcommand)]
-    Protection(protection::ProtectionCommands),
+    Audit(audit::AuditCommands),
 
     /// Manage the watchdog scheduler service
     #[command(subcommand)]

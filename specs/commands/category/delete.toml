@@ -11,18 +11,12 @@ name = "name"
 type = "string"
 required = true
 
-[[flags]]
-name = "--pin"
-type = "string"
-required = false
-description = "PIN for protected categories"
-
 [output.success]
 schema = """
 {
   "ok": true,
   "command": "category delete",
-  "data": { "name": "social-media", "domains_orphaned": 3 },
+  "data": { "name": "social-media" },
   "summary": { "deleted": 1 },
   "timestamp": "..."
 }
@@ -33,19 +27,10 @@ code = 0
 name = "success"
 
 [[exit_codes]]
-code = 5
-name = "permission_error"
-
-[[exit_codes]]
 code = 7
 name = "not_found"
 
 [[examples]]
 description = "Delete a category"
 input = "ndb category delete social-media"
-exit_code = 0
-
-[[examples]]
-description = "Delete a protected category"
-input = "ndb category delete social-media --pin 1234"
 exit_code = 0

@@ -25,6 +25,7 @@ fn run(command: Commands) -> Result<ExitCode, nextdns_blocker::error::AppError> 
         Commands::Init(args) => handlers::init::handle(args),
         Commands::Status(args) => handlers::status::handle(args),
         Commands::Sync(args) => handlers::sync::handle(args),
+        Commands::Block(args) => handlers::block::handle(args),
         Commands::Unblock(args) => handlers::unblock::handle(args),
         Commands::Fix(args) => handlers::fix::handle(args),
         Commands::Denylist(cmd) => handlers::denylist::handle(cmd),
@@ -33,7 +34,7 @@ fn run(command: Commands) -> Result<ExitCode, nextdns_blocker::error::AppError> 
         Commands::Nextdns(cmd) => handlers::nextdns::handle(cmd),
         Commands::Config(cmd) => handlers::config::handle(cmd),
         Commands::Pending(cmd) => handlers::pending::handle(cmd),
-        Commands::Protection(cmd) => handlers::protection::handle(cmd),
+        Commands::Audit(cmd) => handlers::audit::handle(cmd),
         Commands::Watchdog(cmd) => handlers::watchdog::handle(cmd),
         Commands::Schema(cmd) => handlers::schema::handle(cmd),
     }

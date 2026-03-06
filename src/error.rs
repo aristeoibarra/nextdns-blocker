@@ -11,7 +11,7 @@ pub enum ExitCode {
     ConfigError = 2,
     ApiError = 3,
     ValidationError = 4,
-    PermissionError = 5,
+
     ConflictError = 6,
     NotFound = 7,
     Interrupted = 130,
@@ -29,7 +29,7 @@ impl ExitCode {
             Self::ConfigError => "config_error",
             Self::ApiError => "api_error",
             Self::ValidationError => "validation_error",
-            Self::PermissionError => "permission_error",
+
             Self::ConflictError => "conflict_error",
             Self::NotFound => "not_found",
             Self::Interrupted => "interrupted",
@@ -72,12 +72,6 @@ pub enum AppError {
         hint: Option<String>,
     },
 
-    #[error("Permission error: {message}")]
-    Permission {
-        message: String,
-        hint: Option<String>,
-    },
-
     #[error("Conflict: {message}")]
     Conflict {
         message: String,
@@ -94,11 +88,6 @@ pub enum AppError {
     Database {
         #[from]
         source: rusqlite::Error,
-    },
-
-    #[error("HTTP error: {message}")]
-    Http {
-        message: String,
     },
 
     #[error("IO error: {source}")]
@@ -130,9 +119,8 @@ impl AppError {
     pub fn exit_code(&self) -> ExitCode {
         match self {
             Self::Config { .. } => ExitCode::ConfigError,
-            Self::Api { .. } | Self::Http { .. } => ExitCode::ApiError,
+            Self::Api { .. } => ExitCode::ApiError,
             Self::Validation { .. } => ExitCode::ValidationError,
-            Self::Permission { .. } => ExitCode::PermissionError,
             Self::Conflict { .. } => ExitCode::ConflictError,
             Self::NotFound { .. } => ExitCode::NotFound,
             Self::Database { .. } | Self::Io { .. } | Self::Json { .. } | Self::General { .. } => {
@@ -146,12 +134,10 @@ impl AppError {
             Self::Config { hint, .. }
             | Self::Api { hint, .. }
             | Self::Validation { hint, .. }
-            | Self::Permission { hint, .. }
             | Self::Conflict { hint, .. }
             | Self::NotFound { hint, .. }
             | Self::General { hint, .. } => hint.as_deref(),
             Self::Database { .. } => Some("Check database file permissions and integrity"),
-            Self::Http { .. } => Some("Check network connectivity and try again"),
             Self::Io { .. } => Some("Check file permissions and disk space"),
             Self::Json { .. } => Some("Check input format"),
         }
@@ -162,11 +148,9 @@ impl AppError {
             Self::Config { .. } => "config_error",
             Self::Api { .. } => "api_error",
             Self::Validation { .. } => "validation_error",
-            Self::Permission { .. } => "permission_error",
             Self::Conflict { .. } => "conflict_error",
             Self::NotFound { .. } => "not_found",
             Self::Database { .. } => "database_error",
-            Self::Http { .. } => "http_error",
             Self::Io { .. } => "io_error",
             Self::Json { .. } => "json_error",
             Self::General { .. } => "general_error",

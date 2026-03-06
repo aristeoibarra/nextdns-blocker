@@ -6,6 +6,8 @@ use crate::error::AppError;
 use crate::output::Renderable;
 use crate::scheduler::ScheduleEvaluator;
 
+const RETRY_MAX_ATTEMPTS: i32 = 5;
+
 /// Result of a sync operation.
 #[derive(Debug, serde::Serialize)]
 pub struct SyncResult {
@@ -89,7 +91,22 @@ pub fn execute_sync(
     let to_add_allowed: Vec<String> = should_allow.difference(&remote_allowed_set).cloned().collect();
     let to_remove_allowed: Vec<String> = remote_allowed_set.difference(&should_allow).cloned().collect();
 
-    let empty_list = || SyncListResult { added: vec![], removed: vec![], unchanged: 0, errors: vec![] };
+    // === NextDNS categories and services ===
+    let local_categories = db.with_conn(crate::db::nextdns::list_nextdns_categories)?;
+    let local_services = db.with_conn(crate::db::nextdns::list_nextdns_services)?;
+
+    let remote_categories = client.get_parental_categories()?;
+    let remote_services = client.get_parental_services()?;
+
+    let local_cat_set: HashSet<String> = local_categories.iter().map(|c| c.id.clone()).collect();
+    let remote_cat_set: HashSet<String> = remote_categories.iter().filter(|c| c.active).map(|c| c.id.clone()).collect();
+    let local_svc_set: HashSet<String> = local_services.iter().map(|s| s.id.clone()).collect();
+    let remote_svc_set: HashSet<String> = remote_services.iter().filter(|s| s.active).map(|s| s.id.clone()).collect();
+
+    let to_add_cats: Vec<String> = local_cat_set.difference(&remote_cat_set).cloned().collect();
+    let to_remove_cats: Vec<String> = remote_cat_set.difference(&local_cat_set).cloned().collect();
+    let to_add_svcs: Vec<String> = local_svc_set.difference(&remote_svc_set).cloned().collect();
+    let to_remove_svcs: Vec<String> = remote_svc_set.difference(&local_svc_set).cloned().collect();
 
     if dry_run {
         return Ok(SyncResult {
@@ -101,10 +118,18 @@ pub fn execute_sync(
                 added: to_add_allowed, removed: to_remove_allowed,
                 unchanged: should_allow.intersection(&remote_allowed_set).count(), errors: vec![],
             },
-            categories: empty_list(), services: empty_list(),
+            categories: SyncListResult {
+                added: to_add_cats, removed: to_remove_cats,
+                unchanged: local_cat_set.intersection(&remote_cat_set).count(), errors: vec![],
+            },
+            services: SyncListResult {
+                added: to_add_svcs, removed: to_remove_svcs,
+                unchanged: local_svc_set.intersection(&remote_svc_set).count(), errors: vec![],
+            },
         });
     }
 
+    // === Execute denylist sync ===
     let mut denylist_errors = Vec::new();
     let mut denylist_added = Vec::new();
     for domain in &to_add_blocked {
@@ -121,6 +146,7 @@ pub fn execute_sync(
         }
     }
 
+    // === Execute allowlist sync ===
     let mut allowlist_errors = Vec::new();
     let mut allowlist_added = Vec::new();
     for domain in &to_add_allowed {
@@ -137,6 +163,60 @@ pub fn execute_sync(
         }
     }
 
+    // === Execute categories sync ===
+    let mut cat_errors = Vec::new();
+    let mut cat_added = Vec::new();
+    for id in &to_add_cats {
+        match client.set_parental_category(id, true) {
+            Ok(()) => cat_added.push(id.clone()),
+            Err(e) => cat_errors.push(SyncError { domain: id.clone(), error: e.to_string() }),
+        }
+    }
+    let mut cat_removed = Vec::new();
+    for id in &to_remove_cats {
+        match client.set_parental_category(id, false) {
+            Ok(()) => cat_removed.push(id.clone()),
+            Err(e) => cat_errors.push(SyncError { domain: id.clone(), error: e.to_string() }),
+        }
+    }
+
+    // === Execute services sync ===
+    let mut svc_errors = Vec::new();
+    let mut svc_added = Vec::new();
+    for id in &to_add_svcs {
+        match client.set_parental_service(id, true) {
+            Ok(()) => svc_added.push(id.clone()),
+            Err(e) => svc_errors.push(SyncError { domain: id.clone(), error: e.to_string() }),
+        }
+    }
+    let mut svc_removed = Vec::new();
+    for id in &to_remove_svcs {
+        match client.set_parental_service(id, false) {
+            Ok(()) => svc_removed.push(id.clone()),
+            Err(e) => svc_errors.push(SyncError { domain: id.clone(), error: e.to_string() }),
+        }
+    }
+
+    // Enqueue retries for all failed operations
+    let all_errors: Vec<(&str, &str, &SyncError)> = denylist_errors.iter().map(|e| ("add", "denylist", e))
+        .chain(allowlist_errors.iter().map(|e| ("add", "allowlist", e)))
+        .chain(cat_errors.iter().map(|e| ("add", "category", e)))
+        .chain(svc_errors.iter().map(|e| ("add", "service", e)))
+        .collect();
+
+    if !all_errors.is_empty() {
+        let retry_at = crate::common::time::now_unix() + 60;
+        for (action, list_type, err) in &all_errors {
+            let id = uuid::Uuid::new_v4().to_string();
+            let _ = db.with_conn(|conn| {
+                crate::db::retry::enqueue_retry(
+                    conn, &id, action, Some(&err.domain), list_type,
+                    None, RETRY_MAX_ATTEMPTS, retry_at,
+                )
+            });
+        }
+    }
+
     Ok(SyncResult {
         denylist: SyncListResult {
             added: denylist_added, removed: denylist_removed,
@@ -146,6 +226,13 @@ pub fn execute_sync(
             added: allowlist_added, removed: allowlist_removed,
             unchanged: should_allow.intersection(&remote_allowed_set).count(), errors: allowlist_errors,
         },
-        categories: empty_list(), services: empty_list(),
+        categories: SyncListResult {
+            added: cat_added, removed: cat_removed,
+            unchanged: local_cat_set.intersection(&remote_cat_set).count(), errors: cat_errors,
+        },
+        services: SyncListResult {
+            added: svc_added, removed: svc_removed,
+            unchanged: local_svc_set.intersection(&remote_svc_set).count(), errors: svc_errors,
+        },
     })
 }

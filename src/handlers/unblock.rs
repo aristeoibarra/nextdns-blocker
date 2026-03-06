@@ -16,22 +16,6 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
-    if is_domain {
-        let locked = crate::protection::validate_no_locked_removal(&db, std::slice::from_ref(&args.target))?;
-        if !locked.is_empty() {
-            return Err(AppError::Permission {
-                message: format!("'{}' is protected", args.target),
-                hint: Some("Use 'ndb protection unlock-request' to request unblocking".to_string()),
-            });
-        }
-    }
-    if is_category && crate::protection::is_locked(&db, "category", &args.target)? {
-        return Err(AppError::Permission {
-            message: format!("Category '{}' is locked", args.target),
-            hint: Some("Use 'ndb protection unlock-request' to request unblocking".to_string()),
-        });
-    }
-
     if let Some(ref dur_str) = args.duration {
         let duration = crate::common::time::parse_duration(dur_str)?;
         let execute_at = crate::common::time::now_unix() + duration.as_secs() as i64;
@@ -47,7 +31,14 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
 
         db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", if is_domain { "domain" } else { "category" }, &args.target, Some(dur_str)))?;
 
-        let result = UnblockResult { target: args.target, duration: Some(dur_str.clone()), pending_id: Some(id) };
+        let mut watchdog_warning = None;
+        if let Ok(status) = crate::watchdog::status() {
+            if !status.installed {
+                watchdog_warning = Some("Watchdog not installed — pending action will not execute automatically. Run 'ndb watchdog install --interval 5m'".to_string());
+            }
+        }
+
+        let result = UnblockResult { target: args.target, duration: Some(dur_str.clone()), pending_id: Some(id), watchdog_warning };
         output::render(&result);
     } else {
         if is_domain {
@@ -55,19 +46,19 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         }
         db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", if is_domain { "domain" } else { "category" }, &args.target, None))?;
 
-        let result = UnblockResult { target: args.target, duration: None, pending_id: None };
+        let result = UnblockResult { target: args.target, duration: None, pending_id: None, watchdog_warning: None };
         output::render(&result);
     }
 
     Ok(ExitCode::Success)
 }
 
-struct UnblockResult { target: String, duration: Option<String>, pending_id: Option<String> }
+struct UnblockResult { target: String, duration: Option<String>, pending_id: Option<String>, watchdog_warning: Option<String> }
 impl Renderable for UnblockResult {
     fn command_name(&self) -> &str { "unblock" }
     fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "data": { "target": self.target, "duration": self.duration, "pending_id": self.pending_id },
+            "data": { "target": self.target, "duration": self.duration, "pending_id": self.pending_id, "watchdog_warning": self.watchdog_warning },
             "summary": { "unblocked": 1 }
         })
     }

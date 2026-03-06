@@ -1,0 +1,71 @@
+[command]
+name = "block"
+binary_path = ["block"]
+description = "Block one or more domains"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[flags]]
+name = "--description"
+type = "string"
+required = false
+description = "Description for the blocked domains"
+short = "-d"
+
+[[flags]]
+name = "--category"
+type = "string"
+required = false
+description = "Category to assign"
+short = "-c"
+
+[[flags]]
+name = "--duration"
+type = "string"
+required = false
+description = "Duration to block for (auto-unblocks after)"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "block",
+  "data": {
+    "added": ["example.com"],
+    "skipped": [],
+    "errors": [],
+    "duration": null,
+    "pending_id": null
+  },
+  "summary": {
+    "added": 1,
+    "skipped": 0,
+    "errors": 0
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 4
+name = "validation_error"
+
+[[examples]]
+description = "Block a single domain"
+input = "ndb block example.com"
+exit_code = 0
+
+[[examples]]
+description = "Block multiple domains with description"
+input = "ndb block tiktok.com instagram.com -d 'social media'"
+exit_code = 0
+
+[[examples]]
+description = "Temporary block (auto-unblocks after 2 hours)"
+input = "ndb block youtube.com --duration 2h"
+exit_code = 0

@@ -35,9 +35,6 @@ pub struct CategoryDeleteArgs {
     /// Category name
     pub name: String,
 
-    /// PIN for protected categories
-    #[arg(long)]
-    pub pin: Option<String>,
 }
 
 #[derive(Args)]

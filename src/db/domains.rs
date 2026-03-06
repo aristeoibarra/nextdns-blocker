@@ -41,15 +41,6 @@ pub fn deactivate_blocked(conn: &Connection, domain: &str) -> Result<bool, rusql
     Ok(rows > 0)
 }
 
-pub fn activate_blocked(conn: &Connection, domain: &str) -> Result<bool, rusqlite::Error> {
-    let now = now_unix();
-    let rows = conn.execute(
-        "UPDATE blocked_domains SET active = 1, updated_at = ?1 WHERE domain = ?2 AND active = 0",
-        params![now, domain],
-    )?;
-    Ok(rows > 0)
-}
-
 pub fn get_blocked(conn: &Connection, domain: &str) -> Result<Option<BlockedDomain>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT id, domain, active, description, category, schedule, created_at, updated_at

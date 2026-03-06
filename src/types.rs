@@ -98,7 +98,7 @@ pub struct Category {
     pub name: String,
     pub description: Option<String>,
     pub schedule: Option<String>,
-    pub is_locked: bool,
+
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -148,18 +148,6 @@ pub struct RetryEntry {
     pub created_at: i64,
 }
 
-/// Unlock request for protected items.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UnlockRequest {
-    pub id: String,
-    pub target_type: String,
-    pub target_id: String,
-    pub reason: String,
-    pub status: String,
-    pub requested_at: i64,
-    pub resolved_at: Option<i64>,
-}
-
 /// Audit log entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditEntry {
@@ -171,12 +159,3 @@ pub struct AuditEntry {
     pub timestamp: i64,
 }
 
-/// Daily statistics.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DailyStats {
-    pub date: String,
-    pub domains_blocked: i32,
-    pub domains_allowed: i32,
-    pub sync_count: i32,
-    pub api_errors: i32,
-}

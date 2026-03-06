@@ -1,7 +1,7 @@
 [command]
 name = "watchdog install"
 binary_path = ["watchdog", "install"]
-description = "Install the watchdog service for automatic re-blocking"
+description = "Install the watchdog service for automatic sync and pending actions"
 requires_config = true
 requires_api = false
 requires_pin = false
@@ -11,19 +11,8 @@ schema = """
 {
   "ok": true,
   "command": "watchdog install",
-  "data": { "service_path": "/path/to/service", "interval": "5m" },
-  "summary": { "installed": true },
+  "data": { "path": "/path/to/plist", "interval_secs": 300, "scheduler": "launchd" },
   "timestamp": "..."
-}
-"""
-
-[output.error]
-schema = """
-{
-  "ok": false,
-  "command": "watchdog install",
-  "error": { "code": "conflict_error", "message": "Watchdog already installed", "hint": "Use 'ndb watchdog uninstall' first or check status with 'ndb watchdog status'" },
-  "exit_code": 6
 }
 """
 
@@ -32,14 +21,10 @@ code = 0
 name = "success"
 
 [[exit_codes]]
-code = 5
-name = "permission_error"
-
-[[exit_codes]]
 code = 6
 name = "conflict_error"
 
 [[examples]]
 description = "Install watchdog service"
-input = "ndb watchdog install"
+input = "ndb watchdog install --interval 5m"
 exit_code = 0

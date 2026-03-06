@@ -66,14 +66,6 @@ pub fn count_retries(conn: &Connection) -> Result<i64, rusqlite::Error> {
     conn.query_row("SELECT COUNT(*) FROM retry_queue", [], |row| row.get(0))
 }
 
-pub fn clear_completed_retries(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    let rows = conn.execute(
-        "DELETE FROM retry_queue WHERE attempts >= max_attempts",
-        [],
-    )?;
-    Ok(rows)
-}
-
 fn map_retry(row: &rusqlite::Row) -> Result<RetryEntry, rusqlite::Error> {
     Ok(RetryEntry {
         id: row.get(0)?,

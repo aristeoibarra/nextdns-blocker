@@ -8,7 +8,7 @@ pub mod handlers;
 pub mod notifications;
 pub mod output;
 pub mod pending;
-pub mod protection;
+
 pub mod retry;
 pub mod scheduler;
 pub mod sync;

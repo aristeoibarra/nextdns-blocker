@@ -24,11 +24,6 @@ name = "validation_error"
 description = "Input validation failed. Fix input, don't retry same."
 
 [[exit_codes]]
-code = 5
-name = "permission_error"
-description = "PIN required or insufficient file permissions."
-
-[[exit_codes]]
 code = 6
 name = "conflict_error"
 description = "Duplicate entry or protected item conflict."

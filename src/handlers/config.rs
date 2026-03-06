@@ -1,4 +1,4 @@
-use crate::cli::config::*;
+use crate::cli::config::{ConfigCommands, ConfigShowArgs, ConfigSetArgs, ConfigSetSecretArgs, ConfigRemoveSecretArgs};
 use crate::error::{AppError, ExitCode};
 use crate::output::{self, Renderable};
 
@@ -6,9 +6,9 @@ pub fn handle(cmd: ConfigCommands) -> Result<ExitCode, AppError> {
     match cmd {
         ConfigCommands::Show(args) => handle_show(args),
         ConfigCommands::Set(args) => handle_set(args),
+        ConfigCommands::SetSecret(args) => handle_set_secret(args),
+        ConfigCommands::RemoveSecret(args) => handle_remove_secret(args),
         ConfigCommands::Validate(_) => handle_validate(),
-        ConfigCommands::Push(_args) => handle_push(),
-        ConfigCommands::Diff(_) => handle_diff(),
     }
 }
 
@@ -98,11 +98,15 @@ fn handle_validate() -> Result<ExitCode, AppError> {
         errors.push(serde_json::json!({ "key": "timezone", "reason": format!("Invalid timezone: {tz}") }));
     }
 
-    if std::env::var("NEXTDNS_API_KEY").is_err() {
-        errors.push(serde_json::json!({ "key": "NEXTDNS_API_KEY", "reason": "Environment variable not set" }));
+    let has_api_key = std::env::var("NEXTDNS_API_KEY").is_ok()
+        || crate::common::keychain::get_secret("api-key").ok().flatten().is_some();
+    if !has_api_key {
+        errors.push(serde_json::json!({ "key": "NEXTDNS_API_KEY", "reason": "Not set (env var or Keychain)" }));
     }
-    if std::env::var("NEXTDNS_PROFILE_ID").is_err() {
-        errors.push(serde_json::json!({ "key": "NEXTDNS_PROFILE_ID", "reason": "Environment variable not set" }));
+    let has_profile = std::env::var("NEXTDNS_PROFILE_ID").is_ok()
+        || crate::common::keychain::get_secret("profile-id").ok().flatten().is_some();
+    if !has_profile {
+        errors.push(serde_json::json!({ "key": "NEXTDNS_PROFILE_ID", "reason": "Not set (env var or Keychain)" }));
     }
 
     let valid = errors.is_empty();
@@ -115,18 +119,41 @@ fn handle_validate() -> Result<ExitCode, AppError> {
     if valid { Ok(ExitCode::Success) } else { Ok(ExitCode::ValidationError) }
 }
 
-fn handle_push() -> Result<ExitCode, AppError> {
-    Err(AppError::General {
-        message: "Use 'ndb sync' to push configuration to NextDNS API".to_string(),
-        hint: Some("ndb sync --dry-run to preview changes".to_string()),
-    })
+fn handle_set_secret(args: ConfigSetSecretArgs) -> Result<ExitCode, AppError> {
+    const VALID_NAMES: &[&str] = &["api-key", "profile-id"];
+    if !VALID_NAMES.contains(&args.name.as_str()) {
+        return Err(AppError::Validation {
+            message: format!("Unknown secret name: '{}'", args.name),
+            details: vec![],
+            hint: Some(format!("Valid names: {}", VALID_NAMES.join(", "))),
+        });
+    }
+
+    crate::common::keychain::set_secret(&args.name, &args.value)?;
+
+    let result = ConfigResult {
+        command: "config set-secret",
+        data: serde_json::json!({ "name": args.name, "stored_in": "macOS Keychain" }),
+    };
+    output::render(&result);
+    Ok(ExitCode::Success)
 }
 
-fn handle_diff() -> Result<ExitCode, AppError> {
-    Err(AppError::General {
-        message: "Config diff requires API access. Use 'ndb sync --dry-run' to see differences.".to_string(),
-        hint: Some("ndb sync --dry-run".to_string()),
-    })
+fn handle_remove_secret(args: ConfigRemoveSecretArgs) -> Result<ExitCode, AppError> {
+    let removed = crate::common::keychain::remove_secret(&args.name)?;
+    if !removed {
+        return Err(AppError::NotFound {
+            message: format!("Secret '{}' not found in Keychain", args.name),
+            hint: None,
+        });
+    }
+
+    let result = ConfigResult {
+        command: "config remove-secret",
+        data: serde_json::json!({ "name": args.name, "removed": true }),
+    };
+    output::render(&result);
+    Ok(ExitCode::Success)
 }
 
 struct ConfigResult { command: &'static str, data: serde_json::Value }

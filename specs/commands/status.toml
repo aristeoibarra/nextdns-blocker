@@ -5,6 +5,7 @@ description = "Show current status of all blocking rules"
 requires_config = false
 requires_api = false
 requires_pin = false
+# protection module removed — CLI is for LLM-only consumption
 
 [[flags]]
 name = "--detailed"
@@ -22,8 +23,7 @@ schema = """
     "allowed_domains": 3,
     "categories": 5,
     "pending_actions": 0,
-    "retry_queue": 0,
-    "pin_enabled": true
+    "retry_queue": 0
   },
   "timestamp": "..."
 }

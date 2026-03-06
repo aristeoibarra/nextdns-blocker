@@ -3,7 +3,7 @@ name = "nextdns-blocker"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-description = "CLI tool for managing NextDNS domain blocking with scheduling, protection, and notifications"
+description = "CLI tool for managing NextDNS domain blocking with scheduling, notifications, and audit logging"
 license = "MIT"
 repository = "https://github.com/aristeoibarra/nextdns-blocker"
 
@@ -24,7 +24,6 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
 
 # Error handling
 thiserror = "2"
@@ -32,13 +31,6 @@ thiserror = "2"
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
-
-# Crypto (PIN hashing)
-argon2 = { version = "0.5", features = ["std"] }
-password-hash = { version = "0.5", features = ["rand_core"] }
-
-# Random
-rand = "0.9"
 
 # Directories
 dirs = "6"
@@ -62,6 +54,9 @@ tempfile = "3"
 
 # JSON schema validation
 jsonschema = "0.28"
+
+# TOML (spec parsing in tests only)
+toml = "0.8"
 
 [profile.release]
 lto = true

@@ -4,7 +4,7 @@ use nextdns_blocker::db::categories;
 use nextdns_blocker::db::domains;
 use nextdns_blocker::db::nextdns;
 use nextdns_blocker::db::pending;
-use nextdns_blocker::db::pin;
+
 use nextdns_blocker::db::Database;
 
 /// Helper: create an in-memory database ready for testing.
@@ -173,8 +173,6 @@ fn test_category_crud() {
         assert!(cat.is_some());
         let cat = cat.unwrap();
         assert_eq!(cat.description.as_deref(), Some("Social media"));
-        assert!(!cat.is_locked);
-
         // Get non-existent
         assert!(categories::get_category(conn, "nonexistent")?.is_none());
 
@@ -301,51 +299,7 @@ fn test_pending_action_crud() {
 }
 
 // ---------------------------------------------------------------------------
-// 8. PIN operations
-// ---------------------------------------------------------------------------
-#[test]
-fn test_pin_operations() {
-    let db = setup_db();
-
-    db.with_conn(|conn| {
-        // Initially no PIN
-        assert!(!pin::has_pin(conn)?);
-        assert!(pin::get_pin_hash(conn)?.is_none());
-
-        // Set PIN
-        pin::set_pin_hash(conn, "argon2hash_abc123")?;
-
-        assert!(pin::has_pin(conn)?);
-        assert_eq!(
-            pin::get_pin_hash(conn)?.as_deref(),
-            Some("argon2hash_abc123")
-        );
-
-        // Update PIN
-        pin::set_pin_hash(conn, "argon2hash_updated")?;
-        assert_eq!(
-            pin::get_pin_hash(conn)?.as_deref(),
-            Some("argon2hash_updated")
-        );
-
-        // Remove PIN
-        let removed = pin::remove_pin(conn)?;
-        assert!(removed);
-
-        assert!(!pin::has_pin(conn)?);
-        assert!(pin::get_pin_hash(conn)?.is_none());
-
-        // Remove again returns false
-        let removed = pin::remove_pin(conn)?;
-        assert!(!removed);
-
-        Ok(())
-    })
-    .expect("PIN operations failed");
-}
-
-// ---------------------------------------------------------------------------
-// 9. Audit log
+// 8. Audit log
 // ---------------------------------------------------------------------------
 #[test]
 fn test_audit_log() {
@@ -517,17 +471,6 @@ fn test_blocked_domain_deactivate_activate() {
         // Deactivating again should return false (already inactive)
         let deactivated = domains::deactivate_blocked(conn, "toggle.com")?;
         assert!(!deactivated);
-
-        // Activate
-        let activated = domains::activate_blocked(conn, "toggle.com")?;
-        assert!(activated);
-
-        assert!(domains::is_blocked(conn, "toggle.com")?);
-        assert_eq!(domains::count_blocked(conn)?, 1);
-
-        // Activating again should return false (already active)
-        let activated = domains::activate_blocked(conn, "toggle.com")?;
-        assert!(!activated);
 
         Ok(())
     })

@@ -13,12 +13,11 @@ pub fn handle(_args: StatusArgs) -> Result<ExitCode, AppError> {
         Ok::<_, rusqlite::Error>(actions.len() as i64)
     })?;
     let retry_count = db.with_conn(crate::db::retry::count_retries)?;
-    let has_pin = db.with_conn(crate::db::pin::has_pin)?;
     let categories = db.with_conn(crate::db::categories::list_categories)?;
 
     let result = StatusResult {
         blocked_count, allowed_count, category_count: categories.len() as i64,
-        pending_count, retry_count, has_pin,
+        pending_count, retry_count,
     };
     output::render(&result);
     Ok(ExitCode::Success)
@@ -26,7 +25,7 @@ pub fn handle(_args: StatusArgs) -> Result<ExitCode, AppError> {
 
 struct StatusResult {
     blocked_count: i64, allowed_count: i64, category_count: i64,
-    pending_count: i64, retry_count: i64, has_pin: bool,
+    pending_count: i64, retry_count: i64,
 }
 
 impl Renderable for StatusResult {
@@ -35,7 +34,7 @@ impl Renderable for StatusResult {
         serde_json::json!({ "data": {
             "blocked_domains": self.blocked_count, "allowed_domains": self.allowed_count,
             "categories": self.category_count, "pending_actions": self.pending_count,
-            "retry_queue": self.retry_count, "pin_enabled": self.has_pin,
+            "retry_queue": self.retry_count,
         }})
     }
 }

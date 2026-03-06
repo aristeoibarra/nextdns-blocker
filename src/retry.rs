@@ -50,13 +50,23 @@ pub fn process_retries(db: &Database, client: &NextDnsClient) -> Result<RetryRes
     Ok(RetryResult { succeeded, failed, exhausted })
 }
 
-/// Exponential backoff with full jitter.
+/// Exponential backoff with full jitter (no external crate needed).
 fn calculate_backoff(attempt: u32) -> u64 {
     let base = RETRY_BASE_DELAY_SECS;
     let max = RETRY_MAX_DELAY_SECS;
     let exp_delay = base.saturating_mul(2u64.saturating_pow(attempt));
     let capped = exp_delay.min(max);
-    rand::random::<u64>() % (capped + 1)
+    cheap_random_u64() % (capped + 1)
+}
+
+/// Quick non-crypto random u64 using std only (sufficient for jitter).
+fn cheap_random_u64() -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    std::time::SystemTime::now().hash(&mut h);
+    std::thread::current().id().hash(&mut h);
+    h.finish()
 }
 
 #[derive(Debug, serde::Serialize)]

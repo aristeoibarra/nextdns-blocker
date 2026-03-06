@@ -29,17 +29,20 @@ pub struct EnvConfig {
 }
 
 impl EnvConfig {
-    /// Load from environment variables.
+    /// Load API credentials. Priority: env vars > macOS Keychain.
     pub fn from_env() -> Result<Self, crate::error::AppError> {
-        let api_key = std::env::var("NEXTDNS_API_KEY").map_err(|_| crate::error::AppError::Config {
-            message: "Missing NEXTDNS_API_KEY environment variable".to_string(),
-            hint: Some("Set NEXTDNS_API_KEY in your environment or .env file".to_string()),
-        })?;
+        let api_key = std::env::var("NEXTDNS_API_KEY").ok()
+            .or_else(|| crate::common::keychain::get_secret("api-key").ok().flatten())
+            .ok_or_else(|| crate::error::AppError::Config {
+                message: "Missing NEXTDNS_API_KEY".to_string(),
+                hint: Some("Set env var NEXTDNS_API_KEY or run 'ndb config set-secret api-key <value>'".to_string()),
+            })?;
 
-        let profile_id =
-            std::env::var("NEXTDNS_PROFILE_ID").map_err(|_| crate::error::AppError::Config {
-                message: "Missing NEXTDNS_PROFILE_ID environment variable".to_string(),
-                hint: Some("Set NEXTDNS_PROFILE_ID in your environment or .env file".to_string()),
+        let profile_id = std::env::var("NEXTDNS_PROFILE_ID").ok()
+            .or_else(|| crate::common::keychain::get_secret("profile-id").ok().flatten())
+            .ok_or_else(|| crate::error::AppError::Config {
+                message: "Missing NEXTDNS_PROFILE_ID".to_string(),
+                hint: Some("Set env var NEXTDNS_PROFILE_ID or run 'ndb config set-secret profile-id <value>'".to_string()),
             })?;
 
         Ok(Self {

@@ -63,6 +63,26 @@ fn handle_run() -> Result<ExitCode, AppError> {
     let pending_result = crate::pending::process_pending(&db, &client)?;
     let retry_result = crate::retry::process_retries(&db, &client)?;
 
+    // Send macOS notification if any changes occurred
+    let sync_changes = sync_result.denylist.added.len() + sync_result.denylist.removed.len()
+        + sync_result.allowlist.added.len() + sync_result.allowlist.removed.len()
+        + sync_result.categories.added.len() + sync_result.categories.removed.len()
+        + sync_result.services.added.len() + sync_result.services.removed.len();
+    let pending_changes = pending_result.executed;
+    let retry_changes = retry_result.succeeded;
+
+    if sync_changes + pending_changes + retry_changes > 0 {
+        let mut parts = Vec::new();
+        if sync_changes > 0 { parts.push(format!("{sync_changes} sync changes")); }
+        if pending_changes > 0 { parts.push(format!("{pending_changes} pending executed")); }
+        if retry_changes > 0 { parts.push(format!("{retry_changes} retries succeeded")); }
+
+        let notifier = crate::notifications::macos::MacosAdapter::new();
+        let _ = crate::notifications::NotificationAdapter::send(
+            &notifier, "ndb watchdog", &parts.join(", "),
+        );
+    }
+
     let result = WdResult {
         command: "watchdog run",
         data: serde_json::json!({

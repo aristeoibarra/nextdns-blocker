@@ -70,14 +70,6 @@ impl Renderable for DenylistAddResult {
 }
 
 fn handle_remove(db: &Database, args: DenylistRemoveArgs) -> Result<ExitCode, AppError> {
-    let locked = crate::protection::validate_no_locked_removal(db, &args.domains)?;
-    if !locked.is_empty() {
-        return Err(AppError::Permission {
-            message: format!("Protected domains cannot be removed: {}", locked.join(", ")),
-            hint: Some("Use 'ndb protection unlock-request' to request removal".to_string()),
-        });
-    }
-
     let mut removed = Vec::new();
     let mut not_found = Vec::new();
 

@@ -1,0 +1,47 @@
+[command]
+name = "audit list"
+binary_path = ["audit", "list"]
+description = "List recent audit log entries"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[flags]]
+name = "--limit"
+type = "string"
+required = false
+description = "Maximum entries to return"
+short = "-l"
+
+[[flags]]
+name = "--offset"
+type = "string"
+required = false
+description = "Number of entries to skip"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "audit list",
+  "data": {
+    "entries": []
+  },
+  "summary": { "returned": 0, "total": 0 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "List recent audit entries"
+input = "ndb audit list"
+exit_code = 0
+
+[[examples]]
+description = "List last 10 entries"
+input = "ndb audit list --limit 10"
+exit_code = 0

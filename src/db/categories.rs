@@ -25,7 +25,7 @@ pub fn delete_category(conn: &Connection, name: &str) -> Result<bool, rusqlite::
 
 pub fn get_category(conn: &Connection, name: &str) -> Result<Option<Category>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, description, schedule, is_locked, created_at, updated_at
+        "SELECT id, name, description, schedule, created_at, updated_at
          FROM categories WHERE name = ?1",
     )?;
     let mut rows = stmt.query_map(params![name], map_category)?;
@@ -34,24 +34,11 @@ pub fn get_category(conn: &Connection, name: &str) -> Result<Option<Category>, r
 
 pub fn list_categories(conn: &Connection) -> Result<Vec<Category>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, description, schedule, is_locked, created_at, updated_at
+        "SELECT id, name, description, schedule, created_at, updated_at
          FROM categories ORDER BY name",
     )?;
     let rows = stmt.query_map([], map_category)?;
     rows.collect()
-}
-
-pub fn set_category_locked(
-    conn: &Connection,
-    name: &str,
-    locked: bool,
-) -> Result<bool, rusqlite::Error> {
-    let now = now_unix();
-    let rows = conn.execute(
-        "UPDATE categories SET is_locked = ?1, updated_at = ?2 WHERE name = ?3",
-        params![locked as i64, now, name],
-    )?;
-    Ok(rows > 0)
 }
 
 pub fn add_domain_to_category(
@@ -112,8 +99,7 @@ fn map_category(row: &rusqlite::Row) -> Result<Category, rusqlite::Error> {
         name: row.get(1)?,
         description: row.get(2)?,
         schedule: row.get(3)?,
-        is_locked: row.get::<_, i64>(4)? != 0,
-        created_at: row.get(5)?,
-        updated_at: row.get(6)?,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
     })
 }

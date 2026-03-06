@@ -37,13 +37,6 @@ fn handle_create(db: &Database, args: CategoryCreateArgs) -> Result<ExitCode, Ap
 }
 
 fn handle_delete(db: &Database, args: CategoryDeleteArgs) -> Result<ExitCode, AppError> {
-    if crate::protection::is_locked(db, "category", &args.name)? {
-        return Err(AppError::Permission {
-            message: format!("Category '{}' is locked", args.name),
-            hint: Some("Use 'ndb protection unlock-request' to request removal".to_string()),
-        });
-    }
-
     let deleted = db.with_conn(|conn| crate::db::categories::delete_category(conn, &args.name))?;
     if !deleted {
         return Err(AppError::NotFound {
@@ -98,7 +91,7 @@ impl Renderable for CategoryShowResult {
         serde_json::json!({
             "data": {
                 "name": self.category.name, "description": self.category.description,
-                "is_locked": self.category.is_locked, "schedule": self.category.schedule,
+                "schedule": self.category.schedule,
                 "domains": self.domains,
             },
             "summary": { "domain_count": self.domains.len() }

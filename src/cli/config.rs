@@ -6,12 +6,12 @@ pub enum ConfigCommands {
     Show(ConfigShowArgs),
     /// Set a configuration value
     Set(ConfigSetArgs),
+    /// Store a secret in macOS Keychain
+    SetSecret(ConfigSetSecretArgs),
+    /// Remove a secret from macOS Keychain
+    RemoveSecret(ConfigRemoveSecretArgs),
     /// Validate configuration
     Validate(ConfigValidateArgs),
-    /// Push local config to NextDNS API
-    Push(ConfigPushArgs),
-    /// Show diff between local config and NextDNS API
-    Diff(ConfigDiffArgs),
 }
 
 #[derive(Args)]
@@ -29,14 +29,18 @@ pub struct ConfigSetArgs {
 }
 
 #[derive(Args)]
-pub struct ConfigValidateArgs {}
-
-#[derive(Args)]
-pub struct ConfigPushArgs {
-    /// Dry run: show changes without applying
-    #[arg(long)]
-    pub dry_run: bool,
+pub struct ConfigSetSecretArgs {
+    /// Secret name (api-key or profile-id)
+    pub name: String,
+    /// Secret value
+    pub value: String,
 }
 
 #[derive(Args)]
-pub struct ConfigDiffArgs {}
+pub struct ConfigRemoveSecretArgs {
+    /// Secret name (api-key or profile-id)
+    pub name: String,
+}
+
+#[derive(Args)]
+pub struct ConfigValidateArgs {}

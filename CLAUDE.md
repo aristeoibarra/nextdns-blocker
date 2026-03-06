@@ -4,18 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-CLI tool (`ndb`) for managing NextDNS domain blocking with scheduling, protection, and notifications. Designed exclusively for Claude Code — all output is always JSON envelope, no human format.
+CLI tool (`ndb`) for managing NextDNS domain blocking with scheduling, notifications, and audit logging. Designed exclusively for Claude Code — all output is always JSON envelope, no human format.
 
 ## Build & Test Commands
 
 ```bash
 cargo build                    # Build debug binary
 cargo build --release          # Build optimized binary (LTO, stripped)
-cargo test                     # Run all tests (52 total: 16 unit + 36 integration)
+cargo test                     # Run all tests (61 total: 16 unit + 45 integration)
 cargo test --lib               # Unit tests only
-cargo test --test cli_test     # CLI integration tests only
-cargo test --test db_test      # Database tests only
-cargo test --test spec_contract_test  # Spec contract tests only
+cargo test --test cli_test     # CLI integration tests only (12)
+cargo test --test db_test      # Database tests only (11)
+cargo test --test integration_test  # Integration tests (10)
+cargo test --test spec_contract_test  # Spec contract tests only (12)
 cargo test <test_name>         # Run a single test by name
 ```
 
@@ -51,12 +52,12 @@ The `Renderable` trait has only two methods: `command_name()` and `to_json()`. N
 
 ### Database Layer
 
-`db::Database` wraps `rusqlite::Connection` in `Mutex`. Access via `db.with_conn(|conn| { ... })`. All tables use SQLite STRICT mode. Migrations in `src/db/schema.rs` via `include_str!()` from `migrations/`. WAL mode enabled.
+`db::Database` wraps `rusqlite::Connection` in `Mutex`. Access via `db.with_conn(|conn| { ... })` or `db.with_transaction(|conn| { ... })` for atomic multi-write operations. All tables use SQLite STRICT mode. Migrations in `src/db/schema.rs` via `include_str!()` from `migrations/`. WAL mode enabled.
 
 ### Config System
 
 - SQLite `kv_config` table — all settings (timezone, safe_search, etc.)
-- Environment variables — `NEXTDNS_API_KEY` and `NEXTDNS_PROFILE_ID` (secrets via `secrecy::SecretString`)
+- Secrets: macOS Keychain (preferred) or env vars `NEXTDNS_API_KEY`/`NEXTDNS_PROFILE_ID` (fallback). Managed via `ndb config set-secret`/`remove-secret`
 - Data path overridable with `NDB_DATA_DIR` env var
 
 ### API Client
@@ -67,17 +68,13 @@ The `Renderable` trait has only two methods: `command_name()` and `to_json()`. N
 
 `scheduler::ScheduleEvaluator` evaluates time-based blocking rules. Supports overnight ranges (22:00-02:00). Injectable `Clock` trait for testing. Used by `sync::execute_sync()` to determine what should be blocked right now.
 
-### Protection
-
-PIN-based protection using Argon2id hashing. Locked categories/domains can't be removed without unlock request. PIN sessions expire after 30 minutes, lockout after 3 failed attempts.
-
 ### Spec Contract Tests
 
 `specs/` contains TOML files declaring each command's interface (args, flags, output schema, exit codes, examples). `tests/spec_contract_test.rs` auto-generates 12 tests that verify the binary matches these specs. When adding a new command, create its TOML spec in `specs/commands/`.
 
 ### Exit Codes
 
-0=Success, 1=General, 2=Config, 3=Api, 4=Validation, 5=Permission, 6=Conflict, 7=NotFound, 130=Interrupted. Defined in `src/error.rs`. Each `AppError` variant maps to an exit code.
+0=Success, 1=General, 2=Config, 3=Api, 4=Validation, 6=Conflict, 7=NotFound, 130=Interrupted. Defined in `src/error.rs`. Each `AppError` variant maps to an exit code.
 
 ## Pinned Crate Versions
 
@@ -89,4 +86,6 @@ Do not upgrade: rusqlite 0.31.
 - Audit logging: `db::audit::log_action(conn, action, target_type, target_id, details)` in handlers
 - Domain validation: `common::domain::parse_domains()` returns `(valid, errors)` tuples
 - Error hints: every `AppError` variant includes an optional `hint` for recovery suggestions
-- Notifications module exists but is not yet wired to handlers
+- Notifications: macOS (osascript) wired to `watchdog run` — notifies on sync/pending/retry changes
+- Use `db.with_transaction()` for multi-write handlers (block, denylist import)
+- Sync failures auto-enqueue to retry_queue for automatic recovery

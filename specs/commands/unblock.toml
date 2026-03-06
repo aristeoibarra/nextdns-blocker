@@ -1,7 +1,7 @@
 [command]
 name = "unblock"
 binary_path = ["unblock"]
-description = "Temporarily unblock a domain or category"
+description = "Unblock a domain or category"
 requires_config = true
 requires_api = true
 requires_pin = false
@@ -16,12 +16,7 @@ name = "--duration"
 type = "string"
 required = false
 description = "How long to unblock (e.g. 1h, 30m, 2h30m)"
-
-[[flags]]
-name = "--pin"
-type = "string"
-required = false
-description = "PIN for protected domains"
+short = "-d"
 
 [output.success]
 schema = """
@@ -30,30 +25,17 @@ schema = """
   "command": "unblock",
   "data": {
     "target": "example.com",
-    "unblocked_until": "2026-03-05T19:00:00Z"
+    "duration": "1h",
+    "pending_id": "uuid"
   },
   "summary": { "unblocked": 1 },
   "timestamp": "..."
 }
 """
 
-[output.error]
-schema = """
-{
-  "ok": false,
-  "command": "unblock",
-  "error": { "code": "permission_error", "message": "PIN required for protected domain", "hint": "Provide --pin flag" },
-  "exit_code": 5
-}
-"""
-
 [[exit_codes]]
 code = 0
 name = "success"
-
-[[exit_codes]]
-code = 5
-name = "permission_error"
 
 [[exit_codes]]
 code = 7
@@ -64,11 +46,11 @@ target = "nextdns_api"
 operation = "DELETE /profiles/{id}/denylist/{domain}"
 
 [[examples]]
-description = "Unblock for 1 hour"
-input = "ndb unblock example.com --duration 1h"
+description = "Unblock permanently"
+input = "ndb unblock example.com"
 exit_code = 0
 
 [[examples]]
-description = "Unblock protected domain"
-input = "ndb unblock example.com --duration 30m --pin 1234"
+description = "Unblock for 1 hour (auto re-blocks)"
+input = "ndb unblock example.com --duration 1h"
 exit_code = 0
