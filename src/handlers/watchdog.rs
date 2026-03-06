@@ -59,6 +59,8 @@ fn handle_run() -> Result<ExitCode, AppError> {
         .map_err(|_| AppError::Config { message: format!("Invalid timezone: {tz_str}"), hint: None })?;
     let evaluator = crate::scheduler::ScheduleEvaluator::new(tz);
 
+    let sound = db.with_conn(crate::db::config::get_notification_sound)?;
+
     let sync_result = crate::sync::execute_sync(&db, &client, &evaluator, false)?;
     let pending_result = crate::pending::process_pending(&db, &client)?;
     let retry_result = crate::retry::process_retries(&db, &client)?;
@@ -66,7 +68,7 @@ fn handle_run() -> Result<ExitCode, AppError> {
     // Enforce blocked apps: kill any that are somehow running
     let apps_killed = crate::app_blocker::enforce_blocked_apps(&db).unwrap_or_default();
 
-    // Send macOS notification if any changes occurred
+    // Collect success metrics
     let sync_changes = sync_result.denylist.added.len() + sync_result.denylist.removed.len()
         + sync_result.allowlist.added.len() + sync_result.allowlist.removed.len()
         + sync_result.categories.added.len() + sync_result.categories.removed.len()
@@ -75,17 +77,36 @@ fn handle_run() -> Result<ExitCode, AppError> {
     let retry_changes = retry_result.succeeded;
     let apps_enforced = apps_killed.len();
 
+    // Collect failure metrics
+    let pending_failures = pending_result.failed;
+    let retry_failures = retry_result.failed;
+
+    let notifier = crate::notifications::macos::MacosAdapter::new();
+
+    // Notify failures with error sound
+    if pending_failures + retry_failures > 0 {
+        let mut parts = Vec::new();
+        if pending_failures > 0 { parts.push(format!("{pending_failures} pending failed")); }
+        if retry_failures > 0 { parts.push(format!("{retry_failures} retries failed")); }
+
+        let notification = crate::notifications::Notification::new("ndb watchdog", parts.join(", "))
+            .subtitle("Errors detected")
+            .sound("Basso");
+        let _ = crate::notifications::NotificationAdapter::send(&notifier, &notification);
+    }
+
+    // Notify successes with configured sound
     if sync_changes + pending_changes + retry_changes + apps_enforced > 0 {
         let mut parts = Vec::new();
-        if sync_changes > 0 { parts.push(format!("{sync_changes} sync changes")); }
-        if pending_changes > 0 { parts.push(format!("{pending_changes} pending executed")); }
-        if retry_changes > 0 { parts.push(format!("{retry_changes} retries succeeded")); }
+        if sync_changes > 0 { parts.push(format!("{sync_changes} sync")); }
+        if pending_changes > 0 { parts.push(format!("{pending_changes} pending")); }
+        if retry_changes > 0 { parts.push(format!("{retry_changes} retries")); }
         if apps_enforced > 0 { parts.push(format!("{apps_enforced} apps killed")); }
 
-        let notifier = crate::notifications::macos::MacosAdapter::new();
-        let _ = crate::notifications::NotificationAdapter::send(
-            &notifier, "ndb watchdog", &parts.join(", "),
-        );
+        let notification = crate::notifications::Notification::new("ndb watchdog", parts.join(", "))
+            .subtitle("Sync complete")
+            .sound(sound);
+        let _ = crate::notifications::NotificationAdapter::send(&notifier, &notification);
     }
 
     let result = WdResult {

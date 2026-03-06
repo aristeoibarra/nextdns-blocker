@@ -39,12 +39,17 @@ pub fn get_bool(conn: &Connection, key: &str) -> Result<bool, rusqlite::Error> {
     Ok(get_value(conn, key)?.is_some_and(|v| v == "true"))
 }
 
+pub fn get_notification_sound(conn: &Connection) -> Result<String, rusqlite::Error> {
+    Ok(get_value(conn, "notification_sound")?.unwrap_or_else(|| "Blow".to_string()))
+}
+
 /// All known config keys with their default values.
 pub const KNOWN_KEYS: &[(&str, &str)] = &[
     ("timezone", "UTC"),
     ("safe_search", "true"),
     ("youtube_restricted_mode", "false"),
     ("block_bypass", "true"),
+    ("notification_sound", "Blow"),
 ];
 
 pub fn is_known_key(key: &str) -> bool {

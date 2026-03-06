@@ -2,43 +2,37 @@ pub mod macos;
 
 use crate::error::AppError;
 
-/// Trait for notification adapters.
-pub trait NotificationAdapter: Send + Sync {
-    fn name(&self) -> &str;
-    fn send(&self, title: &str, message: &str) -> Result<(), AppError>;
+/// A notification to send.
+pub struct Notification {
+    pub title: String,
+    pub message: String,
+    pub subtitle: Option<String>,
+    pub sound: Option<String>,
 }
 
-/// Notification manager that dispatches to all configured adapters.
-pub struct NotificationManager {
-    adapters: Vec<Box<dyn NotificationAdapter>>,
-}
-
-impl NotificationManager {
-    pub fn new() -> Self {
+impl Notification {
+    pub fn new(title: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
-            adapters: Vec::new(),
+            title: title.into(),
+            message: message.into(),
+            subtitle: None,
+            sound: None,
         }
     }
 
-    pub fn add_adapter(&mut self, adapter: Box<dyn NotificationAdapter>) {
-        self.adapters.push(adapter);
+    pub fn subtitle(mut self, subtitle: impl Into<String>) -> Self {
+        self.subtitle = Some(subtitle.into());
+        self
     }
 
-    /// Send a notification to all adapters.
-    pub fn notify(&self, title: &str, message: &str) -> Vec<Result<(), AppError>> {
-        self.adapters
-            .iter()
-            .map(|a| a.send(title, message))
-            .collect()
-    }
-
-    pub fn adapter_count(&self) -> usize {
-        self.adapters.len()
+    pub fn sound(mut self, sound: impl Into<String>) -> Self {
+        self.sound = Some(sound.into());
+        self
     }
 }
 
-impl Default for NotificationManager {
-    fn default() -> Self {
-        Self::new()
-    }
+/// Trait for notification adapters.
+pub trait NotificationAdapter: Send + Sync {
+    fn name(&self) -> &str;
+    fn send(&self, notification: &Notification) -> Result<(), AppError>;
 }
