@@ -1,0 +1,42 @@
+[command]
+name = "denylist import"
+binary_path = ["denylist", "import"]
+description = "Import domains from a file into the denylist"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "file"
+type = "string"
+required = true
+
+[[flags]]
+name = "--description"
+short = "-d"
+type = "string"
+required = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "denylist import",
+  "data": { "imported": 50, "skipped": 2, "errors": [] },
+  "summary": { "imported": 50, "skipped": 2 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 4
+name = "validation_error"
+
+[[examples]]
+description = "Import from text file"
+input = "ndb denylist import domains.txt"
+exit_code = 0

@@ -1,0 +1,29 @@
+[command]
+name = "schema envelope"
+binary_path = ["schema", "envelope"]
+description = "Show the JSON envelope format"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "schema envelope",
+  "data": {
+    "success": {},
+    "error": {}
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Show envelope format"
+input = "ndb schema envelope"
+exit_code = 0

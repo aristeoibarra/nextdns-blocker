@@ -1,0 +1,31 @@
+[command]
+name = "nextdns categories"
+binary_path = ["nextdns", "categories"]
+description = "List available NextDNS native categories from constants"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "nextdns categories",
+  "data": {
+    "categories": [
+      { "id": "native-gambling", "name": "Gambling", "description": "Gambling websites and apps" }
+    ]
+  },
+  "summary": { "total": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "List all available native categories"
+input = "ndb nextdns categories"
+exit_code = 0

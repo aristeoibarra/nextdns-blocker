@@ -1,0 +1,31 @@
+[command]
+name = "nextdns services"
+binary_path = ["nextdns", "services"]
+description = "List available NextDNS native services from constants"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "nextdns services",
+  "data": {
+    "services": [
+      { "id": "tiktok", "name": "TikTok", "description": "TikTok video platform" }
+    ]
+  },
+  "summary": { "total": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "List all available native services"
+input = "ndb nextdns services"
+exit_code = 0

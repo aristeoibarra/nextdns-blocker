@@ -1,0 +1,60 @@
+[command]
+name = "fix"
+binary_path = ["fix"]
+description = "Detect and fix configuration or state issues"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[[flags]]
+name = "--auto"
+type = "bool"
+required = false
+description = "Automatically fix all detected issues"
+
+[[flags]]
+name = "--check-only"
+type = "bool"
+required = false
+description = "Only report issues without fixing them"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "fix",
+  "data": {
+    "issues_found": [
+      { "type": "orphaned_domain", "description": "Domain in category that no longer exists", "target": "example.com" }
+    ],
+    "fixed": [
+      { "type": "orphaned_domain", "description": "Removed orphaned domain reference", "target": "example.com" }
+    ]
+  },
+  "summary": { "found": 1, "fixed": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 2
+name = "config_error"
+
+[[examples]]
+description = "Check for issues without fixing"
+input = "ndb fix --check-only"
+exit_code = 0
+
+[[examples]]
+description = "Auto-fix all issues"
+input = "ndb fix --auto"
+exit_code = 0
+
+[[examples]]
+description = "Interactive fix"
+input = "ndb fix"
+exit_code = 0

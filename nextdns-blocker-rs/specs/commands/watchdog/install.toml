@@ -1,0 +1,45 @@
+[command]
+name = "watchdog install"
+binary_path = ["watchdog", "install"]
+description = "Install the watchdog service for automatic re-blocking"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "watchdog install",
+  "data": { "service_path": "/path/to/service", "interval": "5m" },
+  "summary": { "installed": true },
+  "timestamp": "..."
+}
+"""
+
+[output.error]
+schema = """
+{
+  "ok": false,
+  "command": "watchdog install",
+  "error": { "code": "conflict_error", "message": "Watchdog already installed", "hint": "Use 'ndb watchdog uninstall' first or check status with 'ndb watchdog status'" },
+  "exit_code": 6
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 5
+name = "permission_error"
+
+[[exit_codes]]
+code = 6
+name = "conflict_error"
+
+[[examples]]
+description = "Install watchdog service"
+input = "ndb watchdog install"
+exit_code = 0

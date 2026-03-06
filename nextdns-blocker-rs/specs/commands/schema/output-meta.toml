@@ -1,0 +1,37 @@
+[schema]
+name = "output"
+description = "Schema definition for command output format"
+
+[schema.success]
+description = "All successful responses follow this structure"
+fields = """
+{
+  "ok": true,
+  "command": "string — the command name that produced this output",
+  "data": "object — command-specific result data",
+  "summary": "object — optional, human-friendly summary counters",
+  "timestamp": "string — ISO8601 timestamp of execution"
+}
+"""
+
+[schema.error]
+description = "All error responses follow this structure"
+fields = """
+{
+  "ok": false,
+  "command": "string — the command name that produced this output",
+  "error": {
+    "code": "string — machine-readable error code matching exit_codes.toml names",
+    "message": "string — human-readable error description",
+    "hint": "string — actionable suggestion for recovery",
+    "details": "array — optional, field-level error details"
+  },
+  "exit_code": "integer — process exit code",
+  "timestamp": "string — ISO8601 timestamp of execution"
+}
+"""
+
+[schema.rules]
+stdout = "Always valid JSON matching success or error schema"
+stderr = "Reserved for debug/trace output only, never parsed"
+encoding = "UTF-8"

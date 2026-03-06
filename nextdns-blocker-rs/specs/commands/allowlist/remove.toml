@@ -1,0 +1,41 @@
+[command]
+name = "allowlist remove"
+binary_path = ["allowlist", "remove"]
+description = "Remove domains from the NextDNS allowlist"
+requires_config = true
+requires_api = true
+requires_pin = false
+
+[[args]]
+name = "domains"
+type = "string[]"
+required = true
+validation = "rfc1123_domain"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "allowlist remove",
+  "data": { "removed": ["example.com"], "skipped": [] },
+  "summary": { "removed": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[side_effects]]
+target = "nextdns_api"
+operation = "DELETE /profiles/{id}/allowlist/{domain}"
+
+[[examples]]
+description = "Remove a domain"
+input = "ndb allowlist remove example.com"
+exit_code = 0

@@ -1,0 +1,48 @@
+[command]
+name = "status"
+binary_path = ["status"]
+description = "Show current status of all blocking rules"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[flags]]
+name = "--detailed"
+type = "bool"
+required = false
+description = "Show detailed per-domain status"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "status",
+  "data": {
+    "blocked_domains": 42,
+    "allowed_domains": 3,
+    "categories": 5,
+    "pending_actions": 0,
+    "retry_queue": 0,
+    "pin_enabled": true
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 2
+name = "config_error"
+
+[[examples]]
+description = "Show basic status"
+input = "ndb status"
+exit_code = 0
+
+[[examples]]
+description = "Show detailed status"
+input = "ndb status --detailed"
+exit_code = 0

@@ -1,0 +1,46 @@
+[command]
+name = "protection pin-verify"
+binary_path = ["protection", "pin-verify"]
+description = "Verify a PIN is correct"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[flags]]
+name = "--pin"
+type = "string"
+required = true
+description = "PIN to verify"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "protection pin-verify",
+  "data": { "valid": true },
+  "timestamp": "..."
+}
+"""
+
+[output.error]
+schema = """
+{
+  "ok": false,
+  "command": "protection pin-verify",
+  "error": { "code": "permission_error", "message": "Invalid PIN", "hint": "Check the PIN and try again" },
+  "exit_code": 5
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 5
+name = "permission_error"
+
+[[examples]]
+description = "Verify a PIN"
+input = "ndb protection pin-verify --pin 1234"
+exit_code = 0

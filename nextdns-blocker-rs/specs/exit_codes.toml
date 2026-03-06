@@ -1,0 +1,44 @@
+[[exit_codes]]
+code = 0
+name = "success"
+description = "Operation completed successfully. Parse stdout JSON."
+
+[[exit_codes]]
+code = 1
+name = "general_error"
+description = "Unexpected error. Read error.hint, retry or fix."
+
+[[exit_codes]]
+code = 2
+name = "config_error"
+description = "Configuration missing or invalid. Run `ndb init` or `ndb config validate`."
+
+[[exit_codes]]
+code = 3
+name = "api_error"
+description = "NextDNS API error. Retry after delay, check `ndb status`."
+
+[[exit_codes]]
+code = 4
+name = "validation_error"
+description = "Input validation failed. Fix input, don't retry same."
+
+[[exit_codes]]
+code = 5
+name = "permission_error"
+description = "PIN required or insufficient file permissions."
+
+[[exit_codes]]
+code = 6
+name = "conflict_error"
+description = "Duplicate entry or protected item conflict."
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+description = "Requested item doesn't exist."
+
+[[exit_codes]]
+code = 130
+name = "interrupted"
+description = "SIGINT received. State may be partial."

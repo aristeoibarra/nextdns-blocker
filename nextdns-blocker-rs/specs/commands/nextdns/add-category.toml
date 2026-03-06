@@ -1,0 +1,44 @@
+[command]
+name = "nextdns add-category"
+binary_path = ["nextdns", "add-category"]
+description = "Enable a NextDNS native category"
+requires_config = true
+requires_api = true
+requires_pin = false
+
+[[args]]
+name = "id"
+type = "string"
+required = true
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "nextdns add-category",
+  "data": { "id": "native-gambling", "name": "Gambling" },
+  "summary": { "added": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 4
+name = "validation_error"
+
+[[exit_codes]]
+code = 6
+name = "conflict_error"
+
+[[side_effects]]
+target = "nextdns_api"
+operation = "PUT /profiles/{id}/security/categories"
+
+[[examples]]
+description = "Enable a native category"
+input = "ndb nextdns add-category native-gambling"
+exit_code = 0

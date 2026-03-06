@@ -1,0 +1,34 @@
+[command]
+name = "nextdns list"
+binary_path = ["nextdns", "list"]
+description = "List enabled NextDNS native categories and services"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "nextdns list",
+  "data": {
+    "categories": [
+      { "id": "native-gambling", "name": "Gambling", "enabled": true }
+    ],
+    "services": [
+      { "id": "tiktok", "name": "TikTok", "enabled": true }
+    ]
+  },
+  "summary": { "categories": 1, "services": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "List enabled native categories and services"
+input = "ndb nextdns list"
+exit_code = 0

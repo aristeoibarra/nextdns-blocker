@@ -1,0 +1,50 @@
+[command]
+name = "protection unlock-request"
+binary_path = ["protection", "unlock-request"]
+description = "Request temporary unlock for a protected domain or category"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[flags]]
+name = "--target-type"
+type = "string"
+required = true
+description = "Target type (domain, category, service)"
+
+[[flags]]
+name = "--target-id"
+type = "string"
+required = true
+description = "Target identifier"
+
+[[flags]]
+name = "--reason"
+type = "string"
+required = true
+description = "Reason for the unlock request"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "protection unlock-request",
+  "data": {
+    "id": "req-001"
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 5
+name = "permission_error"
+
+[[examples]]
+description = "Request unlock for a domain"
+input = "ndb protection unlock-request --target-type domain --target-id example.com --reason testing"
+exit_code = 0

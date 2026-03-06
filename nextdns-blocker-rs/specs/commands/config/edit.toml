@@ -1,0 +1,31 @@
+[command]
+name = "config edit"
+binary_path = ["config", "edit"]
+description = "Open configuration file in the default editor"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "config edit",
+  "data": { "config_path": "/path/to/config.json", "editor": "nvim" },
+  "summary": { "edited": true },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 2
+name = "config_error"
+
+[[examples]]
+description = "Edit config in default editor"
+input = "ndb config edit"
+exit_code = 0

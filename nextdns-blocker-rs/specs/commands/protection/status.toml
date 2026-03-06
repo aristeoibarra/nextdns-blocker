@@ -1,0 +1,30 @@
+[command]
+name = "protection status"
+binary_path = ["protection", "status"]
+description = "Show current protection status"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "protection status",
+  "data": {
+    "pin_enabled": true,
+    "locked_out": false,
+    "pending_unlocks": 0
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Check protection status"
+input = "ndb protection status"
+exit_code = 0

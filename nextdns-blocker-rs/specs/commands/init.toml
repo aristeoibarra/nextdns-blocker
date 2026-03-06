@@ -1,0 +1,55 @@
+[command]
+name = "init"
+binary_path = ["init"]
+description = "Initialize ndb configuration and database"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[flags]]
+name = "--force"
+type = "bool"
+required = false
+description = "Force re-initialization (overwrites existing config)"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "init",
+  "data": {
+    "config_path": "/path/to/config.json",
+    "db_path": "/path/to/ndb.db"
+  },
+  "summary": { "initialized": true },
+  "timestamp": "..."
+}
+"""
+
+[output.error]
+schema = """
+{
+  "ok": false,
+  "command": "init",
+  "error": { "code": "conflict_error", "message": "Configuration already exists", "hint": "Use --force to overwrite" },
+  "exit_code": 6
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 6
+name = "conflict_error"
+
+[[examples]]
+description = "Initialize for first time"
+input = "ndb init"
+exit_code = 0
+
+[[examples]]
+description = "Force re-initialization"
+input = "ndb init --force"
+exit_code = 0

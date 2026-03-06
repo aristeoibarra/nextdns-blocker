@@ -1,0 +1,51 @@
+[command]
+name = "denylist remove"
+binary_path = ["denylist", "remove"]
+description = "Remove domains from the NextDNS denylist"
+requires_config = true
+requires_api = true
+requires_pin = false
+
+[[args]]
+name = "domains"
+type = "string[]"
+required = true
+validation = "rfc1123_domain"
+
+[[flags]]
+name = "--pin"
+type = "string"
+required = false
+description = "PIN for protected domains"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "denylist remove",
+  "data": { "removed": ["example.com"], "skipped": [], "protected": [] },
+  "summary": { "removed": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 5
+name = "permission_error"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[side_effects]]
+target = "nextdns_api"
+operation = "DELETE /profiles/{id}/denylist/{domain}"
+
+[[examples]]
+description = "Remove a domain"
+input = "ndb denylist remove example.com"
+exit_code = 0

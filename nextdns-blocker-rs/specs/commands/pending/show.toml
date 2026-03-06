@@ -1,0 +1,44 @@
+[command]
+name = "pending show"
+binary_path = ["pending", "show"]
+description = "Show details of a specific pending action"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "id"
+type = "integer"
+required = true
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "pending show",
+  "data": {
+    "id": 1,
+    "command": "denylist add",
+    "target": "example.com",
+    "status": "pending",
+    "retries": 2,
+    "last_error": "API timeout",
+    "created_at": "...",
+    "next_retry": "..."
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[examples]]
+description = "Show pending action details"
+input = "ndb pending show 1"
+exit_code = 0

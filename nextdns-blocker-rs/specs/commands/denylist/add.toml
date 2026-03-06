@@ -1,0 +1,85 @@
+[command]
+name = "denylist add"
+binary_path = ["denylist", "add"]
+description = "Add domains to the NextDNS denylist"
+requires_config = true
+requires_api = true
+requires_pin = false
+
+[[args]]
+name = "domains"
+type = "string[]"
+required = true
+validation = "rfc1123_domain"
+
+[[flags]]
+name = "--description"
+short = "-d"
+type = "string"
+required = false
+
+[[flags]]
+name = "--category"
+short = "-c"
+type = "string"
+required = false
+
+[[flags]]
+name = "--schedule"
+type = "string"
+required = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "denylist add",
+  "data": {
+    "added": ["example.com"],
+    "skipped": []
+  },
+  "summary": { "added": 1, "skipped": 0 },
+  "timestamp": "..."
+}
+"""
+
+[output.error]
+schema = """
+{
+  "ok": false,
+  "command": "denylist add",
+  "error": { "code": "validation_error", "message": "Invalid domain format", "hint": "Domains must be valid RFC 1123 hostnames", "details": [{"field": "bad", "reason": "invalid_format"}] },
+  "exit_code": 4
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 4
+name = "validation_error"
+
+[[exit_codes]]
+code = 3
+name = "api_error"
+
+[[side_effects]]
+target = "nextdns_api"
+operation = "PUT /profiles/{id}/denylist"
+
+[[examples]]
+description = "Add a single domain"
+input = "ndb denylist add example.com"
+exit_code = 0
+
+[[examples]]
+description = "Add multiple domains with description"
+input = "ndb denylist add example.com bad-site.org -d 'Blocked sites'"
+exit_code = 0
+
+[[examples]]
+description = "Add with category"
+input = "ndb denylist add tiktok.com -c social-media"
+exit_code = 0

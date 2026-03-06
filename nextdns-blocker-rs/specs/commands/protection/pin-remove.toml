@@ -1,0 +1,37 @@
+[command]
+name = "protection pin-remove"
+binary_path = ["protection", "pin-remove"]
+description = "Remove the protection PIN"
+requires_config = false
+requires_api = false
+requires_pin = true
+
+[[flags]]
+name = "--pin"
+type = "string"
+required = true
+description = "Current PIN to authorize removal"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "protection pin-remove",
+  "data": { "pin_enabled": false },
+  "summary": { "removed": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 5
+name = "permission_error"
+
+[[examples]]
+description = "Remove the PIN"
+input = "ndb protection pin-remove --pin 1234"
+exit_code = 0

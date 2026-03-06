@@ -1,0 +1,40 @@
+[command]
+name = "nextdns remove-service"
+binary_path = ["nextdns", "remove-service"]
+description = "Disable blocking for a NextDNS native service"
+requires_config = true
+requires_api = true
+requires_pin = false
+
+[[args]]
+name = "id"
+type = "string"
+required = true
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "nextdns remove-service",
+  "data": { "id": "tiktok", "name": "TikTok" },
+  "summary": { "removed": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[side_effects]]
+target = "nextdns_api"
+operation = "DELETE /profiles/{id}/deny-services/{service_id}"
+
+[[examples]]
+description = "Unblock a service"
+input = "ndb nextdns remove-service tiktok"
+exit_code = 0

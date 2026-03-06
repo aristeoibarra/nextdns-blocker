@@ -1,0 +1,63 @@
+[schema]
+name = "envelope"
+description = "Schema definition for the JSON envelope that wraps all command output"
+
+[schema.envelope]
+description = "Every command emits exactly one JSON object to stdout"
+
+[schema.envelope.fields.ok]
+type = "bool"
+description = "true if the command succeeded, false otherwise"
+required = true
+
+[schema.envelope.fields.command]
+type = "string"
+description = "The full command name (e.g. 'denylist add')"
+required = true
+
+[schema.envelope.fields.data]
+type = "object"
+description = "Command-specific result payload (present on success)"
+required = false
+
+[schema.envelope.fields.summary]
+type = "object"
+description = "Human-friendly counters summarizing the operation"
+required = false
+
+[schema.envelope.fields.error]
+type = "object"
+description = "Error details (present on failure)"
+required = false
+
+[schema.envelope.fields.error.fields.code]
+type = "string"
+description = "Machine-readable error code"
+
+[schema.envelope.fields.error.fields.message]
+type = "string"
+description = "Human-readable error message"
+
+[schema.envelope.fields.error.fields.hint]
+type = "string"
+description = "Actionable recovery suggestion"
+
+[schema.envelope.fields.error.fields.details]
+type = "array"
+description = "Optional field-level error details"
+
+[schema.envelope.fields.exit_code]
+type = "integer"
+description = "Process exit code (present on failure)"
+required = false
+
+[schema.envelope.fields.timestamp]
+type = "string"
+description = "ISO8601 timestamp of command execution"
+required = true
+
+[schema.invariants]
+rule_1 = "ok=true implies data is present and error is absent"
+rule_2 = "ok=false implies error is present and exit_code is non-zero"
+rule_3 = "timestamp is always present"
+rule_4 = "command is always present and matches the invoked command name"

@@ -1,0 +1,69 @@
+[command]
+name = "category create"
+binary_path = ["category", "create"]
+description = "Create a new domain category"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "name"
+type = "string"
+required = true
+
+[[flags]]
+name = "--description"
+short = "-d"
+type = "string"
+required = false
+
+[[flags]]
+name = "--schedule"
+type = "string"
+required = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "category create",
+  "data": {
+    "id": "social-media",
+    "name": "social-media"
+  },
+  "summary": { "created": 1 },
+  "timestamp": "..."
+}
+"""
+
+[output.error]
+schema = """
+{
+  "ok": false,
+  "command": "category create",
+  "error": { "code": "conflict_error", "message": "Category already exists", "hint": "Use a different name or delete the existing category" },
+  "exit_code": 6
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 6
+name = "conflict_error"
+
+[[exit_codes]]
+code = 4
+name = "validation_error"
+
+[[examples]]
+description = "Create a category"
+input = "ndb category create social-media -d 'Social media sites'"
+exit_code = 0
+
+[[examples]]
+description = "Create with schedule"
+input = "ndb category create gaming --schedule '09:00-17:00'"
+exit_code = 0

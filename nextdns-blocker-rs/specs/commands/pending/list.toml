@@ -1,0 +1,31 @@
+[command]
+name = "pending list"
+binary_path = ["pending", "list"]
+description = "List all pending actions in the retry queue"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "pending list",
+  "data": {
+    "actions": [
+      { "id": 1, "command": "denylist add", "target": "example.com", "status": "pending", "retries": 2, "created_at": "..." }
+    ]
+  },
+  "summary": { "total": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "List pending actions"
+input = "ndb pending list"
+exit_code = 0

@@ -1,0 +1,44 @@
+[command]
+name = "allowlist export"
+binary_path = ["allowlist", "export"]
+description = "Export allowlist domains to a file"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "file"
+type = "string"
+required = false
+
+[[flags]]
+name = "--format"
+type = "string"
+required = false
+default = "lines"
+description = "Export format: lines or json"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "allowlist export",
+  "data": { "path": "domains.txt", "count": 42 },
+  "summary": { "exported": 42 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Export to file"
+input = "ndb allowlist export allowed.txt"
+exit_code = 0
+
+[[examples]]
+description = "Export to stdout"
+input = "ndb allowlist export"
+exit_code = 0

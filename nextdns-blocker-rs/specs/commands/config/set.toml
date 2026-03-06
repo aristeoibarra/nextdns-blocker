@@ -1,0 +1,45 @@
+[command]
+name = "config set"
+binary_path = ["config", "set"]
+description = "Set a configuration value"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "key"
+type = "string"
+required = true
+
+[[args]]
+name = "value"
+type = "string"
+required = true
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "config set",
+  "data": { "key": "profile_id", "value": "abc123", "previous": "old123" },
+  "summary": { "updated": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 4
+name = "validation_error"
+
+[[exit_codes]]
+code = 2
+name = "config_error"
+
+[[examples]]
+description = "Set profile ID"
+input = "ndb config set profile_id abc123"
+exit_code = 0

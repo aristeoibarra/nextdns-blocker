@@ -1,0 +1,36 @@
+[command]
+name = "config show"
+binary_path = ["config", "show"]
+description = "Show current configuration values"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "config show",
+  "data": {
+    "profile_id": "abc123",
+    "api_key": "***masked***",
+    "config_path": "/path/to/config.json",
+    "db_path": "/path/to/ndb.db",
+    "pin_enabled": true
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 2
+name = "config_error"
+
+[[examples]]
+description = "Show current config"
+input = "ndb config show"
+exit_code = 0

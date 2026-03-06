@@ -1,0 +1,36 @@
+[command]
+name = "pending cancel"
+binary_path = ["pending", "cancel"]
+description = "Cancel a pending action from the retry queue"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "id"
+type = "integer"
+required = true
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "pending cancel",
+  "data": { "id": 1, "command": "denylist add", "target": "example.com" },
+  "summary": { "cancelled": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[examples]]
+description = "Cancel a pending action"
+input = "ndb pending cancel 1"
+exit_code = 0

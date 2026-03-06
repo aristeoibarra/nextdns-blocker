@@ -1,0 +1,28 @@
+[success]
+description = "Standard success envelope for all commands"
+schema = """
+{
+  "ok": true,
+  "command": "<command_name>",
+  "data": {},
+  "summary": {},
+  "timestamp": "ISO8601"
+}
+"""
+
+[error]
+description = "Standard error envelope for all commands"
+schema = """
+{
+  "ok": false,
+  "command": "<command_name>",
+  "error": {
+    "code": "<error_code>",
+    "message": "<human readable description>",
+    "hint": "<actionable suggestion for recovery>",
+    "details": []
+  },
+  "exit_code": 0,
+  "timestamp": "ISO8601"
+}
+"""

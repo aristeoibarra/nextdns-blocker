@@ -1,0 +1,49 @@
+[command]
+name = "denylist list"
+binary_path = ["denylist", "list"]
+description = "List all domains in the denylist"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[flags]]
+name = "--all"
+type = "bool"
+required = false
+description = "Include inactive domains"
+
+[[flags]]
+name = "--category"
+short = "-c"
+type = "string"
+required = false
+description = "Filter by category"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "denylist list",
+  "data": {
+    "domains": [
+      { "domain": "example.com", "active": true, "description": "...", "category": "...", "schedule": null }
+    ]
+  },
+  "summary": { "total": 1, "active": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "List all active blocked domains"
+input = "ndb denylist list"
+exit_code = 0
+
+[[examples]]
+description = "List including inactive"
+input = "ndb denylist list --all"
+exit_code = 0

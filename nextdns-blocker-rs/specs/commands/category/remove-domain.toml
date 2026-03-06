@@ -1,0 +1,45 @@
+[command]
+name = "category remove-domain"
+binary_path = ["category", "remove-domain"]
+description = "Remove domains from a category"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "category"
+type = "string"
+required = true
+
+[[args]]
+name = "domains"
+type = "string[]"
+required = true
+validation = "rfc1123_domain"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "category remove-domain",
+  "data": {
+    "removed": ["tiktok.com"],
+    "skipped": []
+  },
+  "summary": { "removed": 1, "skipped": 0 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[examples]]
+description = "Remove domains from a category"
+input = "ndb category remove-domain social-media tiktok.com"
+exit_code = 0

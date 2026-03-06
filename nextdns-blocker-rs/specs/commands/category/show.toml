@@ -1,0 +1,41 @@
+[command]
+name = "category show"
+binary_path = ["category", "show"]
+description = "Show details of a specific category"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "name"
+type = "string"
+required = true
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "category show",
+  "data": {
+    "name": "social-media",
+    "description": "Social media sites",
+    "domains": ["tiktok.com", "instagram.com"],
+    "schedule": null
+  },
+  "summary": { "domain_count": 2 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[examples]]
+description = "Show category details"
+input = "ndb category show social-media"
+exit_code = 0

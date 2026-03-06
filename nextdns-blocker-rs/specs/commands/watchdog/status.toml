@@ -1,0 +1,31 @@
+[command]
+name = "watchdog status"
+binary_path = ["watchdog", "status"]
+description = "Show the current status of the watchdog service"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "watchdog status",
+  "data": {
+    "installed": true,
+    "running": true,
+    "scheduler": "launchd",
+    "interval_secs": 300
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Check watchdog status"
+input = "ndb watchdog status"
+exit_code = 0

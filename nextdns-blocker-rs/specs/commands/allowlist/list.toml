@@ -1,0 +1,42 @@
+[command]
+name = "allowlist list"
+binary_path = ["allowlist", "list"]
+description = "List all domains in the allowlist"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[flags]]
+name = "--all"
+type = "bool"
+required = false
+description = "Include inactive domains"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "allowlist list",
+  "data": {
+    "domains": [
+      { "domain": "example.com", "active": true, "description": "..." }
+    ]
+  },
+  "summary": { "total": 1, "active": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "List all active allowed domains"
+input = "ndb allowlist list"
+exit_code = 0
+
+[[examples]]
+description = "List including inactive"
+input = "ndb allowlist list --all"
+exit_code = 0

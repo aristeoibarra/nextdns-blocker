@@ -1,0 +1,49 @@
+[command]
+name = "category add-domain"
+binary_path = ["category", "add-domain"]
+description = "Add domains to a category"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "category"
+type = "string"
+required = true
+
+[[args]]
+name = "domains"
+type = "string[]"
+required = true
+validation = "rfc1123_domain"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "category add-domain",
+  "data": {
+    "added": ["tiktok.com"],
+    "skipped": []
+  },
+  "summary": { "added": 1, "skipped": 0 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[exit_codes]]
+code = 4
+name = "validation_error"
+
+[[examples]]
+description = "Add domains to a category"
+input = "ndb category add-domain social-media tiktok.com instagram.com"
+exit_code = 0

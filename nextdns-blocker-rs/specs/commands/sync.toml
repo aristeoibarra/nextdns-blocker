@@ -1,0 +1,67 @@
+[command]
+name = "sync"
+binary_path = ["sync"]
+description = "Sync local configuration to NextDNS API"
+requires_config = true
+requires_api = true
+requires_pin = false
+
+[[flags]]
+name = "--dry-run"
+type = "bool"
+required = false
+description = "Show what would be synced without making changes"
+
+[[flags]]
+name = "--force"
+type = "bool"
+required = false
+description = "Force sync even if no changes detected"
+
+[[flags]]
+name = "--denylist-only"
+type = "bool"
+required = false
+
+[[flags]]
+name = "--allowlist-only"
+type = "bool"
+required = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "sync",
+  "data": {
+    "denylist": { "added": [], "removed": [], "unchanged": 10, "errors": [] },
+    "allowlist": { "added": [], "removed": [], "unchanged": 3, "errors": [] },
+    "categories": { "added": [], "removed": [], "unchanged": 0, "errors": [] },
+    "services": { "added": [], "removed": [], "unchanged": 0, "errors": [] }
+  },
+  "summary": { "added": 0, "removed": 0 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 2
+name = "config_error"
+
+[[exit_codes]]
+code = 3
+name = "api_error"
+
+[[examples]]
+description = "Sync all lists"
+input = "ndb sync"
+exit_code = 0
+
+[[examples]]
+description = "Dry run sync"
+input = "ndb sync --dry-run"
+exit_code = 0

@@ -1,0 +1,44 @@
+[command]
+name = "nextdns add-service"
+binary_path = ["nextdns", "add-service"]
+description = "Enable blocking for a NextDNS native service"
+requires_config = true
+requires_api = true
+requires_pin = false
+
+[[args]]
+name = "id"
+type = "string"
+required = true
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "nextdns add-service",
+  "data": { "id": "tiktok", "name": "TikTok" },
+  "summary": { "added": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 4
+name = "validation_error"
+
+[[exit_codes]]
+code = 6
+name = "conflict_error"
+
+[[side_effects]]
+target = "nextdns_api"
+operation = "PUT /profiles/{id}/deny-services"
+
+[[examples]]
+description = "Block a service"
+input = "ndb nextdns add-service tiktok"
+exit_code = 0

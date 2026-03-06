@@ -1,0 +1,28 @@
+[command]
+name = "schema commands"
+binary_path = ["schema", "commands"]
+description = "List all available commands"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "schema commands",
+  "data": {
+    "commands": ["init", "status", "sync"]
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "List all commands"
+input = "ndb schema commands"
+exit_code = 0

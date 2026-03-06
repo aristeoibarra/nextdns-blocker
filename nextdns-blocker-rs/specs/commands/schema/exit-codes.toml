@@ -1,0 +1,30 @@
+[command]
+name = "schema exit-codes"
+binary_path = ["schema", "exit-codes"]
+description = "Show all exit code definitions"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "schema exit-codes",
+  "data": {
+    "exit_codes": [
+      {"code": 0, "name": "success", "description": "Parse stdout JSON"}
+    ]
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Show exit codes"
+input = "ndb schema exit-codes"
+exit_code = 0

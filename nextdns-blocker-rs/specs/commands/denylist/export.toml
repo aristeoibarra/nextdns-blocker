@@ -1,0 +1,44 @@
+[command]
+name = "denylist export"
+binary_path = ["denylist", "export"]
+description = "Export denylist domains to a file"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "file"
+type = "string"
+required = false
+
+[[flags]]
+name = "--format"
+type = "string"
+required = false
+default = "lines"
+description = "Export format: lines or json"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "denylist export",
+  "data": { "path": "domains.txt", "count": 42 },
+  "summary": { "exported": 42 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Export to file"
+input = "ndb denylist export blocked.txt"
+exit_code = 0
+
+[[examples]]
+description = "Export to stdout"
+input = "ndb denylist export"
+exit_code = 0

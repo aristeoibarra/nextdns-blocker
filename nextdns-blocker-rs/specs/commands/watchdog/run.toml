@@ -1,0 +1,44 @@
+[command]
+name = "watchdog run"
+binary_path = ["watchdog", "run"]
+description = "Run a single watchdog check cycle"
+requires_config = true
+requires_api = true
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "watchdog run",
+  "data": {
+    "checked": 42,
+    "re_blocked": ["example.com"],
+    "expired_unlocks": [],
+    "errors": []
+  },
+  "summary": { "checked": 42, "re_blocked": 1, "expired": 0 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 2
+name = "config_error"
+
+[[exit_codes]]
+code = 3
+name = "api_error"
+
+[[side_effects]]
+target = "nextdns_api"
+operation = "PUT /profiles/{id}/denylist"
+
+[[examples]]
+description = "Run a single watchdog cycle"
+input = "ndb watchdog run"
+exit_code = 0

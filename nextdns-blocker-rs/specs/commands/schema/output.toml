@@ -1,0 +1,34 @@
+[command]
+name = "schema output"
+binary_path = ["schema", "output"]
+description = "Show the output schema for a specific command"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "command"
+type = "string[]"
+required = true
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "schema output",
+  "data": {
+    "command": "sync",
+    "note": "Use --output json on any command to see its schema"
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Show output schema for sync"
+input = "ndb schema output sync"
+exit_code = 0

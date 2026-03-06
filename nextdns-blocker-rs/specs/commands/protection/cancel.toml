@@ -1,0 +1,36 @@
+[command]
+name = "protection cancel"
+binary_path = ["protection", "cancel"]
+description = "Cancel an active unlock or pending unlock request"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "request_id"
+type = "integer"
+required = true
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "protection cancel",
+  "data": { "request_id": 1, "target": "example.com", "status": "cancelled" },
+  "summary": { "cancelled": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[examples]]
+description = "Cancel an unlock request"
+input = "ndb protection cancel 1"
+exit_code = 0

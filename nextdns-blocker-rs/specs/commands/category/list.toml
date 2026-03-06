@@ -1,0 +1,31 @@
+[command]
+name = "category list"
+binary_path = ["category", "list"]
+description = "List all domain categories"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "category list",
+  "data": {
+    "categories": [
+      { "name": "social-media", "description": "Social media sites", "domain_count": 5, "schedule": null }
+    ]
+  },
+  "summary": { "total": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "List all categories"
+input = "ndb category list"
+exit_code = 0

@@ -1,0 +1,41 @@
+[command]
+name = "config validate"
+binary_path = ["config", "validate"]
+description = "Validate the current configuration"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "config validate",
+  "data": { "valid": true, "warnings": [] },
+  "summary": { "valid": true, "warnings": 0 },
+  "timestamp": "..."
+}
+"""
+
+[output.error]
+schema = """
+{
+  "ok": false,
+  "command": "config validate",
+  "error": { "code": "config_error", "message": "Configuration is invalid", "hint": "Run 'ndb config edit' to fix issues", "details": [{"field": "api_key", "reason": "missing"}] },
+  "exit_code": 2
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 2
+name = "config_error"
+
+[[examples]]
+description = "Validate config"
+input = "ndb config validate"
+exit_code = 0

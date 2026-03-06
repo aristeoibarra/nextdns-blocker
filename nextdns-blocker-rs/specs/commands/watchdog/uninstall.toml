@@ -1,0 +1,34 @@
+[command]
+name = "watchdog uninstall"
+binary_path = ["watchdog", "uninstall"]
+description = "Uninstall the watchdog service"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "watchdog uninstall",
+  "data": { "uninstalled": true },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 5
+name = "permission_error"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[examples]]
+description = "Uninstall watchdog service"
+input = "ndb watchdog uninstall"
+exit_code = 0

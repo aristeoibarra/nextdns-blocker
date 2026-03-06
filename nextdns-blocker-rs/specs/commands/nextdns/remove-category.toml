@@ -1,0 +1,40 @@
+[command]
+name = "nextdns remove-category"
+binary_path = ["nextdns", "remove-category"]
+description = "Disable a NextDNS native category"
+requires_config = true
+requires_api = true
+requires_pin = false
+
+[[args]]
+name = "id"
+type = "string"
+required = true
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "nextdns remove-category",
+  "data": { "id": "native-gambling", "name": "Gambling" },
+  "summary": { "removed": 1 },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[side_effects]]
+target = "nextdns_api"
+operation = "DELETE /profiles/{id}/security/categories/{category_id}"
+
+[[examples]]
+description = "Disable a native category"
+input = "ndb nextdns remove-category native-gambling"
+exit_code = 0
