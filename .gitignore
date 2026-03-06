@@ -19,6 +19,10 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Example/test data
+blocked.txt
+allowed.txt
+
 # Claude Code
 .claude/
 .agents/

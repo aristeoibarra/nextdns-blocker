@@ -135,7 +135,7 @@ fn collect_spec_files(dir: &Path, specs: &mut Vec<(PathBuf, CommandSpec)>) {
         let path = entry.path();
         if path.is_dir() {
             collect_spec_files(&path, specs);
-        } else if path.extension().map_or(false, |ext| ext == "toml") {
+        } else if path.extension().is_some_and(|ext| ext == "toml") {
             let content = std::fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
             // Skip meta-schema files (specs/commands/schema/commands.toml has [schema] not [command])
@@ -157,7 +157,7 @@ fn load_global_exit_codes() -> Vec<GlobalExitCode> {
 }
 
 fn ndb() -> Command {
-    Command::cargo_bin("ndb").expect("binary 'ndb' not found")
+    assert_cmd::cargo::cargo_bin_cmd!("ndb")
 }
 
 fn extract_json_keys(schema_json: &str) -> HashSet<String> {

@@ -3,7 +3,7 @@ use predicates::prelude::*;
 use serde_json::Value;
 
 fn ndb() -> Command {
-    Command::cargo_bin("ndb").expect("binary 'ndb' not found")
+    assert_cmd::cargo::cargo_bin_cmd!("ndb")
 }
 
 // ---------------------------------------------------------------------------

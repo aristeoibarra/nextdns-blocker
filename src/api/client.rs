@@ -76,7 +76,7 @@ impl NextDnsClient {
         self.circuit_breaker.record_success();
 
         let status = resp.status().as_u16();
-        if status < 200 || status >= 300 {
+        if !(200..300).contains(&status) {
             return Err(AppError::Api {
                 message: format!("API returned status {status}"),
                 status_code: Some(status),
@@ -105,7 +105,7 @@ impl NextDnsClient {
         self.circuit_breaker.record_success();
 
         let status = resp.status().as_u16();
-        if status < 200 || status >= 300 {
+        if !(200..300).contains(&status) {
             return Err(AppError::Api {
                 message: format!("API returned status {status}"),
                 status_code: Some(status),
@@ -131,7 +131,7 @@ impl NextDnsClient {
         self.circuit_breaker.record_success();
 
         let status = resp.status().as_u16();
-        if status < 200 || status >= 300 {
+        if !(200..300).contains(&status) {
             return Err(AppError::Api {
                 message: format!("API returned status {status}"),
                 status_code: Some(status),

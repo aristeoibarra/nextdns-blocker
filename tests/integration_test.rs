@@ -153,7 +153,7 @@ fn multi_domain_block_atomic() {
         3
     );
     assert_eq!(
-        db.with_conn(|conn| nextdns_blocker::db::audit::count_audit(conn)).unwrap(),
+        db.with_conn(nextdns_blocker::db::audit::count_audit).unwrap(),
         3
     );
 }
