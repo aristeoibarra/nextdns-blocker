@@ -2,12 +2,10 @@ use crate::cli::unblock::UnblockArgs;
 use crate::db::Database;
 use crate::error::{AppError, ExitCode};
 use crate::output::{self, Renderable};
-use crate::types::ResolvedFormat;
 
-pub fn handle(args: UnblockArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
+pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
     let db = Database::open(&crate::common::platform::db_path())?;
 
-    // Check if target is a domain or category
     let is_domain = db.with_conn(|conn| crate::db::domains::is_blocked(conn, &args.target))?;
     let is_category = db.with_conn(|conn| crate::db::categories::get_category(conn, &args.target))?.is_some();
 
@@ -18,7 +16,6 @@ pub fn handle(args: UnblockArgs, format: ResolvedFormat) -> Result<ExitCode, App
         });
     }
 
-    // Check protection
     if is_domain {
         let locked = crate::protection::validate_no_locked_removal(&db, std::slice::from_ref(&args.target))?;
         if !locked.is_empty() {
@@ -35,17 +32,13 @@ pub fn handle(args: UnblockArgs, format: ResolvedFormat) -> Result<ExitCode, App
         });
     }
 
-    // If duration specified, create pending re-block action
     if let Some(ref dur_str) = args.duration {
         let duration = crate::common::time::parse_duration(dur_str)?;
         let execute_at = crate::common::time::now_unix() + duration.as_secs() as i64;
         let id = uuid::Uuid::new_v4().to_string();
 
         if is_domain {
-            // Deactivate the domain
             db.with_conn(|conn| crate::db::domains::deactivate_blocked(conn, &args.target))?;
-
-            // Schedule re-block
             db.with_conn(|conn| crate::db::pending::create_pending(
                 conn, &id, "add", Some(&args.target), "denylist", execute_at,
                 Some(&format!("Auto re-block after {dur_str}")),
@@ -54,36 +47,22 @@ pub fn handle(args: UnblockArgs, format: ResolvedFormat) -> Result<ExitCode, App
 
         db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", if is_domain { "domain" } else { "category" }, &args.target, Some(dur_str)))?;
 
-        let result = UnblockResult {
-            target: args.target,
-            duration: Some(dur_str.clone()),
-            pending_id: Some(id),
-        };
-        output::render(&result, format);
+        let result = UnblockResult { target: args.target, duration: Some(dur_str.clone()), pending_id: Some(id) };
+        output::render(&result);
     } else {
-        // Permanent unblock
         if is_domain {
             db.with_conn(|conn| crate::db::domains::remove_blocked(conn, &args.target))?;
         }
         db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", if is_domain { "domain" } else { "category" }, &args.target, None))?;
 
-        let result = UnblockResult {
-            target: args.target,
-            duration: None,
-            pending_id: None,
-        };
-        output::render(&result, format);
+        let result = UnblockResult { target: args.target, duration: None, pending_id: None };
+        output::render(&result);
     }
 
     Ok(ExitCode::Success)
 }
 
-struct UnblockResult {
-    target: String,
-    duration: Option<String>,
-    pending_id: Option<String>,
-}
-
+struct UnblockResult { target: String, duration: Option<String>, pending_id: Option<String> }
 impl Renderable for UnblockResult {
     fn command_name(&self) -> &str { "unblock" }
     fn to_json(&self) -> serde_json::Value {
@@ -91,12 +70,5 @@ impl Renderable for UnblockResult {
             "data": { "target": self.target, "duration": self.duration, "pending_id": self.pending_id },
             "summary": { "unblocked": 1 }
         })
-    }
-    fn to_human(&self) -> String {
-        if let Some(ref d) = self.duration {
-            format!("  Unblocked '{}' for {d}\n", self.target)
-        } else {
-            format!("  Unblocked '{}' permanently\n", self.target)
-        }
     }
 }

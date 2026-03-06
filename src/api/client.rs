@@ -1,6 +1,3 @@
-use std::time::Duration;
-
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use secrecy::{ExposeSecret, SecretString};
 
 use super::cache::TtlCache;
@@ -12,7 +9,8 @@ use crate::error::AppError;
 const BASE_URL: &str = "https://api.nextdns.io";
 
 pub struct NextDnsClient {
-    http: reqwest::Client,
+    agent: ureq::Agent,
+    api_key: String,
     profile_id: String,
     circuit_breaker: CircuitBreaker,
     rate_limiter: RateLimiter,
@@ -22,24 +20,15 @@ pub struct NextDnsClient {
 
 impl NextDnsClient {
     pub fn new(api_key: &SecretString, profile_id: String) -> Result<Self, AppError> {
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        headers.insert(
-            "X-Api-Key",
-            HeaderValue::from_str(api_key.expose_secret()).map_err(|e| AppError::Config {
-                message: format!("Invalid API key format: {e}"),
-                hint: None,
-            })?,
+        let agent = ureq::Agent::new_with_config(
+            ureq::config::Config::builder()
+                .timeout_global(Some(std::time::Duration::from_secs(30)))
+                .build(),
         );
 
-        let http = reqwest::Client::builder()
-            .default_headers(headers)
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(10))
-            .build()?;
-
         Ok(Self {
-            http,
+            agent,
+            api_key: api_key.expose_secret().to_string(),
             profile_id,
             circuit_breaker: CircuitBreaker::new(),
             rate_limiter: RateLimiter::new(),
@@ -52,7 +41,6 @@ impl NextDnsClient {
         format!("{BASE_URL}/profiles/{}/{path}", self.profile_id)
     }
 
-    /// Check circuit breaker and rate limiter before making a request.
     fn pre_request_check(&self) -> Result<(), AppError> {
         if !self.circuit_breaker.allow_request() {
             return Err(AppError::Api {
@@ -73,64 +61,54 @@ impl NextDnsClient {
         Ok(())
     }
 
-    // === Denylist ===
-
-    pub async fn get_denylist(&self) -> ApiResult<Vec<DenylistEntry>> {
-        if let Some(cached) = self.denylist_cache.get("denylist").await {
-            return Ok(cached);
-        }
-
+    fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> ApiResult<T> {
         self.pre_request_check()?;
 
-        let resp = self
-            .http
-            .get(self.endpoint("denylist"))
-            .send()
-            .await
+        let mut resp = self.agent.get(url)
+            .header("Content-Type", "application/json")
+            .header("X-Api-Key", &self.api_key)
+            .call()
             .map_err(|e| {
                 self.circuit_breaker.record_failure();
-                AppError::Http { source: e }
+                map_ureq_error(e)
             })?;
 
         self.circuit_breaker.record_success();
 
-        if !resp.status().is_success() {
+        let status = resp.status().as_u16();
+        if status < 200 || status >= 300 {
             return Err(AppError::Api {
-                message: format!("API returned status {}", resp.status()),
-                status_code: Some(resp.status().as_u16()),
+                message: format!("API returned status {status}"),
+                status_code: Some(status),
                 hint: Some("Check your API key and profile ID".to_string()),
             });
         }
 
-        let entries: Vec<DenylistEntry> = resp.json().await?;
-        self.denylist_cache
-            .set("denylist".to_string(), entries.clone())
-            .await;
-        Ok(entries)
+        resp.body_mut().read_json::<T>().map_err(|e| AppError::General {
+            message: format!("Failed to parse API response: {e}"),
+            hint: None,
+        })
     }
 
-    pub async fn add_to_denylist(&self, domain: &str) -> ApiResult<()> {
+    fn put_json(&self, url: &str, body: &serde_json::Value) -> ApiResult<()> {
         self.pre_request_check()?;
 
-        let body = serde_json::json!({ "id": domain, "active": true });
-        let resp = self
-            .http
-            .put(self.endpoint("denylist"))
-            .json(&body)
-            .send()
-            .await
+        let resp = self.agent.put(url)
+            .header("Content-Type", "application/json")
+            .header("X-Api-Key", &self.api_key)
+            .send_json(body)
             .map_err(|e| {
                 self.circuit_breaker.record_failure();
-                AppError::Http { source: e }
+                map_ureq_error(e)
             })?;
 
         self.circuit_breaker.record_success();
-        self.denylist_cache.invalidate("denylist").await;
 
-        if !resp.status().is_success() {
+        let status = resp.status().as_u16();
+        if status < 200 || status >= 300 {
             return Err(AppError::Api {
-                message: format!("Failed to add domain to denylist: {}", resp.status()),
-                status_code: Some(resp.status().as_u16()),
+                message: format!("API returned status {status}"),
+                status_code: Some(status),
                 hint: None,
             });
         }
@@ -138,232 +116,106 @@ impl NextDnsClient {
         Ok(())
     }
 
-    pub async fn remove_from_denylist(&self, domain: &str) -> ApiResult<()> {
+    fn delete(&self, url: &str) -> ApiResult<()> {
         self.pre_request_check()?;
 
-        let resp = self
-            .http
-            .delete(format!("{}/{domain}", self.endpoint("denylist")))
-            .send()
-            .await
+        let resp = self.agent.delete(url)
+            .header("Content-Type", "application/json")
+            .header("X-Api-Key", &self.api_key)
+            .call()
             .map_err(|e| {
                 self.circuit_breaker.record_failure();
-                AppError::Http { source: e }
+                map_ureq_error(e)
             })?;
 
         self.circuit_breaker.record_success();
-        self.denylist_cache.invalidate("denylist").await;
 
-        if !resp.status().is_success() {
+        let status = resp.status().as_u16();
+        if status < 200 || status >= 300 {
             return Err(AppError::Api {
-                message: format!("Failed to remove domain from denylist: {}", resp.status()),
-                status_code: Some(resp.status().as_u16()),
+                message: format!("API returned status {status}"),
+                status_code: Some(status),
                 hint: None,
             });
         }
 
+        Ok(())
+    }
+
+    // === Denylist ===
+
+    pub fn get_denylist(&self) -> ApiResult<Vec<DenylistEntry>> {
+        if let Some(cached) = self.denylist_cache.get("denylist") {
+            return Ok(cached);
+        }
+
+        let entries: Vec<DenylistEntry> = self.get_json(&self.endpoint("denylist"))?;
+        self.denylist_cache.set("denylist".to_string(), entries.clone());
+        Ok(entries)
+    }
+
+    pub fn add_to_denylist(&self, domain: &str) -> ApiResult<()> {
+        let body = serde_json::json!({ "id": domain, "active": true });
+        self.put_json(&self.endpoint("denylist"), &body)?;
+        self.denylist_cache.invalidate("denylist");
+        Ok(())
+    }
+
+    pub fn remove_from_denylist(&self, domain: &str) -> ApiResult<()> {
+        self.delete(&format!("{}/{domain}", self.endpoint("denylist")))?;
+        self.denylist_cache.invalidate("denylist");
         Ok(())
     }
 
     // === Allowlist ===
 
-    pub async fn get_allowlist(&self) -> ApiResult<Vec<AllowlistEntry>> {
-        if let Some(cached) = self.allowlist_cache.get("allowlist").await {
+    pub fn get_allowlist(&self) -> ApiResult<Vec<AllowlistEntry>> {
+        if let Some(cached) = self.allowlist_cache.get("allowlist") {
             return Ok(cached);
         }
 
-        self.pre_request_check()?;
-
-        let resp = self
-            .http
-            .get(self.endpoint("allowlist"))
-            .send()
-            .await
-            .map_err(|e| {
-                self.circuit_breaker.record_failure();
-                AppError::Http { source: e }
-            })?;
-
-        self.circuit_breaker.record_success();
-
-        if !resp.status().is_success() {
-            return Err(AppError::Api {
-                message: format!("API returned status {}", resp.status()),
-                status_code: Some(resp.status().as_u16()),
-                hint: Some("Check your API key and profile ID".to_string()),
-            });
-        }
-
-        let entries: Vec<AllowlistEntry> = resp.json().await?;
-        self.allowlist_cache
-            .set("allowlist".to_string(), entries.clone())
-            .await;
+        let entries: Vec<AllowlistEntry> = self.get_json(&self.endpoint("allowlist"))?;
+        self.allowlist_cache.set("allowlist".to_string(), entries.clone());
         Ok(entries)
     }
 
-    pub async fn add_to_allowlist(&self, domain: &str) -> ApiResult<()> {
-        self.pre_request_check()?;
-
+    pub fn add_to_allowlist(&self, domain: &str) -> ApiResult<()> {
         let body = serde_json::json!({ "id": domain, "active": true });
-        let resp = self
-            .http
-            .put(self.endpoint("allowlist"))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| {
-                self.circuit_breaker.record_failure();
-                AppError::Http { source: e }
-            })?;
-
-        self.circuit_breaker.record_success();
-        self.allowlist_cache.invalidate("allowlist").await;
-
-        if !resp.status().is_success() {
-            return Err(AppError::Api {
-                message: format!("Failed to add domain to allowlist: {}", resp.status()),
-                status_code: Some(resp.status().as_u16()),
-                hint: None,
-            });
-        }
-
+        self.put_json(&self.endpoint("allowlist"), &body)?;
+        self.allowlist_cache.invalidate("allowlist");
         Ok(())
     }
 
-    pub async fn remove_from_allowlist(&self, domain: &str) -> ApiResult<()> {
-        self.pre_request_check()?;
-
-        let resp = self
-            .http
-            .delete(format!("{}/{domain}", self.endpoint("allowlist")))
-            .send()
-            .await
-            .map_err(|e| {
-                self.circuit_breaker.record_failure();
-                AppError::Http { source: e }
-            })?;
-
-        self.circuit_breaker.record_success();
-        self.allowlist_cache.invalidate("allowlist").await;
-
-        if !resp.status().is_success() {
-            return Err(AppError::Api {
-                message: format!("Failed to remove domain from allowlist: {}", resp.status()),
-                status_code: Some(resp.status().as_u16()),
-                hint: None,
-            });
-        }
-
+    pub fn remove_from_allowlist(&self, domain: &str) -> ApiResult<()> {
+        self.delete(&format!("{}/{domain}", self.endpoint("allowlist")))?;
+        self.allowlist_cache.invalidate("allowlist");
         Ok(())
     }
 
     // === Parental Control ===
 
-    pub async fn get_parental_categories(&self) -> ApiResult<Vec<ParentalCategory>> {
-        self.pre_request_check()?;
-
-        let resp = self
-            .http
-            .get(self.endpoint("parentalControl/categories"))
-            .send()
-            .await
-            .map_err(|e| {
-                self.circuit_breaker.record_failure();
-                AppError::Http { source: e }
-            })?;
-
-        self.circuit_breaker.record_success();
-
-        if !resp.status().is_success() {
-            return Err(AppError::Api {
-                message: format!("API returned status {}", resp.status()),
-                status_code: Some(resp.status().as_u16()),
-                hint: None,
-            });
-        }
-
-        resp.json().await.map_err(AppError::from)
+    pub fn get_parental_categories(&self) -> ApiResult<Vec<ParentalCategory>> {
+        self.get_json(&self.endpoint("parentalControl/categories"))
     }
 
-    pub async fn set_parental_category(&self, id: &str, active: bool) -> ApiResult<()> {
-        self.pre_request_check()?;
-
+    pub fn set_parental_category(&self, id: &str, active: bool) -> ApiResult<()> {
         let body = serde_json::json!({ "id": id, "active": active });
-        let resp = self
-            .http
-            .put(self.endpoint("parentalControl/categories"))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| {
-                self.circuit_breaker.record_failure();
-                AppError::Http { source: e }
-            })?;
-
-        self.circuit_breaker.record_success();
-
-        if !resp.status().is_success() {
-            return Err(AppError::Api {
-                message: format!("Failed to set parental category: {}", resp.status()),
-                status_code: Some(resp.status().as_u16()),
-                hint: None,
-            });
-        }
-
-        Ok(())
+        self.put_json(&self.endpoint("parentalControl/categories"), &body)
     }
 
-    pub async fn get_parental_services(&self) -> ApiResult<Vec<ParentalService>> {
-        self.pre_request_check()?;
-
-        let resp = self
-            .http
-            .get(self.endpoint("parentalControl/services"))
-            .send()
-            .await
-            .map_err(|e| {
-                self.circuit_breaker.record_failure();
-                AppError::Http { source: e }
-            })?;
-
-        self.circuit_breaker.record_success();
-
-        if !resp.status().is_success() {
-            return Err(AppError::Api {
-                message: format!("API returned status {}", resp.status()),
-                status_code: Some(resp.status().as_u16()),
-                hint: None,
-            });
-        }
-
-        resp.json().await.map_err(AppError::from)
+    pub fn get_parental_services(&self) -> ApiResult<Vec<ParentalService>> {
+        self.get_json(&self.endpoint("parentalControl/services"))
     }
 
-    pub async fn set_parental_service(&self, id: &str, active: bool) -> ApiResult<()> {
-        self.pre_request_check()?;
-
+    pub fn set_parental_service(&self, id: &str, active: bool) -> ApiResult<()> {
         let body = serde_json::json!({ "id": id, "active": active });
-        let resp = self
-            .http
-            .put(self.endpoint("parentalControl/services"))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| {
-                self.circuit_breaker.record_failure();
-                AppError::Http { source: e }
-            })?;
+        self.put_json(&self.endpoint("parentalControl/services"), &body)
+    }
+}
 
-        self.circuit_breaker.record_success();
-
-        if !resp.status().is_success() {
-            return Err(AppError::Api {
-                message: format!("Failed to set parental service: {}", resp.status()),
-                status_code: Some(resp.status().as_u16()),
-                hint: None,
-            });
-        }
-
-        Ok(())
+fn map_ureq_error(e: ureq::Error) -> AppError {
+    AppError::General {
+        message: format!("HTTP request failed: {e}"),
+        hint: Some("Check network connectivity and try again".to_string()),
     }
 }

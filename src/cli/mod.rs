@@ -15,8 +15,6 @@ pub mod watchdog;
 
 use clap::{Parser, Subcommand};
 
-use crate::types::OutputFormat;
-
 #[derive(Parser)]
 #[command(
     name = "ndb",
@@ -28,10 +26,6 @@ use crate::types::OutputFormat;
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
-
-    /// Output format (auto, json, human)
-    #[arg(long, global = true, default_value = "auto", env = "NDB_OUTPUT")]
-    pub output: OutputFormat,
 }
 
 #[derive(Subcommand)]

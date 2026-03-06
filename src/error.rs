@@ -96,10 +96,9 @@ pub enum AppError {
         source: rusqlite::Error,
     },
 
-    #[error("HTTP error: {source}")]
+    #[error("HTTP error: {message}")]
     Http {
-        #[from]
-        source: reqwest::Error,
+        message: String,
     },
 
     #[error("IO error: {source}")]

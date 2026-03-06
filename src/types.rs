@@ -1,5 +1,3 @@
-use std::io::IsTerminal;
-
 use serde::{Deserialize, Serialize};
 
 /// A validated domain name.
@@ -181,38 +179,4 @@ pub struct DailyStats {
     pub domains_allowed: i32,
     pub sync_count: i32,
     pub api_errors: i32,
-}
-
-/// Output format selection.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
-pub enum OutputFormat {
-    #[default]
-    Auto,
-    Json,
-    Human,
-}
-
-impl OutputFormat {
-    /// Resolve auto format based on TTY detection.
-    pub fn resolve(self) -> ResolvedFormat {
-        match self {
-            Self::Json => ResolvedFormat::Json,
-            Self::Human => ResolvedFormat::Human,
-            Self::Auto => {
-                if std::env::var("NDB_OUTPUT").as_deref() == Ok("json") {
-                    ResolvedFormat::Json
-                } else if std::io::stdout().is_terminal() {
-                    ResolvedFormat::Human
-                } else {
-                    ResolvedFormat::Json
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResolvedFormat {
-    Json,
-    Human,
 }

@@ -1,9 +1,8 @@
 use crate::cli::fix::FixArgs;
 use crate::error::{AppError, ExitCode};
 use crate::output::{self, Renderable};
-use crate::types::ResolvedFormat;
 
-pub fn handle(_args: FixArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
+pub fn handle(args: FixArgs) -> Result<ExitCode, AppError> {
     let db_path = crate::common::platform::db_path();
 
     let mut issues = Vec::new();
@@ -12,7 +11,7 @@ pub fn handle(_args: FixArgs, format: ResolvedFormat) -> Result<ExitCode, AppErr
     // Check DB exists and is valid
     if !db_path.exists() {
         issues.push("Database file missing".to_string());
-        if !_args.check_only {
+        if !args.check_only {
             let _db = crate::db::Database::open(&db_path)?;
             fixed.push("Created database with defaults".to_string());
         }
@@ -24,7 +23,7 @@ pub fn handle(_args: FixArgs, format: ResolvedFormat) -> Result<ExitCode, AppErr
                     let val = db.with_conn(|conn| crate::db::config::get_value(conn, key))?;
                     if val.is_none() {
                         issues.push(format!("Missing config key: {key}"));
-                        if !_args.check_only {
+                        if !args.check_only {
                             db.with_conn(|conn| crate::db::config::set_value(conn, key, default))?;
                             fixed.push(format!("Set default for {key}"));
                         }
@@ -46,7 +45,7 @@ pub fn handle(_args: FixArgs, format: ResolvedFormat) -> Result<ExitCode, AppErr
     }
 
     let result = FixResult { issues, fixed };
-    output::render(&result, format);
+    output::render(&result);
 
     Ok(ExitCode::Success)
 }
@@ -56,18 +55,5 @@ impl Renderable for FixResult {
     fn command_name(&self) -> &str { "fix" }
     fn to_json(&self) -> serde_json::Value {
         serde_json::json!({ "data": { "issues": self.issues, "fixed": self.fixed }, "summary": { "found": self.issues.len(), "fixed": self.fixed.len() } })
-    }
-    fn to_human(&self) -> String {
-        let mut out = String::new();
-        if self.issues.is_empty() { out.push_str("  No issues found.\n"); }
-        else {
-            out.push_str("  Issues:\n");
-            for i in &self.issues { out.push_str(&format!("    ! {i}\n")); }
-        }
-        if !self.fixed.is_empty() {
-            out.push_str("  Fixed:\n");
-            for f in &self.fixed { out.push_str(&format!("    + {f}\n")); }
-        }
-        out
     }
 }

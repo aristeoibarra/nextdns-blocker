@@ -18,7 +18,7 @@ schema = """
   "command": "schema output",
   "data": {
     "command": "sync",
-    "note": "Use --output json on any command to see its schema"
+    "note": "All output is JSON envelope"
   },
   "timestamp": "..."
 }

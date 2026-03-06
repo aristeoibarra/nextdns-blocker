@@ -1,9 +1,8 @@
 use crate::cli::init::InitArgs;
 use crate::error::{AppError, ExitCode};
 use crate::output::{self, Renderable};
-use crate::types::ResolvedFormat;
 
-pub fn handle(args: InitArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
+pub fn handle(args: InitArgs) -> Result<ExitCode, AppError> {
     let db_path = crate::common::platform::db_path();
 
     if db_path.exists() && !args.force {
@@ -26,7 +25,7 @@ pub fn handle(args: InitArgs, format: ResolvedFormat) -> Result<ExitCode, AppErr
     let result = InitResult {
         db_path: db_path.to_string_lossy().to_string(),
     };
-    output::render(&result, format);
+    output::render(&result);
     Ok(ExitCode::Success)
 }
 
@@ -36,8 +35,5 @@ impl Renderable for InitResult {
     fn command_name(&self) -> &str { "init" }
     fn to_json(&self) -> serde_json::Value {
         serde_json::json!({ "data": { "db_path": self.db_path }, "summary": { "initialized": true } })
-    }
-    fn to_human(&self) -> String {
-        format!("Initialized ndb:\n  Database: {}\n\nNext steps:\n  1. Set NEXTDNS_API_KEY and NEXTDNS_PROFILE_ID environment variables\n  2. Configure: ndb config set timezone America/Mexico_City\n  3. Sync: ndb sync\n", self.db_path)
     }
 }

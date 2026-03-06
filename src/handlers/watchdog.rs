@@ -1,18 +1,17 @@
 use crate::cli::watchdog::*;
 use crate::error::{AppError, ExitCode};
 use crate::output::{self, Renderable};
-use crate::types::ResolvedFormat;
 
-pub async fn handle(cmd: WatchdogCommands, format: ResolvedFormat) -> Result<ExitCode, AppError> {
+pub fn handle(cmd: WatchdogCommands) -> Result<ExitCode, AppError> {
     match cmd {
-        WatchdogCommands::Install(args) => handle_install(args, format),
-        WatchdogCommands::Uninstall(_) => handle_uninstall(format),
-        WatchdogCommands::Status(_) => handle_status(format),
-        WatchdogCommands::Run(_) => handle_run(format).await,
+        WatchdogCommands::Install(args) => handle_install(args),
+        WatchdogCommands::Uninstall(_) => handle_uninstall(),
+        WatchdogCommands::Status(_) => handle_status(),
+        WatchdogCommands::Run(_) => handle_run(),
     }
 }
 
-fn handle_install(args: WatchdogInstallArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
+fn handle_install(args: WatchdogInstallArgs) -> Result<ExitCode, AppError> {
     let duration = crate::common::time::parse_duration(&args.interval)?;
     let secs = duration.as_secs();
 
@@ -21,37 +20,34 @@ fn handle_install(args: WatchdogInstallArgs, format: ResolvedFormat) -> Result<E
     let result = WdResult {
         command: "watchdog install",
         data: serde_json::json!({ "path": path, "interval_secs": secs, "scheduler": "launchd" }),
-        msg: format!("  Installed watchdog (launchd) every {secs}s\n  Path: {path}\n"),
     };
-    output::render(&result, format);
+    output::render(&result);
     Ok(ExitCode::Success)
 }
 
-fn handle_uninstall(format: ResolvedFormat) -> Result<ExitCode, AppError> {
+fn handle_uninstall() -> Result<ExitCode, AppError> {
     crate::watchdog::uninstall()?;
 
     let result = WdResult {
         command: "watchdog uninstall",
         data: serde_json::json!({ "uninstalled": true }),
-        msg: "  Watchdog uninstalled.\n".to_string(),
     };
-    output::render(&result, format);
+    output::render(&result);
     Ok(ExitCode::Success)
 }
 
-fn handle_status(format: ResolvedFormat) -> Result<ExitCode, AppError> {
+fn handle_status() -> Result<ExitCode, AppError> {
     let status = crate::watchdog::status()?;
 
     let result = WdResult {
         command: "watchdog status",
         data: serde_json::to_value(&status)?,
-        msg: format!("  Scheduler: {}\n  Installed: {}\n  Running: {}\n", status.scheduler, status.installed, status.running),
     };
-    output::render(&result, format);
+    output::render(&result);
     Ok(ExitCode::Success)
 }
 
-async fn handle_run(format: ResolvedFormat) -> Result<ExitCode, AppError> {
+fn handle_run() -> Result<ExitCode, AppError> {
     let env_config = crate::config::types::EnvConfig::from_env()?;
     let db_path = crate::common::platform::db_path();
     let db = crate::db::Database::open(&db_path)?;
@@ -63,14 +59,9 @@ async fn handle_run(format: ResolvedFormat) -> Result<ExitCode, AppError> {
         .map_err(|_| AppError::Config { message: format!("Invalid timezone: {tz_str}"), hint: None })?;
     let evaluator = crate::scheduler::ScheduleEvaluator::new(tz);
 
-    // Run sync
-    let sync_result = crate::sync::execute_sync(&db, &client, &evaluator, false).await?;
-
-    // Process pending actions
-    let pending_result = crate::pending::process_pending(&db, &client).await?;
-
-    // Process retry queue
-    let retry_result = crate::retry::process_retries(&db, &client).await?;
+    let sync_result = crate::sync::execute_sync(&db, &client, &evaluator, false)?;
+    let pending_result = crate::pending::process_pending(&db, &client)?;
+    let retry_result = crate::retry::process_retries(&db, &client)?;
 
     let result = WdResult {
         command: "watchdog run",
@@ -79,16 +70,13 @@ async fn handle_run(format: ResolvedFormat) -> Result<ExitCode, AppError> {
             "pending": pending_result,
             "retries": retry_result,
         }),
-        msg: format!("  Watchdog cycle complete.\n  Pending: {} executed, {} failed\n  Retries: {} ok, {} failed\n",
-            pending_result.executed, pending_result.failed, retry_result.succeeded, retry_result.failed),
     };
-    output::render(&result, format);
+    output::render(&result);
     Ok(ExitCode::Success)
 }
 
-struct WdResult { command: &'static str, data: serde_json::Value, msg: String }
+struct WdResult { command: &'static str, data: serde_json::Value }
 impl Renderable for WdResult {
     fn command_name(&self) -> &str { self.command }
     fn to_json(&self) -> serde_json::Value { serde_json::json!({ "data": self.data }) }
-    fn to_human(&self) -> String { self.msg.clone() }
 }

@@ -247,7 +247,7 @@ fn spec_exit_codes_match_global() {
 #[test]
 fn schema_commands_lists_all_specs() {
     let output = ndb()
-        .args(["schema", "commands", "--output", "json"])
+        .args(["schema", "commands"])
         .output()
         .expect("failed to run ndb schema commands");
 
@@ -290,7 +290,7 @@ fn all_spec_commands_accept_help() {
 
 // ---------------------------------------------------------------------------
 // Contract test 5: Commands that don't require config/api/pin produce valid
-// JSON envelope when run with --output json (where possible)
+// JSON envelope (always JSON output)
 // ---------------------------------------------------------------------------
 #[test]
 fn standalone_commands_produce_valid_envelope() {
@@ -316,7 +316,7 @@ fn standalone_commands_produce_valid_envelope() {
 
     // First init so status/fix etc. have a DB
     ndb()
-        .args(["init", "--output", "json"])
+        .args(["init"])
         .env("NDB_DATA_DIR", data_dir.path())
         .output()
         .ok();
@@ -328,7 +328,7 @@ fn standalone_commands_produce_valid_envelope() {
         for seg in &spec.command.binary_path {
             cmd.arg(seg);
         }
-        cmd.arg("--output").arg("json");
+        // JSON is always the output format
 
         let output = cmd.output().expect("failed to run command");
 
@@ -435,7 +435,7 @@ fn standalone_command_data_keys_match_spec() {
     let data_dir = tempfile::tempdir().expect("tempdir");
 
     ndb()
-        .args(["init", "--output", "json"])
+        .args(["init"])
         .env("NDB_DATA_DIR", data_dir.path())
         .output()
         .ok();
@@ -452,7 +452,7 @@ fn standalone_command_data_keys_match_spec() {
         for seg in &spec.command.binary_path {
             cmd.arg(seg);
         }
-        cmd.arg("--output").arg("json");
+        // JSON is always the output format
 
         let output = cmd.output().expect("failed to run");
         if !output.status.success() {
@@ -498,7 +498,7 @@ fn spec_examples_exit_code_zero_work() {
     let data_dir = tempfile::tempdir().expect("tempdir");
 
     ndb()
-        .args(["init", "--output", "json"])
+        .args(["init"])
         .env("NDB_DATA_DIR", data_dir.path())
         .output()
         .ok();
@@ -536,7 +536,7 @@ fn spec_examples_exit_code_zero_work() {
             for arg in args {
                 cmd.arg(arg);
             }
-            cmd.arg("--output").arg("json");
+            // JSON is always the output format
 
             let output = cmd.output().expect("failed to run example");
             if output.status.success() {
@@ -563,7 +563,7 @@ fn spec_examples_exit_code_zero_work() {
 #[test]
 fn every_listed_command_has_spec() {
     let output = ndb()
-        .args(["schema", "commands", "--output", "json"])
+        .args(["schema", "commands"])
         .output()
         .expect("failed to run ndb schema commands");
 
@@ -595,7 +595,7 @@ fn every_listed_command_has_spec() {
 #[test]
 fn global_exit_codes_match_binary() {
     let output = ndb()
-        .args(["schema", "exit-codes", "--output", "json"])
+        .args(["schema", "exit-codes"])
         .output()
         .expect("failed to run ndb schema exit-codes");
 

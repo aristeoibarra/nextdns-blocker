@@ -4,7 +4,7 @@ use crate::db::Database;
 use crate::error::AppError;
 
 /// Process all due retry entries.
-pub async fn process_retries(db: &Database, client: &NextDnsClient) -> Result<RetryResult, AppError> {
+pub fn process_retries(db: &Database, client: &NextDnsClient) -> Result<RetryResult, AppError> {
     let entries = db.with_conn(crate::db::retry::get_due_retries)?;
 
     let mut succeeded = 0;
@@ -12,35 +12,16 @@ pub async fn process_retries(db: &Database, client: &NextDnsClient) -> Result<Re
     let mut exhausted = 0;
 
     for entry in entries {
+        let domain = match entry.domain.as_deref() {
+            Some(d) => d,
+            None => continue,
+        };
+
         let result = match (entry.action.as_str(), entry.list_type.as_str()) {
-            ("add", "denylist") => {
-                if let Some(ref domain) = entry.domain {
-                    client.add_to_denylist(domain).await
-                } else {
-                    continue;
-                }
-            }
-            ("remove", "denylist") => {
-                if let Some(ref domain) = entry.domain {
-                    client.remove_from_denylist(domain).await
-                } else {
-                    continue;
-                }
-            }
-            ("add", "allowlist") => {
-                if let Some(ref domain) = entry.domain {
-                    client.add_to_allowlist(domain).await
-                } else {
-                    continue;
-                }
-            }
-            ("remove", "allowlist") => {
-                if let Some(ref domain) = entry.domain {
-                    client.remove_from_allowlist(domain).await
-                } else {
-                    continue;
-                }
-            }
+            ("add", "denylist") => client.add_to_denylist(domain),
+            ("remove", "denylist") => client.remove_from_denylist(domain),
+            ("add", "allowlist") => client.add_to_allowlist(domain),
+            ("remove", "allowlist") => client.remove_from_allowlist(domain),
             _ => continue,
         };
 
@@ -56,8 +37,9 @@ pub async fn process_retries(db: &Database, client: &NextDnsClient) -> Result<Re
                 } else {
                     let delay = calculate_backoff(next_attempt as u32);
                     let next_retry = crate::common::time::now_unix() + delay as i64;
+                    let err_msg = e.to_string();
                     db.with_conn(|conn| {
-                        crate::db::retry::increment_retry(conn, &entry.id, &e.to_string(), next_retry)
+                        crate::db::retry::increment_retry(conn, &entry.id, &err_msg, next_retry)
                     })?;
                     failed += 1;
                 }
@@ -65,11 +47,7 @@ pub async fn process_retries(db: &Database, client: &NextDnsClient) -> Result<Re
         }
     }
 
-    Ok(RetryResult {
-        succeeded,
-        failed,
-        exhausted,
-    })
+    Ok(RetryResult { succeeded, failed, exhausted })
 }
 
 /// Exponential backoff with full jitter.

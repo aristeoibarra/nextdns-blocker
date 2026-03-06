@@ -1,9 +1,8 @@
 use crate::cli::status::StatusArgs;
 use crate::error::{AppError, ExitCode};
 use crate::output::{self, Renderable};
-use crate::types::ResolvedFormat;
 
-pub fn handle(args: StatusArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
+pub fn handle(_args: StatusArgs) -> Result<ExitCode, AppError> {
     let db_path = crate::common::platform::db_path();
     let db = crate::db::Database::open(&db_path)?;
 
@@ -19,15 +18,15 @@ pub fn handle(args: StatusArgs, format: ResolvedFormat) -> Result<ExitCode, AppE
 
     let result = StatusResult {
         blocked_count, allowed_count, category_count: categories.len() as i64,
-        pending_count, retry_count, has_pin, _detailed: args.detailed,
+        pending_count, retry_count, has_pin,
     };
-    output::render(&result, format);
+    output::render(&result);
     Ok(ExitCode::Success)
 }
 
 struct StatusResult {
     blocked_count: i64, allowed_count: i64, category_count: i64,
-    pending_count: i64, retry_count: i64, has_pin: bool, _detailed: bool,
+    pending_count: i64, retry_count: i64, has_pin: bool,
 }
 
 impl Renderable for StatusResult {
@@ -38,10 +37,5 @@ impl Renderable for StatusResult {
             "categories": self.category_count, "pending_actions": self.pending_count,
             "retry_queue": self.retry_count, "pin_enabled": self.has_pin,
         }})
-    }
-    fn to_human(&self) -> String {
-        format!("Status:\n  Blocked domains: {}\n  Allowed domains: {}\n  Categories: {}\n  Pending actions: {}\n  Retry queue: {}\n  PIN protection: {}\n",
-            self.blocked_count, self.allowed_count, self.category_count,
-            self.pending_count, self.retry_count, if self.has_pin { "enabled" } else { "disabled" })
     }
 }

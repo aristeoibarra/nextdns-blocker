@@ -1,14 +1,13 @@
 use crate::cli::schema::*;
 use crate::error::ExitCode;
 use crate::output::{self, Renderable};
-use crate::types::ResolvedFormat;
 
-pub fn handle(cmd: SchemaCommands, format: ResolvedFormat) -> Result<ExitCode, crate::error::AppError> {
+pub fn handle(cmd: SchemaCommands) -> Result<ExitCode, crate::error::AppError> {
     match cmd {
-        SchemaCommands::ExitCodes(_) => { output::render(&ExitCodesOut, format); }
-        SchemaCommands::Envelope(_) => { output::render(&EnvelopeOut, format); }
-        SchemaCommands::Commands(_) => { output::render(&CommandsOut, format); }
-        SchemaCommands::Output(args) => { output::render(&OutputOut(args.command.join(" ")), format); }
+        SchemaCommands::ExitCodes(_) => { output::render(&ExitCodesOut); }
+        SchemaCommands::Envelope(_) => { output::render(&EnvelopeOut); }
+        SchemaCommands::Commands(_) => { output::render(&CommandsOut); }
+        SchemaCommands::Output(args) => { output::render(&OutputOut(args.command.join(" "))); }
     }
     Ok(ExitCode::Success)
 }
@@ -29,7 +28,6 @@ impl Renderable for ExitCodesOut {
             {"code": 130, "name": "interrupted", "description": "SIGINT, state may be partial"},
         ]}})
     }
-    fn to_human(&self) -> String { "Exit codes:\n  0  success\n  1  general_error\n  2  config_error\n  3  api_error\n  4  validation_error\n  5  permission_error\n  6  conflict_error\n  7  not_found\n  130 interrupted\n".to_string() }
 }
 
 struct EnvelopeOut;
@@ -41,7 +39,6 @@ impl Renderable for EnvelopeOut {
             "error": { "ok": false, "command": "<cmd>", "error": { "code": "", "message": "", "hint": "", "details": [] }, "exit_code": 0, "timestamp": "ISO8601" }
         }})
     }
-    fn to_human(&self) -> String { "JSON envelope:\n  Success: { ok, command, data, summary, timestamp }\n  Error:   { ok, command, error: { code, message, hint, details }, exit_code, timestamp }\n".to_string() }
 }
 
 struct CommandsOut;
@@ -62,14 +59,12 @@ impl Renderable for CommandsOut {
             "schema commands", "schema output", "schema exit-codes", "schema envelope",
         ]}})
     }
-    fn to_human(&self) -> String { "Use 'ndb <command> --help' for details on any command.\n".to_string() }
 }
 
 struct OutputOut(String);
 impl Renderable for OutputOut {
     fn command_name(&self) -> &str { "schema output" }
     fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({ "data": { "command": self.0, "note": "Use --output json on any command to see its schema" } })
+        serde_json::json!({ "data": { "command": self.0, "note": "All output is JSON envelope" } })
     }
-    fn to_human(&self) -> String { format!("Output schema for '{}': use --output json to see structured output\n", self.0) }
 }

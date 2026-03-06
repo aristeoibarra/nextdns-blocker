@@ -1,9 +1,8 @@
 use crate::cli::sync::SyncArgs;
 use crate::error::{AppError, ExitCode};
 use crate::output;
-use crate::types::ResolvedFormat;
 
-pub async fn handle(args: SyncArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
+pub fn handle(args: SyncArgs) -> Result<ExitCode, AppError> {
     let env_config = crate::config::types::EnvConfig::from_env()?;
     let db_path = crate::common::platform::db_path();
     let db = crate::db::Database::open(&db_path)?;
@@ -19,8 +18,8 @@ pub async fn handle(args: SyncArgs, format: ResolvedFormat) -> Result<ExitCode, 
 
     let evaluator = crate::scheduler::ScheduleEvaluator::new(tz);
 
-    let result = crate::sync::execute_sync(&db, &client, &evaluator, args.dry_run).await?;
-    output::render(&result, format);
+    let result = crate::sync::execute_sync(&db, &client, &evaluator, args.dry_run)?;
+    output::render(&result);
 
     Ok(ExitCode::Success)
 }

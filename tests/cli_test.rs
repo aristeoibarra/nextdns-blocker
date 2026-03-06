@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
@@ -41,7 +39,7 @@ fn help_flag() {
 #[test]
 fn schema_exit_codes_json() {
     let output = ndb()
-        .args(["schema", "exit-codes", "--output", "json"])
+        .args(["schema", "exit-codes"])
         .assert()
         .success()
         .get_output()
@@ -65,7 +63,7 @@ fn schema_exit_codes_json() {
 #[test]
 fn schema_commands_json() {
     let output = ndb()
-        .args(["schema", "commands", "--output", "json"])
+        .args(["schema", "commands"])
         .assert()
         .success()
         .get_output()
@@ -85,7 +83,7 @@ fn schema_commands_json() {
 #[test]
 fn schema_envelope_json() {
     let output = ndb()
-        .args(["schema", "envelope", "--output", "json"])
+        .args(["schema", "envelope"])
         .assert()
         .success()
         .get_output()
@@ -110,7 +108,7 @@ fn schema_envelope_json() {
 #[test]
 fn schema_output_json() {
     ndb()
-        .args(["schema", "output", "--output", "json", "sync"])
+        .args(["schema", "output", "sync"])
         .assert()
         .success();
 }
@@ -123,7 +121,7 @@ fn init_creates_db() {
     let data_dir = tempfile::tempdir().expect("failed to create temp data dir");
 
     let output = ndb()
-        .args(["init", "--output", "json"])
+        .args(["init"])
         .env("NDB_DATA_DIR", data_dir.path())
         .assert()
         .success()
@@ -195,7 +193,7 @@ fn all_subcommands_have_help() {
 #[test]
 fn json_envelope_has_required_fields() {
     let output = ndb()
-        .args(["schema", "exit-codes", "--output", "json"])
+        .args(["schema", "exit-codes"])
         .assert()
         .success()
         .get_output()
@@ -215,13 +213,18 @@ fn json_envelope_has_required_fields() {
 }
 
 // ---------------------------------------------------------------------------
-// 12. human_output_format
+// 12. json_always_output (replaces human_output_format)
 // ---------------------------------------------------------------------------
 #[test]
-fn human_output_format() {
-    ndb()
-        .args(["schema", "exit-codes", "--output", "human"])
+fn json_always_output() {
+    let output = ndb()
+        .args(["schema", "exit-codes"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Exit codes:"));
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).expect("stdout should always be valid JSON");
+    assert_eq!(json["ok"], Value::Bool(true));
 }

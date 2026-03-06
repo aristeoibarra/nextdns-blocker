@@ -1,7 +1,6 @@
 use std::collections::HashMap;
+use std::sync::RwLock;
 use std::time::{Duration, Instant};
-
-use tokio::sync::RwLock;
 
 use crate::config::constants::DEFAULT_CACHE_TTL_SECS;
 
@@ -24,15 +23,8 @@ impl<V: Clone> TtlCache<V> {
         }
     }
 
-    pub fn with_ttl(ttl: Duration) -> Self {
-        Self {
-            inner: RwLock::new(HashMap::new()),
-            ttl,
-        }
-    }
-
-    pub async fn get(&self, key: &str) -> Option<V> {
-        let cache = self.inner.read().await;
+    pub fn get(&self, key: &str) -> Option<V> {
+        let cache = self.inner.read().unwrap_or_else(|e| e.into_inner());
         cache.get(key).and_then(|entry| {
             if entry.inserted_at.elapsed() < self.ttl {
                 Some(entry.value.clone())
@@ -42,25 +34,16 @@ impl<V: Clone> TtlCache<V> {
         })
     }
 
-    pub async fn set(&self, key: String, value: V) {
-        let mut cache = self.inner.write().await;
-        cache.insert(
-            key,
-            CacheEntry {
-                value,
-                inserted_at: Instant::now(),
-            },
-        );
+    pub fn set(&self, key: String, value: V) {
+        if let Ok(mut cache) = self.inner.write() {
+            cache.insert(key, CacheEntry { value, inserted_at: Instant::now() });
+        }
     }
 
-    pub async fn invalidate(&self, key: &str) {
-        let mut cache = self.inner.write().await;
-        cache.remove(key);
-    }
-
-    pub async fn clear(&self) {
-        let mut cache = self.inner.write().await;
-        cache.clear();
+    pub fn invalidate(&self, key: &str) {
+        if let Ok(mut cache) = self.inner.write() {
+            cache.remove(key);
+        }
     }
 }
 
