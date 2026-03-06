@@ -1,8 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Documentation
-    url: https://github.com/aristeoibarra/nextdns-blocker#readme
-    about: Check the README for usage instructions and configuration options
-  - name: Discussions
-    url: https://github.com/aristeoibarra/nextdns-blocker/discussions
-    about: Ask questions and discuss ideas with the community
