@@ -7,15 +7,15 @@ pub fn handle(args: StatusArgs, format: ResolvedFormat) -> Result<ExitCode, AppE
     let db_path = crate::common::platform::db_path();
     let db = crate::db::Database::open(&db_path)?;
 
-    let blocked_count = db.with_conn(|conn| crate::db::domains::count_blocked(conn))?;
-    let allowed_count = db.with_conn(|conn| crate::db::domains::count_allowed(conn))?;
+    let blocked_count = db.with_conn(crate::db::domains::count_blocked)?;
+    let allowed_count = db.with_conn(crate::db::domains::count_allowed)?;
     let pending_count = db.with_conn(|conn| {
         let actions = crate::db::pending::list_pending(conn, Some("pending"))?;
         Ok::<_, rusqlite::Error>(actions.len() as i64)
     })?;
-    let retry_count = db.with_conn(|conn| crate::db::retry::count_retries(conn))?;
-    let has_pin = db.with_conn(|conn| crate::db::pin::has_pin(conn))?;
-    let categories = db.with_conn(|conn| crate::db::categories::list_categories(conn))?;
+    let retry_count = db.with_conn(crate::db::retry::count_retries)?;
+    let has_pin = db.with_conn(crate::db::pin::has_pin)?;
+    let categories = db.with_conn(crate::db::categories::list_categories)?;
 
     let result = StatusResult {
         blocked_count, allowed_count, category_count: categories.len() as i64,

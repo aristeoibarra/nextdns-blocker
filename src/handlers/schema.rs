@@ -54,13 +54,12 @@ impl Renderable for CommandsOut {
             "allowlist add", "allowlist remove", "allowlist list", "allowlist import", "allowlist export",
             "category create", "category delete", "category list", "category show", "category add-domain", "category remove-domain",
             "nextdns list", "nextdns add-category", "nextdns remove-category", "nextdns add-service", "nextdns remove-service", "nextdns categories", "nextdns services",
-            "config show", "config set", "config edit", "config validate", "config push", "config diff",
+            "config show", "config set", "config validate", "config push", "config diff",
             "pending list", "pending show", "pending cancel",
             "protection status", "protection unlock-request", "protection cancel", "protection list",
             "protection pin-set", "protection pin-remove", "protection pin-status", "protection pin-verify",
             "watchdog install", "watchdog uninstall", "watchdog status", "watchdog run",
             "schema commands", "schema output", "schema exit-codes", "schema envelope",
-            "completions",
         ]}})
     }
     fn to_human(&self) -> String { "Use 'ndb <command> --help' for details on any command.\n".to_string() }

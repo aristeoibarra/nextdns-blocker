@@ -312,20 +312,17 @@ fn standalone_commands_produce_valid_envelope() {
     );
 
     // Set up isolated dirs so commands don't interfere with real config
-    let config_dir = tempfile::tempdir().expect("tempdir");
     let data_dir = tempfile::tempdir().expect("tempdir");
 
     // First init so status/fix etc. have a DB
     ndb()
         .args(["init", "--output", "json"])
-        .env("NDB_CONFIG_DIR", config_dir.path())
         .env("NDB_DATA_DIR", data_dir.path())
         .output()
         .ok();
 
     for (_path, spec) in &standalone {
         let mut cmd = ndb();
-        cmd.env("NDB_CONFIG_DIR", config_dir.path());
         cmd.env("NDB_DATA_DIR", data_dir.path());
 
         for seg in &spec.command.binary_path {
@@ -435,12 +432,10 @@ fn standalone_command_data_keys_match_spec() {
         })
         .collect();
 
-    let config_dir = tempfile::tempdir().expect("tempdir");
     let data_dir = tempfile::tempdir().expect("tempdir");
 
     ndb()
         .args(["init", "--output", "json"])
-        .env("NDB_CONFIG_DIR", config_dir.path())
         .env("NDB_DATA_DIR", data_dir.path())
         .output()
         .ok();
@@ -452,7 +447,6 @@ fn standalone_command_data_keys_match_spec() {
         }
 
         let mut cmd = ndb();
-        cmd.env("NDB_CONFIG_DIR", config_dir.path());
         cmd.env("NDB_DATA_DIR", data_dir.path());
 
         for seg in &spec.command.binary_path {
@@ -501,12 +495,10 @@ fn spec_examples_exit_code_zero_work() {
         })
         .collect();
 
-    let config_dir = tempfile::tempdir().expect("tempdir");
     let data_dir = tempfile::tempdir().expect("tempdir");
 
     ndb()
         .args(["init", "--output", "json"])
-        .env("NDB_CONFIG_DIR", config_dir.path())
         .env("NDB_DATA_DIR", data_dir.path())
         .output()
         .ok();
@@ -539,7 +531,6 @@ fn spec_examples_exit_code_zero_work() {
             }
 
             let mut cmd = ndb();
-            cmd.env("NDB_CONFIG_DIR", config_dir.path());
             cmd.env("NDB_DATA_DIR", data_dir.path());
 
             for arg in args {
@@ -590,10 +581,6 @@ fn every_listed_command_has_spec() {
 
     for cmd_val in commands {
         let cmd_name = cmd_val.as_str().unwrap_or("");
-        // Skip "completions" — it's a utility, not a spec'd command
-        if cmd_name == "completions" {
-            continue;
-        }
         assert!(
             spec_names.contains(cmd_name),
             "Command '{}' is listed in `ndb schema commands` but has no TOML spec file",

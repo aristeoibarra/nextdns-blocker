@@ -20,8 +20,8 @@ fn handle_install(args: WatchdogInstallArgs, format: ResolvedFormat) -> Result<E
 
     let result = WdResult {
         command: "watchdog install",
-        data: serde_json::json!({ "path": path, "interval_secs": secs, "scheduler": crate::watchdog::detect_scheduler() }),
-        msg: format!("  Installed watchdog ({}) every {}s\n  Path: {path}\n", crate::watchdog::detect_scheduler(), secs),
+        data: serde_json::json!({ "path": path, "interval_secs": secs, "scheduler": "launchd" }),
+        msg: format!("  Installed watchdog (launchd) every {secs}s\n  Path: {path}\n"),
     };
     output::render(&result, format);
     Ok(ExitCode::Success)
@@ -55,12 +55,12 @@ async fn handle_run(format: ResolvedFormat) -> Result<ExitCode, AppError> {
     let env_config = crate::config::types::EnvConfig::from_env()?;
     let db_path = crate::common::platform::db_path();
     let db = crate::db::Database::open(&db_path)?;
-    let app_config = crate::config::load_config()?;
 
     let client = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id)?;
 
-    let tz: chrono_tz::Tz = app_config.settings.timezone.as_deref().unwrap_or("UTC").parse()
-        .map_err(|_| AppError::Config { message: "Invalid timezone".to_string(), hint: None })?;
+    let tz_str = db.with_conn(crate::db::config::get_timezone)?;
+    let tz: chrono_tz::Tz = tz_str.parse()
+        .map_err(|_| AppError::Config { message: format!("Invalid timezone: {tz_str}"), hint: None })?;
     let evaluator = crate::scheduler::ScheduleEvaluator::new(tz);
 
     // Run sync

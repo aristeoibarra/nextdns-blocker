@@ -3,6 +3,7 @@ use rusqlite::{params, Connection};
 use crate::common::time::now_unix;
 use crate::types::RetryEntry;
 
+#[allow(clippy::too_many_arguments)]
 pub fn enqueue_retry(
     conn: &Connection,
     id: &str,

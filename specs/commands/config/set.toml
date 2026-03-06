@@ -1,7 +1,7 @@
 [command]
 name = "config set"
 binary_path = ["config", "set"]
-description = "Set a configuration value"
+description = "Set a configuration value in the database"
 requires_config = true
 requires_api = false
 requires_pin = false
@@ -21,8 +21,7 @@ schema = """
 {
   "ok": true,
   "command": "config set",
-  "data": { "key": "profile_id", "value": "abc123", "previous": "old123" },
-  "summary": { "updated": 1 },
+  "data": { "key": "timezone", "value": "America/Mexico_City", "previous": "UTC" },
   "timestamp": "..."
 }
 """
@@ -40,6 +39,6 @@ code = 2
 name = "config_error"
 
 [[examples]]
-description = "Set profile ID"
-input = "ndb config set profile_id abc123"
+description = "Set timezone"
+input = "ndb config set timezone America/Mexico_City"
 exit_code = 0

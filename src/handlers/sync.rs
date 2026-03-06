@@ -7,14 +7,14 @@ pub async fn handle(args: SyncArgs, format: ResolvedFormat) -> Result<ExitCode, 
     let env_config = crate::config::types::EnvConfig::from_env()?;
     let db_path = crate::common::platform::db_path();
     let db = crate::db::Database::open(&db_path)?;
-    let app_config = crate::config::load_config()?;
 
     let client = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id)?;
 
-    let tz: chrono_tz::Tz = app_config.settings.timezone.as_deref().unwrap_or("UTC").parse()
+    let tz_str = db.with_conn(crate::db::config::get_timezone)?;
+    let tz: chrono_tz::Tz = tz_str.parse()
         .map_err(|_| AppError::Config {
-            message: "Invalid timezone in config".to_string(),
-            hint: Some("Set a valid timezone with 'ndb config set settings.timezone America/Mexico_City'".to_string()),
+            message: format!("Invalid timezone in DB: {tz_str}"),
+            hint: Some("Fix with 'ndb config set timezone America/Mexico_City'".to_string()),
         })?;
 
     let evaluator = crate::scheduler::ScheduleEvaluator::new(tz);

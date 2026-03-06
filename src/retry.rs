@@ -5,7 +5,7 @@ use crate::error::AppError;
 
 /// Process all due retry entries.
 pub async fn process_retries(db: &Database, client: &NextDnsClient) -> Result<RetryResult, AppError> {
-    let entries = db.with_conn(|conn| crate::db::retry::get_due_retries(conn))?;
+    let entries = db.with_conn(crate::db::retry::get_due_retries)?;
 
     let mut succeeded = 0;
     let mut failed = 0;

@@ -1,7 +1,7 @@
 [command]
 name = "config validate"
 binary_path = ["config", "validate"]
-description = "Validate the current configuration"
+description = "Validate the current configuration in database"
 requires_config = true
 requires_api = false
 requires_pin = false
@@ -11,8 +11,7 @@ schema = """
 {
   "ok": true,
   "command": "config validate",
-  "data": { "valid": true, "warnings": [] },
-  "summary": { "valid": true, "warnings": 0 },
+  "data": { "valid": true, "errors": [] },
   "timestamp": "..."
 }
 """
@@ -22,7 +21,7 @@ schema = """
 {
   "ok": false,
   "command": "config validate",
-  "error": { "code": "config_error", "message": "Configuration is invalid", "hint": "Run 'ndb config edit' to fix issues", "details": [{"field": "api_key", "reason": "missing"}] },
+  "error": { "code": "config_error", "message": "Configuration is invalid", "hint": "Run 'ndb config set' to fix issues" },
   "exit_code": 2
 }
 """
@@ -32,8 +31,8 @@ code = 0
 name = "success"
 
 [[exit_codes]]
-code = 2
-name = "config_error"
+code = 4
+name = "validation_error"
 
 [[examples]]
 description = "Validate config"

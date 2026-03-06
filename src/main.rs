@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use nextdns_blocker::cli::{Cli, Commands, generate_completions};
+use nextdns_blocker::cli::{Cli, Commands};
 use nextdns_blocker::error::ExitCode;
 use nextdns_blocker::handlers;
 use nextdns_blocker::output;
@@ -10,18 +10,6 @@ use nextdns_blocker::types::ResolvedFormat;
 async fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
     let format = cli.output.resolve();
-
-    if cli.verbose {
-        tracing_subscriber::fmt()
-            .with_env_filter("ndb=debug")
-            .with_writer(std::io::stderr)
-            .init();
-    }
-
-    if let Commands::Completions { shell } = &cli.command {
-        generate_completions(*shell);
-        return std::process::ExitCode::SUCCESS;
-    }
 
     let result = run(cli.command, format).await;
 
@@ -37,10 +25,10 @@ async fn main() -> std::process::ExitCode {
 
 async fn run(command: Commands, format: ResolvedFormat) -> Result<ExitCode, nextdns_blocker::error::AppError> {
     match command {
-        Commands::Init(args) => handlers::init::handle(args, format).await,
+        Commands::Init(args) => handlers::init::handle(args, format),
         Commands::Status(args) => handlers::status::handle(args, format),
         Commands::Sync(args) => handlers::sync::handle(args, format).await,
-        Commands::Unblock(args) => handlers::unblock::handle(args, format).await,
+        Commands::Unblock(args) => handlers::unblock::handle(args, format),
         Commands::Fix(args) => handlers::fix::handle(args, format),
         Commands::Denylist(cmd) => handlers::denylist::handle(cmd, format),
         Commands::Allowlist(cmd) => handlers::allowlist::handle(cmd, format),
@@ -51,6 +39,5 @@ async fn run(command: Commands, format: ResolvedFormat) -> Result<ExitCode, next
         Commands::Protection(cmd) => handlers::protection::handle(cmd, format),
         Commands::Watchdog(cmd) => handlers::watchdog::handle(cmd, format).await,
         Commands::Schema(cmd) => handlers::schema::handle(cmd, format),
-        Commands::Completions { .. } => unreachable!("handled before run()"),
     }
 }

@@ -6,8 +6,6 @@ pub enum ConfigCommands {
     Show(ConfigShowArgs),
     /// Set a configuration value
     Set(ConfigSetArgs),
-    /// Open configuration in editor
-    Edit(ConfigEditArgs),
     /// Validate configuration
     Validate(ConfigValidateArgs),
     /// Push local config to NextDNS API
@@ -29,9 +27,6 @@ pub struct ConfigSetArgs {
     /// Configuration value
     pub value: String,
 }
-
-#[derive(Args)]
-pub struct ConfigEditArgs {}
 
 #[derive(Args)]
 pub struct ConfigValidateArgs {}

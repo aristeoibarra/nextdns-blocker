@@ -1,5 +1,4 @@
 use crate::cli::config::*;
-use crate::config::validation::validate_config;
 use crate::error::{AppError, ExitCode};
 use crate::output::{self, Renderable};
 use crate::types::ResolvedFormat;
@@ -8,7 +7,6 @@ pub fn handle(cmd: ConfigCommands, format: ResolvedFormat) -> Result<ExitCode, A
     match cmd {
         ConfigCommands::Show(args) => handle_show(args, format),
         ConfigCommands::Set(args) => handle_set(args, format),
-        ConfigCommands::Edit(_) => handle_edit(format),
         ConfigCommands::Validate(_) => handle_validate(format),
         ConfigCommands::Push(args) => handle_push(args, format),
         ConfigCommands::Diff(_) => handle_diff(format),
@@ -16,119 +14,117 @@ pub fn handle(cmd: ConfigCommands, format: ResolvedFormat) -> Result<ExitCode, A
 }
 
 fn handle_show(args: ConfigShowArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
-    let config = crate::config::load_config()?;
-    let json = serde_json::to_value(&config)?;
+    let db = crate::db::Database::open(&crate::common::platform::db_path())?;
 
     if let Some(key) = args.key {
-        let value = json.pointer(&format!("/{}", key.replace('.', "/")))
-            .cloned()
-            .ok_or_else(|| AppError::NotFound {
-                message: format!("Config key '{key}' not found"),
-                hint: Some("Use 'ndb config show' to see all config keys".to_string()),
-            })?;
-        let result = ConfigShowResult { command: "config show", data: serde_json::json!({ "key": key, "value": value }) };
-        output::render(&result, format);
+        let value = db.with_conn(|conn| crate::db::config::get_value(conn, &key))?;
+        match value {
+            Some(v) => {
+                let result = ConfigResult {
+                    command: "config show",
+                    data: serde_json::json!({ "key": key, "value": v }),
+                };
+                output::render(&result, format);
+            }
+            None => {
+                return Err(AppError::NotFound {
+                    message: format!("Config key '{key}' not found"),
+                    hint: Some("Use 'ndb config show' to see all keys".to_string()),
+                });
+            }
+        }
     } else {
-        let result = ConfigShowResult { command: "config show", data: serde_json::json!({ "config": json }) };
+        let entries = db.with_conn(crate::db::config::list_all)?;
+        let map: serde_json::Map<String, serde_json::Value> = entries
+            .into_iter()
+            .map(|(k, v)| (k, serde_json::Value::String(v)))
+            .collect();
+        let result = ConfigResult {
+            command: "config show",
+            data: serde_json::json!({ "settings": map, "db_path": crate::common::platform::db_path().to_string_lossy() }),
+        };
         output::render(&result, format);
     }
     Ok(ExitCode::Success)
 }
 
 fn handle_set(args: ConfigSetArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
-    let config_path = crate::common::platform::config_path();
-    let content = std::fs::read_to_string(&config_path).map_err(|e| AppError::Config {
-        message: format!("Failed to read config: {e}"),
-        hint: Some("Run 'ndb init' first".to_string()),
-    })?;
-
-    let mut json: serde_json::Value = serde_json::from_str(&content)?;
-
-    // Navigate to the key and set value
-    let parts: Vec<&str> = args.key.split('.').collect();
-    let mut current = &mut json;
-    for (i, part) in parts.iter().enumerate() {
-        if i == parts.len() - 1 {
-            // Try to parse as JSON value, fallback to string
-            let value = serde_json::from_str(&args.value)
-                .unwrap_or_else(|_| serde_json::Value::String(args.value.clone()));
-            current[part] = value;
-        } else {
-            if !current[part].is_object() {
-                current[part] = serde_json::json!({});
-            }
-            current = &mut current[part];
-        }
-    }
-
-    let output_str = serde_json::to_string_pretty(&json)?;
-    std::fs::write(&config_path, output_str)?;
-
-    let result = ConfigShowResult {
-        command: "config set",
-        data: serde_json::json!({ "key": args.key, "value": args.value }),
-    };
-    output::render(&result, format);
-    Ok(ExitCode::Success)
-}
-
-fn handle_edit(format: ResolvedFormat) -> Result<ExitCode, AppError> {
-    let config_path = crate::common::platform::config_path();
-    let editor = std::env::var("EDITOR").unwrap_or_else(|_| {
-        if cfg!(target_os = "macos") { "open -t".to_string() }
-        else { "vi".to_string() }
-    });
-
-    let parts: Vec<&str> = editor.split_whitespace().collect();
-    let status = std::process::Command::new(parts[0])
-        .args(&parts[1..])
-        .arg(&config_path)
-        .status()
-        .map_err(|e| AppError::General {
-            message: format!("Failed to open editor: {e}"),
-            hint: Some(format!("Set EDITOR env var. Tried: {editor}")),
-        })?;
-
-    if !status.success() {
-        return Err(AppError::General {
-            message: "Editor exited with error".to_string(),
-            hint: None,
+    // Validate known keys
+    if !crate::db::config::is_known_key(&args.key) {
+        let known: Vec<&str> = crate::db::config::KNOWN_KEYS.iter().map(|(k, _)| *k).collect();
+        return Err(AppError::Validation {
+            message: format!("Unknown config key: '{}'", args.key),
+            details: vec![],
+            hint: Some(format!("Known keys: {}", known.join(", "))),
         });
     }
 
-    let result = ConfigShowResult {
-        command: "config edit",
-        data: serde_json::json!({ "path": config_path.to_string_lossy() }),
+    // Validate specific keys
+    match args.key.as_str() {
+        "timezone" => {
+            args.value.parse::<chrono_tz::Tz>().map_err(|_| AppError::Validation {
+                message: format!("Invalid timezone: '{}'", args.value),
+                details: vec![],
+                hint: Some("Use IANA timezone names like 'America/Mexico_City' or 'UTC'".to_string()),
+            })?;
+        }
+        "safe_search" | "youtube_restricted_mode" | "block_bypass" => {
+            if args.value != "true" && args.value != "false" {
+                return Err(AppError::Validation {
+                    message: format!("'{}' must be 'true' or 'false'", args.key),
+                    details: vec![],
+                    hint: None,
+                });
+            }
+        }
+        _ => {}
+    }
+
+    let db = crate::db::Database::open(&crate::common::platform::db_path())?;
+    let previous = db.with_conn(|conn| crate::db::config::get_value(conn, &args.key))?;
+    db.with_conn(|conn| crate::db::config::set_value(conn, &args.key, &args.value))?;
+
+    let result = ConfigResult {
+        command: "config set",
+        data: serde_json::json!({ "key": args.key, "value": args.value, "previous": previous }),
     };
     output::render(&result, format);
     Ok(ExitCode::Success)
 }
 
 fn handle_validate(format: ResolvedFormat) -> Result<ExitCode, AppError> {
-    let config = crate::config::load_config()?;
-    match validate_config(&config) {
-        Ok(()) => {
-            let result = ConfigShowResult {
-                command: "config validate",
-                data: serde_json::json!({ "valid": true, "errors": [] }),
-            };
-            output::render(&result, format);
-            Ok(ExitCode::Success)
-        }
-        Err(AppError::Validation { details, .. }) => {
-            let result = ConfigShowResult {
-                command: "config validate",
-                data: serde_json::json!({ "valid": false, "errors": details }),
-            };
-            output::render(&result, format);
-            Ok(ExitCode::ValidationError)
-        }
-        Err(e) => Err(e),
+    let db = crate::db::Database::open(&crate::common::platform::db_path())?;
+    let mut errors: Vec<serde_json::Value> = Vec::new();
+
+    // Validate timezone
+    let tz = db.with_conn(crate::db::config::get_timezone)?;
+    if tz.parse::<chrono_tz::Tz>().is_err() {
+        errors.push(serde_json::json!({ "key": "timezone", "reason": format!("Invalid timezone: {tz}") }));
+    }
+
+    // Check env vars
+    if std::env::var("NEXTDNS_API_KEY").is_err() {
+        errors.push(serde_json::json!({ "key": "NEXTDNS_API_KEY", "reason": "Environment variable not set" }));
+    }
+    if std::env::var("NEXTDNS_PROFILE_ID").is_err() {
+        errors.push(serde_json::json!({ "key": "NEXTDNS_PROFILE_ID", "reason": "Environment variable not set" }));
+    }
+
+    let valid = errors.is_empty();
+    let result = ConfigResult {
+        command: "config validate",
+        data: serde_json::json!({ "valid": valid, "errors": errors }),
+    };
+    output::render(&result, format);
+
+    if valid {
+        Ok(ExitCode::Success)
+    } else {
+        Ok(ExitCode::ValidationError)
     }
 }
 
 fn handle_push(_args: ConfigPushArgs, _format: ResolvedFormat) -> Result<ExitCode, AppError> {
-    // This requires API access - delegates to sync
     Err(AppError::General {
         message: "Use 'ndb sync' to push configuration to NextDNS API".to_string(),
         hint: Some("ndb sync --dry-run to preview changes".to_string()),
@@ -142,12 +138,12 @@ fn handle_diff(_format: ResolvedFormat) -> Result<ExitCode, AppError> {
     })
 }
 
-struct ConfigShowResult {
+struct ConfigResult {
     command: &'static str,
     data: serde_json::Value,
 }
 
-impl Renderable for ConfigShowResult {
+impl Renderable for ConfigResult {
     fn command_name(&self) -> &str { self.command }
     fn to_json(&self) -> serde_json::Value { serde_json::json!({ "data": self.data }) }
     fn to_human(&self) -> String {

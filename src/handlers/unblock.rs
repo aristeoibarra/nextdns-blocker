@@ -4,7 +4,7 @@ use crate::error::{AppError, ExitCode};
 use crate::output::{self, Renderable};
 use crate::types::ResolvedFormat;
 
-pub async fn handle(args: UnblockArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
+pub fn handle(args: UnblockArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
     let db = Database::open(&crate::common::platform::db_path())?;
 
     // Check if target is a domain or category
@@ -20,7 +20,7 @@ pub async fn handle(args: UnblockArgs, format: ResolvedFormat) -> Result<ExitCod
 
     // Check protection
     if is_domain {
-        let locked = crate::protection::validate_no_locked_removal(&db, &[args.target.clone()])?;
+        let locked = crate::protection::validate_no_locked_removal(&db, std::slice::from_ref(&args.target))?;
         if !locked.is_empty() {
             return Err(AppError::Permission {
                 message: format!("'{}' is protected", args.target),

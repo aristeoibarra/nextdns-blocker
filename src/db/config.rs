@@ -28,3 +28,25 @@ pub fn list_all(conn: &Connection) -> Result<Vec<(String, String)>, rusqlite::Er
     let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
     rows.collect()
 }
+
+// --- Typed helpers ---
+
+pub fn get_timezone(conn: &Connection) -> Result<String, rusqlite::Error> {
+    Ok(get_value(conn, "timezone")?.unwrap_or_else(|| "UTC".to_string()))
+}
+
+pub fn get_bool(conn: &Connection, key: &str) -> Result<bool, rusqlite::Error> {
+    Ok(get_value(conn, key)?.is_some_and(|v| v == "true"))
+}
+
+/// All known config keys with their default values.
+pub const KNOWN_KEYS: &[(&str, &str)] = &[
+    ("timezone", "UTC"),
+    ("safe_search", "true"),
+    ("youtube_restricted_mode", "false"),
+    ("block_bypass", "true"),
+];
+
+pub fn is_known_key(key: &str) -> bool {
+    KNOWN_KEYS.iter().any(|(k, _)| *k == key)
+}

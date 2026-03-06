@@ -189,10 +189,8 @@ impl AppError {
                 .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
         }
 
-        if let Self::Api { status_code, .. } = self {
-            if let Some(code) = status_code {
-                error["status_code"] = serde_json::json!(code);
-            }
+        if let Self::Api { status_code: Some(code), .. } = self {
+            error["status_code"] = serde_json::json!(code);
         }
 
         serde_json::json!({

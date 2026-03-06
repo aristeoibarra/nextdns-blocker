@@ -2,7 +2,7 @@
 name = "fix"
 binary_path = ["fix"]
 description = "Detect and fix configuration or state issues"
-requires_config = true
+requires_config = false
 requires_api = false
 requires_pin = false
 
@@ -24,14 +24,10 @@ schema = """
   "ok": true,
   "command": "fix",
   "data": {
-    "issues_found": [
-      { "type": "orphaned_domain", "description": "Domain in category that no longer exists", "target": "example.com" }
-    ],
-    "fixed": [
-      { "type": "orphaned_domain", "description": "Removed orphaned domain reference", "target": "example.com" }
-    ]
+    "issues": [],
+    "fixed": []
   },
-  "summary": { "found": 1, "fixed": 1 },
+  "summary": { "found": 0, "fixed": 0 },
   "timestamp": "..."
 }
 """

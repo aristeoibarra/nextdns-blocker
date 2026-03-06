@@ -116,16 +116,14 @@ fn schema_output_json() {
 }
 
 // ---------------------------------------------------------------------------
-// 7. init_creates_config_and_db
+// 7. init_creates_db
 // ---------------------------------------------------------------------------
 #[test]
-fn init_creates_config_and_db() {
-    let config_dir = tempfile::tempdir().expect("failed to create temp config dir");
+fn init_creates_db() {
     let data_dir = tempfile::tempdir().expect("failed to create temp data dir");
 
     let output = ndb()
         .args(["init", "--output", "json"])
-        .env("NDB_CONFIG_DIR", config_dir.path())
         .env("NDB_DATA_DIR", data_dir.path())
         .assert()
         .success()
@@ -135,6 +133,7 @@ fn init_creates_config_and_db() {
 
     let json: Value = serde_json::from_slice(&output).expect("stdout is not valid JSON");
     assert_eq!(json["ok"], Value::Bool(true), "init should return ok: true");
+    assert!(json["data"]["db_path"].is_string(), "should return db_path");
 }
 
 // ---------------------------------------------------------------------------

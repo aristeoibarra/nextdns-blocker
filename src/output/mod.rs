@@ -21,10 +21,10 @@ pub fn render(output: &dyn Renderable, format: ResolvedFormat) {
     match format {
         ResolvedFormat::Json => {
             let envelope = json::wrap_success(output);
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&envelope).expect("JSON serialization failed")
-            );
+            match serde_json::to_string_pretty(&envelope) {
+                Ok(json) => println!("{json}"),
+                Err(_) => print!("{}", output.to_human()),
+            }
         }
         ResolvedFormat::Human => {
             print!("{}", output.to_human());
@@ -37,10 +37,10 @@ pub fn render_error(err: &AppError, command: &str, format: ResolvedFormat) {
     match format {
         ResolvedFormat::Json => {
             let envelope = err.to_json(command);
-            eprintln!(
-                "{}",
-                serde_json::to_string_pretty(&envelope).expect("JSON serialization failed")
-            );
+            match serde_json::to_string_pretty(&envelope) {
+                Ok(json) => eprintln!("{json}"),
+                Err(_) => human::print_error(err),
+            }
         }
         ResolvedFormat::Human => {
             human::print_error(err);

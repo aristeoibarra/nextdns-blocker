@@ -63,7 +63,7 @@ fn handle_delete(db: &Database, args: CategoryDeleteArgs, format: ResolvedFormat
 }
 
 fn handle_list(db: &Database, format: ResolvedFormat) -> Result<ExitCode, AppError> {
-    let categories = db.with_conn(|conn| crate::db::categories::list_categories(conn))?;
+    let categories = db.with_conn(crate::db::categories::list_categories)?;
 
     let result = CategoryListResult { categories };
     output::render(&result, format);

@@ -1,7 +1,7 @@
 [command]
 name = "config show"
 binary_path = ["config", "show"]
-description = "Show current configuration values"
+description = "Show current configuration values from database"
 requires_config = true
 requires_api = false
 requires_pin = false
@@ -12,11 +12,13 @@ schema = """
   "ok": true,
   "command": "config show",
   "data": {
-    "profile_id": "abc123",
-    "api_key": "***masked***",
-    "config_path": "/path/to/config.json",
-    "db_path": "/path/to/ndb.db",
-    "pin_enabled": true
+    "settings": {
+      "timezone": "UTC",
+      "safe_search": "true",
+      "youtube_restricted_mode": "false",
+      "block_bypass": "true"
+    },
+    "db_path": "/path/to/ndb.db"
   },
   "timestamp": "..."
 }

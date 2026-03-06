@@ -19,8 +19,8 @@ pub fn handle(cmd: ProtectionCommands, format: ResolvedFormat) -> Result<ExitCod
 }
 
 fn handle_status(db: &Database, format: ResolvedFormat) -> Result<ExitCode, AppError> {
-    let has_pin = db.with_conn(|conn| crate::db::pin::has_pin(conn))?;
-    let locked_out = db.with_conn(|conn| crate::db::pin::is_locked_out(conn))?;
+    let has_pin = db.with_conn(crate::db::pin::has_pin)?;
+    let locked_out = db.with_conn(crate::db::pin::is_locked_out)?;
     let pending = crate::protection::unlock::list_requests(db, Some("pending"))?;
 
     let result = ProtStatusResult { has_pin, locked_out, pending_unlocks: pending.len() };
@@ -99,7 +99,7 @@ fn handle_pin_set(db: &Database, args: PinSetArgs, format: ResolvedFormat) -> Re
 fn handle_pin_remove(db: &Database, args: PinRemoveArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
     // Verify current PIN first
     let _session = crate::protection::pin::verify_and_create_session(db, &args.pin)?;
-    db.with_conn(|conn| crate::db::pin::remove_pin(conn))?;
+    db.with_conn(crate::db::pin::remove_pin)?;
     db.with_conn(|conn| crate::db::audit::log_action(conn, "pin_remove", "pin", "", None))?;
 
     let result = SimpleMsg { command: "protection pin-remove", data: serde_json::json!({ "removed": true }), msg: "  PIN removed.\n".to_string() };
@@ -108,8 +108,8 @@ fn handle_pin_remove(db: &Database, args: PinRemoveArgs, format: ResolvedFormat)
 }
 
 fn handle_pin_status(db: &Database, format: ResolvedFormat) -> Result<ExitCode, AppError> {
-    let has_pin = db.with_conn(|conn| crate::db::pin::has_pin(conn))?;
-    let locked_out = db.with_conn(|conn| crate::db::pin::is_locked_out(conn))?;
+    let has_pin = db.with_conn(crate::db::pin::has_pin)?;
+    let locked_out = db.with_conn(crate::db::pin::is_locked_out)?;
 
     let result = SimpleMsg {
         command: "protection pin-status",

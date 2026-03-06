@@ -1,18 +1,11 @@
-pub mod discord;
 pub mod macos;
-pub mod ntfy;
-pub mod slack;
-pub mod telegram;
-
-use async_trait::async_trait;
 
 use crate::error::AppError;
 
 /// Trait for notification adapters.
-#[async_trait]
 pub trait NotificationAdapter: Send + Sync {
     fn name(&self) -> &str;
-    async fn send(&self, title: &str, message: &str) -> Result<(), AppError>;
+    fn send(&self, title: &str, message: &str) -> Result<(), AppError>;
 }
 
 /// Notification manager that dispatches to all configured adapters.
@@ -31,15 +24,12 @@ impl NotificationManager {
         self.adapters.push(adapter);
     }
 
-    /// Send a notification to all adapters concurrently.
-    pub async fn notify(&self, title: &str, message: &str) -> Vec<Result<(), AppError>> {
-        let futures: Vec<_> = self
-            .adapters
+    /// Send a notification to all adapters.
+    pub fn notify(&self, title: &str, message: &str) -> Vec<Result<(), AppError>> {
+        self.adapters
             .iter()
             .map(|a| a.send(title, message))
-            .collect();
-
-        futures::future::join_all(futures).await
+            .collect()
     }
 
     pub fn adapter_count(&self) -> usize {

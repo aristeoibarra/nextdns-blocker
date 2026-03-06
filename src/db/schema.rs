@@ -4,9 +4,16 @@
 /// The schema_migrations table is created in Database::migrate() bootstrap,
 /// so we skip re-creating it here and just run the rest of the schema.
 pub fn get_migrations() -> Vec<(i64, &'static str, &'static str)> {
-    vec![(
-        1,
-        "initial",
-        include_str!("../../migrations/001_initial.sql"),
-    )]
+    vec![
+        (
+            1,
+            "initial",
+            include_str!("../../migrations/001_initial.sql"),
+        ),
+        (
+            2,
+            "config_to_db",
+            include_str!("../../migrations/002_config_to_db.sql"),
+        ),
+    ]
 }

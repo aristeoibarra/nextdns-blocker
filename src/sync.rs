@@ -111,7 +111,7 @@ pub async fn execute_sync(
             let schedule = d.schedule.as_deref().and_then(|s| {
                 serde_json::from_str::<crate::config::types::Schedule>(s).ok()
             });
-            let parsed = schedule.as_ref().and_then(|s| crate::scheduler::parse_config_schedule(s));
+            let parsed = schedule.as_ref().and_then(crate::scheduler::parse_config_schedule);
             evaluator.should_block(parsed.as_ref())
         })
         .map(|d| d.domain.clone())

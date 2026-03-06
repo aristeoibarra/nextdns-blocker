@@ -4,7 +4,7 @@ use crate::error::AppError;
 
 /// Process all due pending actions.
 pub async fn process_pending(db: &Database, client: &NextDnsClient) -> Result<PendingResult, AppError> {
-    let actions = db.with_conn(|conn| crate::db::pending::get_due_pending(conn))?;
+    let actions = db.with_conn(crate::db::pending::get_due_pending)?;
 
     let mut executed = 0;
     let mut failed = 0;

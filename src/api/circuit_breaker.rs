@@ -48,8 +48,11 @@ impl CircuitBreaker {
     }
 
     /// Check if requests are allowed.
+    /// On poisoned mutex, defaults to blocking (fail-safe).
     pub fn allow_request(&self) -> bool {
-        let mut inner = self.inner.lock().expect("circuit breaker mutex poisoned");
+        let Ok(mut inner) = self.inner.lock() else {
+            return false;
+        };
         match inner.state {
             State::Closed => true,
             State::Open => {
@@ -70,29 +73,35 @@ impl CircuitBreaker {
 
     /// Record a successful request.
     pub fn record_success(&self) {
-        let mut inner = self.inner.lock().expect("circuit breaker mutex poisoned");
-        inner.failure_count = 0;
-        inner.state = State::Closed;
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.failure_count = 0;
+            inner.state = State::Closed;
+        }
     }
 
     /// Record a failed request.
     pub fn record_failure(&self) {
-        let mut inner = self.inner.lock().expect("circuit breaker mutex poisoned");
-        inner.failure_count += 1;
-        inner.last_failure = Some(Instant::now());
-        if inner.failure_count >= inner.threshold {
-            inner.state = State::Open;
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.failure_count += 1;
+            inner.last_failure = Some(Instant::now());
+            if inner.failure_count >= inner.threshold {
+                inner.state = State::Open;
+            }
         }
     }
 
     pub fn state(&self) -> State {
-        let inner = self.inner.lock().expect("circuit breaker mutex poisoned");
-        inner.state
+        self.inner
+            .lock()
+            .map(|inner| inner.state)
+            .unwrap_or(State::Open)
     }
 
     pub fn failure_count(&self) -> u32 {
-        let inner = self.inner.lock().expect("circuit breaker mutex poisoned");
-        inner.failure_count
+        self.inner
+            .lock()
+            .map(|inner| inner.failure_count)
+            .unwrap_or(0)
     }
 }
 

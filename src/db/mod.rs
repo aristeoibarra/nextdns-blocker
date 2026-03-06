@@ -51,9 +51,17 @@ impl Database {
         Ok(db)
     }
 
+    /// Acquire the database connection lock, converting poison errors.
+    fn lock_conn(&self) -> Result<std::sync::MutexGuard<'_, Connection>, AppError> {
+        self.conn.lock().map_err(|_| AppError::General {
+            message: "Database mutex poisoned — a previous operation panicked".to_string(),
+            hint: Some("Restart the application".to_string()),
+        })
+    }
+
     /// Configure SQLite pragmas.
     fn configure(&self) -> Result<(), AppError> {
-        let conn = self.conn.lock().expect("database mutex poisoned");
+        let conn = self.lock_conn()?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
@@ -65,7 +73,7 @@ impl Database {
 
     /// Run pending migrations.
     fn migrate(&self) -> Result<(), AppError> {
-        let conn = self.conn.lock().expect("database mutex poisoned");
+        let conn = self.lock_conn()?;
 
         // Bootstrap: create schema_migrations if it doesn't exist (can't be STRICT for bootstrap)
         conn.execute_batch(
@@ -103,7 +111,7 @@ impl Database {
     where
         F: FnOnce(&Connection) -> Result<T, rusqlite::Error>,
     {
-        let conn = self.conn.lock().expect("database mutex poisoned");
+        let conn = self.lock_conn()?;
         f(&conn).map_err(AppError::from)
     }
 
@@ -112,7 +120,7 @@ impl Database {
     where
         F: FnOnce(&Connection) -> Result<T, rusqlite::Error>,
     {
-        let conn = self.conn.lock().expect("database mutex poisoned");
+        let conn = self.lock_conn()?;
         f(&conn).map_err(AppError::from)
     }
 }

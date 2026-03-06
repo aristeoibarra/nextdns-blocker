@@ -19,8 +19,8 @@ pub fn handle(cmd: NextdnsCommands, format: ResolvedFormat) -> Result<ExitCode, 
 }
 
 fn handle_list(db: &Database, format: ResolvedFormat) -> Result<ExitCode, AppError> {
-    let categories = db.with_conn(|conn| crate::db::nextdns::list_nextdns_categories(conn))?;
-    let services = db.with_conn(|conn| crate::db::nextdns::list_nextdns_services(conn))?;
+    let categories = db.with_conn(crate::db::nextdns::list_nextdns_categories)?;
+    let services = db.with_conn(crate::db::nextdns::list_nextdns_services)?;
 
     let result = NextdnsListResult { categories, services };
     output::render(&result, format);

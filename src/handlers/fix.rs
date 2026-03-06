@@ -3,60 +3,37 @@ use crate::error::{AppError, ExitCode};
 use crate::output::{self, Renderable};
 use crate::types::ResolvedFormat;
 
-pub fn handle(args: FixArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
+pub fn handle(_args: FixArgs, format: ResolvedFormat) -> Result<ExitCode, AppError> {
     let db_path = crate::common::platform::db_path();
-    let config_path = crate::common::platform::config_path();
 
     let mut issues = Vec::new();
     let mut fixed = Vec::new();
 
-    // Check config exists
-    if !config_path.exists() {
-        issues.push("Config file missing".to_string());
-        if !args.check_only {
-            // Auto-fix: create default config
-            if let Some(parent) = config_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let default = crate::config::types::AppConfig {
-                version: "1.0".to_string(),
-                settings: crate::config::types::Settings::default(),
-                nextdns: crate::config::types::NextDnsConfig::default(),
-                categories: vec![], blocklist: vec![], allowlist: vec![],
-            };
-            std::fs::write(&config_path, serde_json::to_string_pretty(&default)?)?;
-            fixed.push("Created default config".to_string());
-        }
-    }
-
     // Check DB exists and is valid
     if !db_path.exists() {
         issues.push("Database file missing".to_string());
-        if !args.check_only {
+        if !_args.check_only {
             let _db = crate::db::Database::open(&db_path)?;
-            fixed.push("Created database".to_string());
+            fixed.push("Created database with defaults".to_string());
         }
     } else {
-        // Try to open and migrate
         match crate::db::Database::open(&db_path) {
-            Ok(_) => {}
-            Err(e) => {
-                issues.push(format!("Database error: {e}"));
-            }
-        }
-    }
-
-    // Validate config if it exists
-    if config_path.exists() {
-        match crate::config::load_config() {
-            Ok(config) => {
-                if let Err(AppError::Validation { details, .. }) = crate::config::validation::validate_config(&config) {
-                    for d in &details {
-                        issues.push(format!("{}: {}", d.field, d.reason));
+            Ok(db) => {
+                // Verify kv_config has required keys
+                for (key, default) in crate::db::config::KNOWN_KEYS {
+                    let val = db.with_conn(|conn| crate::db::config::get_value(conn, key))?;
+                    if val.is_none() {
+                        issues.push(format!("Missing config key: {key}"));
+                        if !_args.check_only {
+                            db.with_conn(|conn| crate::db::config::set_value(conn, key, default))?;
+                            fixed.push(format!("Set default for {key}"));
+                        }
                     }
                 }
             }
-            Err(e) => issues.push(format!("Config load error: {e}")),
+            Err(e) => {
+                issues.push(format!("Database error: {e}"));
+            }
         }
     }
 

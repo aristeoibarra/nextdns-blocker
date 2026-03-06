@@ -1,7 +1,7 @@
 [command]
 name = "init"
 binary_path = ["init"]
-description = "Initialize ndb configuration and database"
+description = "Initialize ndb database with default settings"
 requires_config = false
 requires_api = false
 requires_pin = false
@@ -10,7 +10,7 @@ requires_pin = false
 name = "--force"
 type = "bool"
 required = false
-description = "Force re-initialization (overwrites existing config)"
+description = "Force re-initialization (resets config defaults)"
 
 [output.success]
 schema = """
@@ -18,7 +18,6 @@ schema = """
   "ok": true,
   "command": "init",
   "data": {
-    "config_path": "/path/to/config.json",
     "db_path": "/path/to/ndb.db"
   },
   "summary": { "initialized": true },
@@ -31,7 +30,7 @@ schema = """
 {
   "ok": false,
   "command": "init",
-  "error": { "code": "conflict_error", "message": "Configuration already exists", "hint": "Use --force to overwrite" },
+  "error": { "code": "conflict_error", "message": "Database already exists", "hint": "Use --force to re-initialize defaults" },
   "exit_code": 6
 }
 """

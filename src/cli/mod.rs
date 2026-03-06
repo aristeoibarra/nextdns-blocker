@@ -13,8 +13,7 @@ pub mod sync;
 pub mod unblock;
 pub mod watchdog;
 
-use clap::{CommandFactory, Parser, Subcommand};
-use clap_complete::Shell;
+use clap::{Parser, Subcommand};
 
 use crate::types::OutputFormat;
 
@@ -33,10 +32,6 @@ pub struct Cli {
     /// Output format (auto, json, human)
     #[arg(long, global = true, default_value = "auto", env = "NDB_OUTPUT")]
     pub output: OutputFormat,
-
-    /// Enable verbose/debug output
-    #[arg(long, short, global = true)]
-    pub verbose: bool,
 }
 
 #[derive(Subcommand)]
@@ -91,15 +86,4 @@ pub enum Commands {
     /// Introspect command schemas and output formats
     #[command(subcommand)]
     Schema(schema::SchemaCommands),
-
-    /// Generate shell completions
-    Completions {
-        /// Shell to generate completions for
-        #[arg(value_enum)]
-        shell: Shell,
-    },
-}
-
-pub fn generate_completions(shell: Shell) {
-    clap_complete::generate(shell, &mut Cli::command(), "ndb", &mut std::io::stdout());
 }

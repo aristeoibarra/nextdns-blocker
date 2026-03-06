@@ -37,8 +37,11 @@ impl RateLimiter {
     }
 
     /// Check if a request is allowed. If yes, records it.
+    /// On poisoned mutex, defaults to rejecting (fail-safe).
     pub fn try_acquire(&self) -> bool {
-        let mut inner = self.inner.lock().expect("rate limiter mutex poisoned");
+        let Ok(mut inner) = self.inner.lock() else {
+            return false;
+        };
         let now = Instant::now();
         let cutoff = now - inner.window;
 
@@ -61,7 +64,9 @@ impl RateLimiter {
 
     /// Time until next request is allowed.
     pub fn wait_duration(&self) -> Option<Duration> {
-        let inner = self.inner.lock().expect("rate limiter mutex poisoned");
+        let Ok(inner) = self.inner.lock() else {
+            return Some(Duration::from_secs(1));
+        };
         let now = Instant::now();
 
         if inner.timestamps.len() < inner.max_requests as usize {

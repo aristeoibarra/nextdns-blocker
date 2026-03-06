@@ -1,5 +1,3 @@
-use async_trait::async_trait;
-
 use super::NotificationAdapter;
 use crate::error::AppError;
 
@@ -11,27 +9,21 @@ impl MacosAdapter {
     }
 }
 
-#[async_trait]
 impl NotificationAdapter for MacosAdapter {
     fn name(&self) -> &str {
         "macos"
     }
 
-    async fn send(&self, title: &str, message: &str) -> Result<(), AppError> {
-        if !cfg!(target_os = "macos") {
-            return Ok(());
-        }
-
+    fn send(&self, title: &str, message: &str) -> Result<(), AppError> {
         let script = format!(
             "display notification \"{}\" with title \"{}\"",
             message.replace('\"', "\\\""),
             title.replace('\"', "\\\""),
         );
 
-        tokio::process::Command::new("osascript")
+        std::process::Command::new("osascript")
             .args(["-e", &script])
             .output()
-            .await
             .map_err(|e| AppError::General {
                 message: format!("Failed to send macOS notification: {e}"),
                 hint: None,

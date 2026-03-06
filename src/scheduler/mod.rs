@@ -62,7 +62,7 @@ impl ScheduleEvaluator {
                 continue;
             }
             for range in &block.time_ranges {
-                if is_time_in_range(current_time, &range) {
+                if is_time_in_range(current_time, range) {
                     return true;
                 }
             }
