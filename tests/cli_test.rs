@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;

@@ -3,6 +3,8 @@
 //! Reads TOML spec files from `specs/` and auto-generates contract tests that
 //! verify the binary's behavior matches the declared contracts.
 
+#![allow(deprecated, dead_code)]
+
 use assert_cmd::Command;
 use serde::Deserialize;
 use serde_json::Value;

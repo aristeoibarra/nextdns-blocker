@@ -1,24 +1,10 @@
 use clap::Parser;
 
-mod api;
-mod cli;
-mod common;
-mod config;
-mod db;
-mod error;
-mod handlers;
-mod notifications;
-mod output;
-mod pending;
-mod protection;
-mod retry;
-mod scheduler;
-mod sync;
-mod types;
-mod watchdog;
-
-use cli::{Cli, Commands, generate_completions};
-use error::ExitCode;
+use nextdns_blocker::cli::{Cli, Commands, generate_completions};
+use nextdns_blocker::error::ExitCode;
+use nextdns_blocker::handlers;
+use nextdns_blocker::output;
+use nextdns_blocker::types::ResolvedFormat;
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
@@ -49,7 +35,7 @@ async fn main() -> std::process::ExitCode {
     }
 }
 
-async fn run(command: Commands, format: types::ResolvedFormat) -> Result<ExitCode, error::AppError> {
+async fn run(command: Commands, format: ResolvedFormat) -> Result<ExitCode, nextdns_blocker::error::AppError> {
     match command {
         Commands::Init(args) => handlers::init::handle(args, format).await,
         Commands::Status(args) => handlers::status::handle(args, format),
