@@ -63,6 +63,8 @@ Thumbs.db
 
 # Claude Code (local settings)
 .claude/
+.agents/
+skills-lock.json
 CLAUDE.md
 
 # Documentation (Astro/Starlight)

@@ -45,6 +45,13 @@ class TestDatabaseConnection:
         enabled = cursor.fetchone()[0]
         assert enabled == 1
 
+    def test_connection_has_busy_timeout(self):
+        """Should have busy_timeout set to 5000ms."""
+        conn = db.get_connection()
+        cursor = conn.execute("PRAGMA busy_timeout")
+        timeout = cursor.fetchone()[0]
+        assert timeout == 5000
+
     def test_close_connection(self):
         """Should close the thread-local connection."""
         _ = db.get_connection()
@@ -100,6 +107,42 @@ class TestSchemaManagement:
         db.init_database()
         db.init_database()
         # Should not raise any errors
+
+    def test_schema_migrations_table_exists(self, use_temp_database):
+        """Should create schema_migrations table."""
+        db.init_database()
+        conn = db.get_connection()
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_schema_version_is_tracked(self, use_temp_database):
+        """Should track the current schema version."""
+        db.init_database()
+        conn = db.get_connection()
+        cursor = conn.execute("SELECT MAX(version) FROM schema_migrations")
+        version = cursor.fetchone()[0]
+        assert version == db.SCHEMA_VERSION
+
+    def test_migration_backward_compatible_with_legacy_db(self, use_temp_database):
+        """Legacy DBs without schema_migrations should be upgraded."""
+        # Simulate a legacy DB: create tables directly without migrations
+        conn = db.get_connection()
+        conn.executescript(db._SCHEMA_V1_SQL)
+        conn.commit()
+
+        # Verify no schema_migrations table yet
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
+        )
+        assert cursor.fetchone() is None
+
+        # Now run init_database — should detect legacy and upgrade
+        db.init_database()
+        cursor = conn.execute("SELECT MAX(version) FROM schema_migrations")
+        version = cursor.fetchone()[0]
+        assert version == db.SCHEMA_VERSION
 
 
 class TestConfigOperations:
@@ -881,3 +924,128 @@ class TestTransaction:
             pass
 
         assert db.is_domain_blocked("rollback.com") is False
+
+
+class TestSQLInjectionSafety:
+    """Tests to verify SQL injection attempts are safely handled."""
+
+    @pytest.fixture(autouse=True)
+    def use_temp_database(self, tmp_path: Path):
+        """Use a temporary database for each test."""
+        test_db_path = tmp_path / "test.db"
+
+        with patch.object(db, "get_db_path", return_value=test_db_path):
+            if hasattr(db._local, "connection"):
+                db._local.connection = None
+            db.init_database()
+            yield
+            db.close_connection()
+
+    def test_blocked_domain_sql_injection(self):
+        """SQL injection in blocked domain name should be treated as literal text."""
+        malicious = "'; DROP TABLE blocked_domains; --"
+        db.add_blocked_domain(malicious)
+        domain = db.get_blocked_domain(malicious)
+        assert domain is not None
+        assert domain["domain"] == malicious
+
+    def test_allowed_domain_sql_injection(self):
+        """SQL injection in allowed domain name should be treated as literal text."""
+        malicious = "'; DROP TABLE allowed_domains; --"
+        db.add_allowed_domain(malicious)
+        domain = db.get_allowed_domain(malicious)
+        assert domain is not None
+        assert domain["domain"] == malicious
+
+    def test_config_key_sql_injection(self):
+        """SQL injection in config key should be treated as literal text."""
+        malicious_key = "'; DROP TABLE config; --"
+        db.set_config(malicious_key, "value")
+        result = db.get_config(malicious_key)
+        assert result == "value"
+
+    def test_config_value_sql_injection(self):
+        """SQL injection in config value should be treated as literal text."""
+        malicious_value = "'; DROP TABLE config; --"
+        db.set_config("test_key", malicious_value)
+        result = db.get_config("test_key")
+        assert result == malicious_value
+
+    def test_category_sql_injection(self):
+        """SQL injection in category id should be treated as literal text."""
+        malicious = "'; DROP TABLE categories; --"
+        db.add_category(malicious, domains=["safe.com"])
+        category = db.get_category(malicious)
+        assert category is not None
+        assert category["id"] == malicious
+
+    def test_audit_log_sql_injection(self):
+        """SQL injection in audit log fields should be treated as literal text."""
+        malicious = "'; DROP TABLE audit_log; --"
+        row_id = db.add_audit_log(malicious, domain=malicious)
+        assert row_id > 0
+        logs = db.get_audit_logs(event_type=malicious)
+        assert len(logs) == 1
+        assert logs[0]["event_type"] == malicious
+
+    def test_schedule_sql_injection(self):
+        """SQL injection in schedule name should be treated as literal text."""
+        malicious = "'; DROP TABLE schedules; --"
+        db.add_schedule(malicious, {"hours": ["09:00-17:00"]})
+        schedule = db.get_schedule(malicious)
+        assert schedule is not None
+
+    def test_execute_query_parameterized(self):
+        """execute_query should use parameterized queries safely."""
+        db.add_blocked_domain("safe.com")
+        malicious_param = "' OR '1'='1"
+        results = db.execute_query(
+            "SELECT domain FROM blocked_domains WHERE domain = ?",
+            (malicious_param,),
+        )
+        assert len(results) == 0
+
+    def test_tables_intact_after_injection_attempts(self):
+        """All tables should still exist after SQL injection attempts."""
+        # Run several injection attempts
+        injections = [
+            "'; DROP TABLE blocked_domains; --",
+            "'; DROP TABLE config; --",
+            "'; DROP TABLE categories; --",
+        ]
+        for payload in injections:
+            db.add_blocked_domain(payload)
+            db.set_config(payload, "test")
+            db.add_category(payload, domains=["x.com"])
+
+        # Verify all critical tables still exist
+        conn = db.get_connection()
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tables = {row[0] for row in cursor}
+        expected = {
+            "blocked_domains",
+            "config",
+            "categories",
+            "allowed_domains",
+            "audit_log",
+            "schedules",
+        }
+        assert expected.issubset(tables)
+
+    def test_domain_with_union_select_injection(self):
+        """UNION SELECT injection should be treated as literal domain name."""
+        malicious = "x.com' UNION SELECT sql FROM sqlite_master--"
+        db.add_blocked_domain(malicious)
+        assert db.is_domain_blocked(malicious) is True
+        # Original safe domain should not exist
+        assert db.is_domain_blocked("x.com") is False
+
+    def test_remove_with_sql_injection(self):
+        """SQL injection in remove operations should be safely handled."""
+        malicious = "'; DELETE FROM blocked_domains; --"
+        db.add_blocked_domain("safe.com")
+        db.add_blocked_domain(malicious)
+        # Removing the malicious domain should only remove that specific entry
+        db.remove_blocked_domain(malicious)
+        assert db.is_domain_blocked("safe.com") is True
+        assert db.is_domain_blocked(malicious) is False

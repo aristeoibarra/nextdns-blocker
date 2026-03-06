@@ -44,7 +44,9 @@ def get_db_path() -> Path:
 # DATABASE SCHEMA
 # =============================================================================
 
-SCHEMA_SQL = """
+SCHEMA_VERSION = 1
+
+_SCHEMA_V1_SQL = """
 -- Configuration as key-value with JSON support
 CREATE TABLE IF NOT EXISTS config (
     key TEXT PRIMARY KEY,
@@ -204,6 +206,16 @@ CREATE TABLE IF NOT EXISTS pin_protection (
 );
 """
 
+# Backward-compatible alias
+SCHEMA_SQL = _SCHEMA_V1_SQL
+
+_MIGRATIONS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 
 # =============================================================================
 # CONNECTION MANAGEMENT
@@ -225,12 +237,15 @@ def get_connection() -> sqlite3.Connection:
         conn.row_factory = sqlite3.Row  # Enable dict-like row access
 
         # Enable WAL mode for better concurrency
-        conn.execute("PRAGMA journal_mode=WAL")
+        result = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        if result is None or result[0].lower() != "wal":
+            logger.warning("Failed to enable WAL mode, got: %s", result)
         # Enable foreign keys
         conn.execute("PRAGMA foreign_keys=ON")
         # Optimize for performance
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+        conn.execute("PRAGMA busy_timeout=5000")
 
         # Set secure file permissions (owner read/write only) on Unix
         if os.name != "nt":
@@ -248,24 +263,31 @@ def get_connection() -> sqlite3.Connection:
 def close_connection() -> None:
     """Close the thread-local database connection."""
     if hasattr(_local, "connection") and _local.connection is not None:
-        _local.connection.close()
+        conn = _local.connection
         _local.connection = None
-
-
-_cleanup_registered = False
-
-
-def _register_cleanup() -> None:
-    """Register atexit handler for closing all database connections (once)."""
-    global _cleanup_registered
-    if not _cleanup_registered:
-        atexit.register(close_all_connections)
-        _cleanup_registered = True
+        with _all_connections_lock:
+            with contextlib.suppress(ValueError):
+                _all_connections.remove(conn)
+        conn.close()
 
 
 # Track all connections for cleanup
 _all_connections: list[sqlite3.Connection] = []
 _all_connections_lock = threading.Lock()
+
+_cleanup_registered = False
+_cleanup_lock = threading.Lock()
+
+
+def _register_cleanup() -> None:
+    """Register atexit handler for closing all database connections (once)."""
+    global _cleanup_registered
+    if _cleanup_registered:
+        return
+    with _cleanup_lock:
+        if not _cleanup_registered:
+            atexit.register(close_all_connections)
+            _cleanup_registered = True
 
 
 def close_all_connections() -> None:
@@ -303,15 +325,51 @@ def transaction() -> Iterator[sqlite3.Connection]:
 # =============================================================================
 
 
+def _get_current_version(conn: sqlite3.Connection) -> int:
+    """Get the current schema version from the database.
+
+    Returns 0 if schema_migrations table doesn't exist (legacy DB or fresh DB).
+    """
+    try:
+        cursor = conn.execute("SELECT MAX(version) FROM schema_migrations")
+        row = cursor.fetchone()
+        return row[0] if row[0] is not None else 0
+    except sqlite3.OperationalError:
+        return 0
+
+
+def _apply_migration_v1(conn: sqlite3.Connection) -> None:
+    """Apply migration v1: initial schema."""
+    conn.executescript(_SCHEMA_V1_SQL)
+    conn.execute("INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)", (1,))
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Run all pending migrations in order."""
+    conn.executescript(_MIGRATIONS_TABLE_SQL)
+    current = _get_current_version(conn)
+
+    migrations = {
+        1: _apply_migration_v1,
+    }
+
+    for version in sorted(migrations):
+        if version > current:
+            logger.debug("Applying migration v%d", version)
+            migrations[version](conn)
+
+    conn.commit()
+
+
 def init_database() -> None:
     """Initialize the database schema.
 
-    Uses CREATE TABLE IF NOT EXISTS, so it's safe to call multiple times.
-    New tables are added automatically. For column changes, delete the DB.
+    Uses a migration system to track and apply schema changes.
+    Safe to call multiple times. Legacy databases without schema_migrations
+    are detected and upgraded automatically.
     """
     conn = get_connection()
-    conn.executescript(SCHEMA_SQL)
-    conn.commit()
+    _run_migrations(conn)
     logger.debug("Database schema initialized")
 
     # Auto-vacuum if needed
@@ -1550,17 +1608,20 @@ def save_full_config_dict(config: dict[str, Any]) -> None:
         set_config("migrated", True, _conn=conn)
 
 
+_DOMAIN_CHECK_QUERIES = {
+    "blocked_domains": "SELECT 1 FROM blocked_domains LIMIT 1",
+    "categories": "SELECT 1 FROM categories LIMIT 1",
+    "allowed_domains": "SELECT 1 FROM allowed_domains LIMIT 1",
+}
+
+
 def config_has_domains() -> bool:
     """Return True if the database has domain config (blocklist, categories, or allowlist)."""
     if get_config("migrated") is not None:
         return True
     conn = get_connection()
-    for table, _col in (
-        ("blocked_domains", "domain"),
-        ("categories", "id"),
-        ("allowed_domains", "domain"),
-    ):
-        cursor = conn.execute(f"SELECT 1 FROM {table} LIMIT 1")  # nosec B608
+    for query in _DOMAIN_CHECK_QUERIES.values():
+        cursor = conn.execute(query)
         if cursor.fetchone() is not None:
             return True
     return False
