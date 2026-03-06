@@ -34,7 +34,7 @@ Binary is `ndb` (not `nextdns-blocker`). Edition 2024, rust-version 1.85.
 main.rs → Cli::parse() → run(command) → handlers::<cmd>::handle(args) → output::render()
 ```
 
-16 top-level commands: init, status, sync, block, unblock, fix, apps, denylist, allowlist, category, nextdns, config, pending, audit, watchdog, schema.
+17 top-level commands: init, status, sync, block, unblock, fix, apps, denylist, allowlist, category, nextdns, config, pending, audit, watchdog, hosts, schema.
 
 Everything is sync — no async/await anywhere. Every handler returns `Result<ExitCode, AppError>`. On success, it constructs a struct implementing `Renderable` and calls `output::render()`. On error, `main.rs` catches it and calls `output::render_error()`.
 
@@ -54,7 +54,7 @@ The `Renderable` trait has only two methods: `command_name()` and `to_json()`. N
 
 ### Database Layer
 
-`db::Database` wraps `rusqlite::Connection` in `Mutex`. Access via `db.with_conn(|conn| { ... })` or `db.with_transaction(|conn| { ... })` for atomic multi-write operations. All tables use SQLite STRICT mode. Migrations in `src/db/schema.rs` via `include_str!()` from `migrations/` (4 migration files). WAL mode enabled.
+`db::Database` wraps `rusqlite::Connection` in `Mutex`. Access via `db.with_conn(|conn| { ... })` or `db.with_transaction(|conn| { ... })` for atomic multi-write operations. All tables use SQLite STRICT mode. Migrations in `src/db/schema.rs` via `include_str!()` from `migrations/` (6 migration files). WAL mode enabled.
 
 ### Config System
 
@@ -73,6 +73,10 @@ The `Renderable` trait has only two methods: `command_name()` and `to_json()`. N
 ### App Blocker
 
 `app_blocker` module handles local macOS app blocking alongside DNS blocking. When `ndb block whatsapp.com` runs, it also blocks the WhatsApp.app locally (rename `.app` to `.app.blocked` + `killall`). Uses `mdfind` (Spotlight) for app discovery. Known domain-to-bundle-ID mappings in `app_blocker::mappings::KNOWN_MAPPINGS`. DB tables: `app_mappings` (domain↔bundle_id), `blocked_apps` (rename state). `ndb apps scan` auto-populates mappings. Watchdog `run` calls `enforce_blocked_apps()` to kill blocked apps that reappear.
+
+### Hosts Blocker
+
+`hosts_blocker` module is the 3rd blocking layer (DNS + apps + hosts). Writes domains to `/etc/hosts` as `0.0.0.0 domain.com` inside `# ndb-start` / `# ndb-end` markers. Uses `sudo -n cp` for atomic writes and auto-flushes DNS cache (`dscacheutil` + `mDNSResponder`). Requires `ndb hosts setup` first for passwordless sudo. DB table: `hosts_entries`. Watchdog calls `enforce_hosts_entries()` to maintain state. `api.nextdns.io` is a protected domain that is never blocked in hosts.
 
 ### Notifications
 
