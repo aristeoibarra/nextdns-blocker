@@ -59,11 +59,20 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         }
     }
 
+    // Block mapped apps for newly added domains
+    let apps_blocked = crate::app_blocker::block_apps_for_domains(&db, &added).unwrap_or_default();
+    for app in &apps_blocked {
+        let _ = db.with_conn(|conn| {
+            crate::db::audit::log_action(conn, "block_app", "app", &app.bundle_id, Some(&app.app_name))
+        });
+    }
+
     let result = BlockResult {
         added, skipped,
         errors: errors.iter().map(|(d, r)| format!("{d}: {r}")).collect(),
         duration: args.duration,
         pending_id, watchdog_warning,
+        apps_blocked,
     };
     output::render(&result);
     Ok(ExitCode::Success)
@@ -76,6 +85,7 @@ struct BlockResult {
     duration: Option<String>,
     pending_id: Option<String>,
     watchdog_warning: Option<String>,
+    apps_blocked: Vec<crate::app_blocker::AppBlockResult>,
 }
 
 impl Renderable for BlockResult {
@@ -86,8 +96,12 @@ impl Renderable for BlockResult {
                 "added": self.added, "skipped": self.skipped, "errors": self.errors,
                 "duration": self.duration, "pending_id": self.pending_id,
                 "watchdog_warning": self.watchdog_warning,
+                "apps_blocked": self.apps_blocked,
             },
-            "summary": { "added": self.added.len(), "skipped": self.skipped.len(), "errors": self.errors.len() }
+            "summary": {
+                "added": self.added.len(), "skipped": self.skipped.len(),
+                "errors": self.errors.len(), "apps_blocked": self.apps_blocked.len(),
+            }
         })
     }
 }

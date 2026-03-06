@@ -159,3 +159,24 @@ pub struct AuditEntry {
     pub timestamp: i64,
 }
 
+/// Domain-to-app mapping entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppMapping {
+    pub domain: String,
+    pub bundle_id: String,
+    pub app_name: String,
+    pub auto: bool,
+    pub created_at: i64,
+}
+
+/// Currently blocked app entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockedApp {
+    pub bundle_id: String,
+    pub app_name: String,
+    pub original_path: String,
+    pub blocked_path: String,
+    pub source_domain: Option<String>,
+    pub blocked_at: i64,
+}
+

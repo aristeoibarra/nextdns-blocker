@@ -1,4 +1,5 @@
 pub mod allowlist;
+pub mod apps;
 pub mod audit;
 pub mod block;
 pub mod category;
@@ -48,6 +49,10 @@ pub enum Commands {
 
     /// Diagnose and fix common issues
     Fix(fix::FixArgs),
+
+    /// Manage app mappings and local app blocking
+    #[command(subcommand)]
+    Apps(apps::AppsCommands),
 
     /// Manage the denylist (blocked domains)
     #[command(subcommand)]

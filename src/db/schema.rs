@@ -20,5 +20,10 @@ pub fn get_migrations() -> Vec<(i64, &'static str, &'static str)> {
             "remove_protection",
             include_str!("../../migrations/003_remove_protection.sql"),
         ),
+        (
+            4,
+            "app_blocking",
+            include_str!("../../migrations/004_app_blocking.sql"),
+        ),
     ]
 }

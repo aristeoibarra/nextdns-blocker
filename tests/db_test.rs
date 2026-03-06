@@ -1,4 +1,5 @@
 use nextdns_blocker::common::time::now_unix;
+use nextdns_blocker::db::apps;
 use nextdns_blocker::db::audit;
 use nextdns_blocker::db::categories;
 use nextdns_blocker::db::domains;
@@ -437,7 +438,113 @@ fn test_nextdns_services() {
 }
 
 // ---------------------------------------------------------------------------
-// 12. Blocked domain deactivate / activate
+// 12. App mappings CRUD
+// ---------------------------------------------------------------------------
+#[test]
+fn test_app_mapping_crud() {
+    let db = setup_db();
+
+    db.with_conn(|conn| {
+        // Initially empty
+        assert!(apps::list_mappings(conn)?.is_empty());
+
+        // Add mapping
+        apps::add_mapping(conn, "whatsapp.com", "net.whatsapp.WhatsApp", "WhatsApp", false)?;
+        apps::add_mapping(conn, "discord.com", "com.hnc.Discord", "Discord", true)?;
+
+        let list = apps::list_mappings(conn)?;
+        assert_eq!(list.len(), 2);
+
+        // Get by domain
+        let wa = apps::get_mappings_for_domain(conn, "whatsapp.com")?;
+        assert_eq!(wa.len(), 1);
+        assert_eq!(wa[0].bundle_id, "net.whatsapp.WhatsApp");
+        assert_eq!(wa[0].app_name, "WhatsApp");
+        assert!(!wa[0].auto);
+
+        // Get by bundle
+        let dc = apps::get_mappings_for_bundle(conn, "com.hnc.Discord")?;
+        assert_eq!(dc.len(), 1);
+        assert_eq!(dc[0].domain, "discord.com");
+        assert!(dc[0].auto);
+
+        // Upsert (update app_name)
+        apps::add_mapping(conn, "whatsapp.com", "net.whatsapp.WhatsApp", "WhatsApp Desktop", true)?;
+        let wa = apps::get_mappings_for_domain(conn, "whatsapp.com")?;
+        assert_eq!(wa[0].app_name, "WhatsApp Desktop");
+        assert!(wa[0].auto);
+
+        // Remove
+        let removed = apps::remove_mapping(conn, "discord.com", "com.hnc.Discord")?;
+        assert!(removed);
+        assert_eq!(apps::list_mappings(conn)?.len(), 1);
+
+        // Remove non-existent
+        let removed = apps::remove_mapping(conn, "discord.com", "com.hnc.Discord")?;
+        assert!(!removed);
+
+        Ok(())
+    })
+    .expect("app mapping CRUD failed");
+}
+
+// ---------------------------------------------------------------------------
+// 13. Blocked apps CRUD
+// ---------------------------------------------------------------------------
+#[test]
+fn test_blocked_app_crud() {
+    let db = setup_db();
+
+    db.with_conn(|conn| {
+        // Initially empty
+        assert!(apps::list_blocked_apps(conn)?.is_empty());
+
+        // Add blocked app
+        apps::add_blocked_app(
+            conn,
+            "net.whatsapp.WhatsApp",
+            "WhatsApp",
+            "/Applications/WhatsApp.app",
+            "/Applications/WhatsApp.app.blocked",
+            Some("whatsapp.com"),
+        )?;
+
+        let list = apps::list_blocked_apps(conn)?;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].bundle_id, "net.whatsapp.WhatsApp");
+        assert_eq!(list[0].app_name, "WhatsApp");
+        assert_eq!(list[0].original_path, "/Applications/WhatsApp.app");
+        assert_eq!(list[0].blocked_path, "/Applications/WhatsApp.app.blocked");
+        assert_eq!(list[0].source_domain.as_deref(), Some("whatsapp.com"));
+
+        // Get by bundle
+        let app = apps::get_blocked_app(conn, "net.whatsapp.WhatsApp")?;
+        assert!(app.is_some());
+
+        // Get by domain
+        let by_domain = apps::get_blocked_apps_for_domain(conn, "whatsapp.com")?;
+        assert_eq!(by_domain.len(), 1);
+
+        // Get non-existent domain
+        let empty = apps::get_blocked_apps_for_domain(conn, "other.com")?;
+        assert!(empty.is_empty());
+
+        // Remove
+        let removed = apps::remove_blocked_app(conn, "net.whatsapp.WhatsApp")?;
+        assert!(removed);
+        assert!(apps::list_blocked_apps(conn)?.is_empty());
+
+        // Remove non-existent
+        let removed = apps::remove_blocked_app(conn, "net.whatsapp.WhatsApp")?;
+        assert!(!removed);
+
+        Ok(())
+    })
+    .expect("blocked app CRUD failed");
+}
+
+// ---------------------------------------------------------------------------
+// 14. Blocked domain deactivate / activate
 // ---------------------------------------------------------------------------
 #[test]
 fn test_blocked_domain_deactivate_activate() {

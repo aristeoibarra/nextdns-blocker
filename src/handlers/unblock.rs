@@ -16,6 +16,18 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
+    // Unblock mapped apps for this domain
+    let apps_unblocked = if is_domain {
+        crate::app_blocker::unblock_apps_for_domain(&db, &args.target).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    for app in &apps_unblocked {
+        let _ = db.with_conn(|conn| {
+            crate::db::audit::log_action(conn, "unblock_app", "app", &app.bundle_id, Some(&app.app_name))
+        });
+    }
+
     if let Some(ref dur_str) = args.duration {
         let duration = crate::common::time::parse_duration(dur_str)?;
         let execute_at = crate::common::time::now_unix() + duration.as_secs() as i64;
@@ -38,7 +50,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
             }
         }
 
-        let result = UnblockResult { target: args.target, duration: Some(dur_str.clone()), pending_id: Some(id), watchdog_warning };
+        let result = UnblockResult { target: args.target, duration: Some(dur_str.clone()), pending_id: Some(id), watchdog_warning, apps_unblocked };
         output::render(&result);
     } else {
         if is_domain {
@@ -46,20 +58,30 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         }
         db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", if is_domain { "domain" } else { "category" }, &args.target, None))?;
 
-        let result = UnblockResult { target: args.target, duration: None, pending_id: None, watchdog_warning: None };
+        let result = UnblockResult { target: args.target, duration: None, pending_id: None, watchdog_warning: None, apps_unblocked };
         output::render(&result);
     }
 
     Ok(ExitCode::Success)
 }
 
-struct UnblockResult { target: String, duration: Option<String>, pending_id: Option<String>, watchdog_warning: Option<String> }
+struct UnblockResult {
+    target: String,
+    duration: Option<String>,
+    pending_id: Option<String>,
+    watchdog_warning: Option<String>,
+    apps_unblocked: Vec<crate::app_blocker::AppUnblockResult>,
+}
 impl Renderable for UnblockResult {
     fn command_name(&self) -> &str { "unblock" }
     fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "data": { "target": self.target, "duration": self.duration, "pending_id": self.pending_id, "watchdog_warning": self.watchdog_warning },
-            "summary": { "unblocked": 1 }
+            "data": {
+                "target": self.target, "duration": self.duration,
+                "pending_id": self.pending_id, "watchdog_warning": self.watchdog_warning,
+                "apps_unblocked": self.apps_unblocked,
+            },
+            "summary": { "unblocked": 1, "apps_unblocked": self.apps_unblocked.len() }
         })
     }
 }

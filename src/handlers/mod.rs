@@ -1,4 +1,5 @@
 pub mod allowlist;
+pub mod apps;
 pub mod audit;
 pub mod block;
 pub mod category;

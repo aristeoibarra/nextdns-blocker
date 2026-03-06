@@ -168,6 +168,7 @@ fn all_subcommands_have_help() {
         "block",
         "unblock",
         "fix",
+        "apps",
         "denylist",
         "allowlist",
         "category",

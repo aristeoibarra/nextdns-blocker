@@ -28,6 +28,7 @@ fn run(command: Commands) -> Result<ExitCode, nextdns_blocker::error::AppError> 
         Commands::Block(args) => handlers::block::handle(args),
         Commands::Unblock(args) => handlers::unblock::handle(args),
         Commands::Fix(args) => handlers::fix::handle(args),
+        Commands::Apps(cmd) => handlers::apps::handle(cmd),
         Commands::Denylist(cmd) => handlers::denylist::handle(cmd),
         Commands::Allowlist(cmd) => handlers::allowlist::handle(cmd),
         Commands::Category(cmd) => handlers::category::handle(cmd),
