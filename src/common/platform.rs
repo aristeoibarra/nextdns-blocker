@@ -13,3 +13,11 @@ pub fn data_dir() -> std::path::PathBuf {
 pub fn db_path() -> std::path::PathBuf {
     data_dir().join("ndb.db")
 }
+
+/// Flush the macOS DNS cache so blocking changes take effect immediately.
+/// Runs `dscacheutil -flushcache` (works without sudo on modern macOS).
+pub fn flush_dns_cache() {
+    let _ = std::process::Command::new("dscacheutil")
+        .arg("-flushcache")
+        .output();
+}

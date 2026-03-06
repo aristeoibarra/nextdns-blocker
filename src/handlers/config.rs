@@ -9,6 +9,7 @@ pub fn handle(cmd: ConfigCommands) -> Result<ExitCode, AppError> {
         ConfigCommands::SetSecret(args) => handle_set_secret(args),
         ConfigCommands::RemoveSecret(args) => handle_remove_secret(args),
         ConfigCommands::Validate(_) => handle_validate(),
+        ConfigCommands::TestNotification(_) => handle_test_notification(),
     }
 }
 
@@ -151,6 +152,24 @@ fn handle_remove_secret(args: ConfigRemoveSecretArgs) -> Result<ExitCode, AppErr
     let result = ConfigResult {
         command: "config remove-secret",
         data: serde_json::json!({ "name": args.name, "removed": true }),
+    };
+    output::render(&result);
+    Ok(ExitCode::Success)
+}
+
+fn handle_test_notification() -> Result<ExitCode, AppError> {
+    let db = crate::db::Database::open(&crate::common::platform::db_path())?;
+    let sound = db.with_conn(crate::db::config::get_notification_sound)?;
+
+    let notifier = crate::notifications::macos::MacosAdapter::new();
+    let notification = crate::notifications::Notification::new("ndb", "Test notification working")
+        .subtitle("Configuration test")
+        .sound(&sound);
+    crate::notifications::NotificationAdapter::send(&notifier, &notification)?;
+
+    let result = ConfigResult {
+        command: "config test-notification",
+        data: serde_json::json!({ "sent": true, "sound": sound }),
     };
     output::render(&result);
     Ok(ExitCode::Success)

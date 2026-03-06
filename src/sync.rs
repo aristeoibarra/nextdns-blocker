@@ -74,6 +74,7 @@ impl Renderable for SyncResult {
 /// Immediately push denylist changes to NextDNS.
 /// On success, updates `in_nextdns`. On failure, silently enqueues retry.
 pub fn eager_push_denylist(db: &Database, client: &NextDnsClient, domains: &[String], add: bool) {
+    let mut changed = false;
     for domain in domains {
         let result = if add {
             client.add_to_denylist(domain)
@@ -82,6 +83,7 @@ pub fn eager_push_denylist(db: &Database, client: &NextDnsClient, domains: &[Str
         };
         match result {
             Ok(()) => {
+                changed = true;
                 if add {
                     let _ = db.with_conn(|conn| {
                         crate::db::domains::set_in_nextdns_blocked(conn, domain, true)
@@ -91,11 +93,15 @@ pub fn eager_push_denylist(db: &Database, client: &NextDnsClient, domains: &[Str
             Err(_) => enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "denylist"),
         }
     }
+    if changed {
+        crate::common::platform::flush_dns_cache();
+    }
 }
 
 /// Immediately push allowlist changes to NextDNS.
 /// On success, updates `in_nextdns`. On failure, silently enqueues retry.
 pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[String], add: bool) {
+    let mut changed = false;
     for domain in domains {
         let result = if add {
             client.add_to_allowlist(domain)
@@ -104,6 +110,7 @@ pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[St
         };
         match result {
             Ok(()) => {
+                changed = true;
                 if add {
                     let _ = db.with_conn(|conn| {
                         crate::db::domains::set_in_nextdns_allowed(conn, domain, true)
@@ -113,18 +120,25 @@ pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[St
             Err(_) => enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "allowlist"),
         }
     }
+    if changed {
+        crate::common::platform::flush_dns_cache();
+    }
 }
 
 /// Immediately push a parental control category change. On failure, enqueues retry.
 pub fn eager_push_category(db: &Database, client: &NextDnsClient, id: &str, add: bool) {
-    if client.set_parental_category(id, add).is_err() {
+    if client.set_parental_category(id, add).is_ok() {
+        crate::common::platform::flush_dns_cache();
+    } else {
         enqueue_retry(db, if add { "add" } else { "remove" }, Some(id), "category");
     }
 }
 
 /// Immediately push a parental control service change. On failure, enqueues retry.
 pub fn eager_push_service(db: &Database, client: &NextDnsClient, id: &str, add: bool) {
-    if client.set_parental_service(id, add).is_err() {
+    if client.set_parental_service(id, add).is_ok() {
+        crate::common::platform::flush_dns_cache();
+    } else {
         enqueue_retry(db, if add { "add" } else { "remove" }, Some(id), "service");
     }
 }
@@ -190,6 +204,10 @@ pub fn execute_schedule_sync(
             }
         }
         // State is already correct — no API call needed
+    }
+
+    if !added.is_empty() || !removed.is_empty() {
+        crate::common::platform::flush_dns_cache();
     }
 
     Ok(ScheduleSyncResult { added, removed, errors })
@@ -378,6 +396,15 @@ pub fn execute_drift_sync(
                 )
             });
         }
+    }
+
+    let had_changes = !denylist_added.is_empty() || !denylist_removed.is_empty()
+        || !allowlist_added.is_empty() || !allowlist_removed.is_empty()
+        || !cat_added.is_empty() || !cat_removed.is_empty()
+        || !svc_added.is_empty() || !svc_removed.is_empty();
+
+    if had_changes {
+        crate::common::platform::flush_dns_cache();
     }
 
     Ok(SyncResult {

@@ -90,6 +90,32 @@ impl NextDnsClient {
         })
     }
 
+    fn post_json(&self, url: &str, body: &serde_json::Value) -> ApiResult<()> {
+        self.pre_request_check()?;
+
+        let resp = self.agent.post(url)
+            .header("Content-Type", "application/json")
+            .header("X-Api-Key", &self.api_key)
+            .send_json(body)
+            .map_err(|e| {
+                self.circuit_breaker.record_failure();
+                map_ureq_error(e)
+            })?;
+
+        self.circuit_breaker.record_success();
+
+        let status = resp.status().as_u16();
+        if !(200..300).contains(&status) {
+            return Err(AppError::Api {
+                message: format!("API returned status {status}"),
+                status_code: Some(status),
+                hint: None,
+            });
+        }
+
+        Ok(())
+    }
+
     fn put_json(&self, url: &str, body: &serde_json::Value) -> ApiResult<()> {
         self.pre_request_check()?;
 
@@ -149,14 +175,14 @@ impl NextDnsClient {
             return Ok(cached);
         }
 
-        let entries: Vec<DenylistEntry> = self.get_json(&self.endpoint("denylist"))?;
-        self.denylist_cache.set("denylist".to_string(), entries.clone());
-        Ok(entries)
+        let wrapper: ApiWrapper<DenylistEntry> = self.get_json(&self.endpoint("denylist"))?;
+        self.denylist_cache.set("denylist".to_string(), wrapper.data.clone());
+        Ok(wrapper.data)
     }
 
     pub fn add_to_denylist(&self, domain: &str) -> ApiResult<()> {
         let body = serde_json::json!({ "id": domain, "active": true });
-        self.put_json(&self.endpoint("denylist"), &body)?;
+        self.post_json(&self.endpoint("denylist"), &body)?;
         self.denylist_cache.invalidate("denylist");
         Ok(())
     }
@@ -174,14 +200,14 @@ impl NextDnsClient {
             return Ok(cached);
         }
 
-        let entries: Vec<AllowlistEntry> = self.get_json(&self.endpoint("allowlist"))?;
-        self.allowlist_cache.set("allowlist".to_string(), entries.clone());
-        Ok(entries)
+        let wrapper: ApiWrapper<AllowlistEntry> = self.get_json(&self.endpoint("allowlist"))?;
+        self.allowlist_cache.set("allowlist".to_string(), wrapper.data.clone());
+        Ok(wrapper.data)
     }
 
     pub fn add_to_allowlist(&self, domain: &str) -> ApiResult<()> {
         let body = serde_json::json!({ "id": domain, "active": true });
-        self.put_json(&self.endpoint("allowlist"), &body)?;
+        self.post_json(&self.endpoint("allowlist"), &body)?;
         self.allowlist_cache.invalidate("allowlist");
         Ok(())
     }
@@ -195,20 +221,46 @@ impl NextDnsClient {
     // === Parental Control ===
 
     pub fn get_parental_categories(&self) -> ApiResult<Vec<ParentalCategory>> {
-        self.get_json(&self.endpoint("parentalControl/categories"))
+        let wrapper: ApiWrapper<ParentalCategory> = self.get_json(&self.endpoint("parentalControl/categories"))?;
+        Ok(wrapper.data)
     }
 
     pub fn set_parental_category(&self, id: &str, active: bool) -> ApiResult<()> {
-        let body = serde_json::json!({ "id": id, "active": active });
+        let mut cats = self.get_parental_categories()?;
+        if active {
+            if !cats.iter().any(|c| c.id == id) {
+                cats.push(ParentalCategory { id: id.to_string(), active: true, recreation: false });
+            } else {
+                for c in &mut cats {
+                    if c.id == id { c.active = true; }
+                }
+            }
+        } else {
+            cats.retain(|c| c.id != id);
+        }
+        let body = serde_json::to_value(&cats).unwrap();
         self.put_json(&self.endpoint("parentalControl/categories"), &body)
     }
 
     pub fn get_parental_services(&self) -> ApiResult<Vec<ParentalService>> {
-        self.get_json(&self.endpoint("parentalControl/services"))
+        let wrapper: ApiWrapper<ParentalService> = self.get_json(&self.endpoint("parentalControl/services"))?;
+        Ok(wrapper.data)
     }
 
     pub fn set_parental_service(&self, id: &str, active: bool) -> ApiResult<()> {
-        let body = serde_json::json!({ "id": id, "active": active });
+        let mut svcs = self.get_parental_services()?;
+        if active {
+            if !svcs.iter().any(|s| s.id == id) {
+                svcs.push(ParentalService { id: id.to_string(), active: true });
+            } else {
+                for s in &mut svcs {
+                    if s.id == id { s.active = true; }
+                }
+            }
+        } else {
+            svcs.retain(|s| s.id != id);
+        }
+        let body = serde_json::to_value(&svcs).unwrap();
         self.put_json(&self.endpoint("parentalControl/services"), &body)
     }
 }

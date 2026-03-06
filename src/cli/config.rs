@@ -12,6 +12,8 @@ pub enum ConfigCommands {
     RemoveSecret(ConfigRemoveSecretArgs),
     /// Validate configuration
     Validate(ConfigValidateArgs),
+    /// Send a test notification
+    TestNotification(ConfigTestNotificationArgs),
 }
 
 #[derive(Args)]
@@ -44,3 +46,6 @@ pub struct ConfigRemoveSecretArgs {
 
 #[derive(Args)]
 pub struct ConfigValidateArgs {}
+
+#[derive(Args)]
+pub struct ConfigTestNotificationArgs {}
