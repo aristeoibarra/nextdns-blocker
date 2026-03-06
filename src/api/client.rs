@@ -75,15 +75,6 @@ impl NextDnsClient {
 
         self.circuit_breaker.record_success();
 
-        let status = resp.status().as_u16();
-        if !(200..300).contains(&status) {
-            return Err(AppError::Api {
-                message: format!("API returned status {status}"),
-                status_code: Some(status),
-                hint: Some("Check your API key and profile ID".to_string()),
-            });
-        }
-
         resp.body_mut().read_json::<T>().map_err(|e| AppError::General {
             message: format!("Failed to parse API response: {e}"),
             hint: None,
@@ -93,7 +84,7 @@ impl NextDnsClient {
     fn post_json(&self, url: &str, body: &serde_json::Value) -> ApiResult<()> {
         self.pre_request_check()?;
 
-        let resp = self.agent.post(url)
+        self.agent.post(url)
             .header("Content-Type", "application/json")
             .header("X-Api-Key", &self.api_key)
             .send_json(body)
@@ -103,23 +94,13 @@ impl NextDnsClient {
             })?;
 
         self.circuit_breaker.record_success();
-
-        let status = resp.status().as_u16();
-        if !(200..300).contains(&status) {
-            return Err(AppError::Api {
-                message: format!("API returned status {status}"),
-                status_code: Some(status),
-                hint: None,
-            });
-        }
-
         Ok(())
     }
 
     fn put_json(&self, url: &str, body: &serde_json::Value) -> ApiResult<()> {
         self.pre_request_check()?;
 
-        let resp = self.agent.put(url)
+        self.agent.put(url)
             .header("Content-Type", "application/json")
             .header("X-Api-Key", &self.api_key)
             .send_json(body)
@@ -129,23 +110,13 @@ impl NextDnsClient {
             })?;
 
         self.circuit_breaker.record_success();
-
-        let status = resp.status().as_u16();
-        if !(200..300).contains(&status) {
-            return Err(AppError::Api {
-                message: format!("API returned status {status}"),
-                status_code: Some(status),
-                hint: None,
-            });
-        }
-
         Ok(())
     }
 
     fn delete(&self, url: &str) -> ApiResult<()> {
         self.pre_request_check()?;
 
-        let resp = self.agent.delete(url)
+        self.agent.delete(url)
             .header("Content-Type", "application/json")
             .header("X-Api-Key", &self.api_key)
             .call()
@@ -155,16 +126,6 @@ impl NextDnsClient {
             })?;
 
         self.circuit_breaker.record_success();
-
-        let status = resp.status().as_u16();
-        if !(200..300).contains(&status) {
-            return Err(AppError::Api {
-                message: format!("API returned status {status}"),
-                status_code: Some(status),
-                hint: None,
-            });
-        }
-
         Ok(())
     }
 
@@ -266,8 +227,22 @@ impl NextDnsClient {
 }
 
 fn map_ureq_error(e: ureq::Error) -> AppError {
-    AppError::General {
-        message: format!("HTTP request failed: {e}"),
-        hint: Some("Check network connectivity and try again".to_string()),
+    match e {
+        ureq::Error::StatusCode(status) => AppError::Api {
+            message: format!("API returned status {status}"),
+            status_code: Some(status),
+            hint: Some(match status {
+                401 => "API key is invalid or expired. Check with `ndb config set-secret api_key`".to_string(),
+                403 => "Access denied. Verify your API key and profile ID are correct".to_string(),
+                404 => "Profile not found. Check your profile ID with `ndb config set-secret profile_id`".to_string(),
+                429 => "Rate limited by NextDNS. Wait a moment and try again".to_string(),
+                s if s >= 500 => "NextDNS server error. Try again later".to_string(),
+                _ => format!("Unexpected HTTP status {status}"),
+            }),
+        },
+        _ => AppError::General {
+            message: format!("HTTP request failed: {e}"),
+            hint: Some("Check network connectivity and try again".to_string()),
+        },
     }
 }
