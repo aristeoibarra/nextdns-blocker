@@ -180,22 +180,32 @@ pub fn unblock_apps_for_domain(
 }
 
 /// Enforce blocked apps: kill any that are somehow running.
+/// Uses a single `ps` call instead of N `pgrep` calls.
 /// Returns names of apps that were killed.
 pub fn enforce_blocked_apps(db: &Database) -> Result<Vec<String>, AppError> {
     let blocked = db.with_conn(crate::db::apps::list_blocked_apps)?;
+    if blocked.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Single ps call to get all running process names (= suppresses header)
+    let output = Command::new("ps")
+        .args(["-Ac", "-o", "comm="])
+        .output();
+
+    let running_procs: std::collections::HashSet<String> = match output {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(|l| l.trim().to_lowercase())
+            .collect(),
+        _ => return Ok(Vec::new()),
+    };
+
     let mut killed = Vec::new();
-
     for app in blocked {
-        let output = Command::new("pgrep")
-            .arg("-xi")
-            .arg(&app.app_name)
-            .output();
-
-        if let Ok(out) = output {
-            if out.status.success() {
-                kill_app(&app.app_name);
-                killed.push(app.app_name);
-            }
+        if running_procs.contains(&app.app_name.to_lowercase()) {
+            kill_app(&app.app_name);
+            killed.push(app.app_name);
         }
     }
 

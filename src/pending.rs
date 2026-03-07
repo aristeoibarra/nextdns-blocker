@@ -35,6 +35,15 @@ pub fn process_pending(db: &Database, client: &NextDnsClient) -> Result<PendingR
             }
             Err(_) => {
                 db.with_conn(|conn| crate::db::pending::update_pending_status(conn, &action.id, "failed"))?;
+                // Escalate to retry queue for automatic recovery
+                let retry_id = uuid::Uuid::new_v4().to_string();
+                let retry_at = crate::common::time::now_unix() + 60;
+                let _ = db.with_conn(|conn| {
+                    crate::db::retry::enqueue_retry(
+                        conn, &retry_id, &action.action, action.domain.as_deref(),
+                        &action.list_type, None, 5, retry_at,
+                    )
+                });
                 failed += 1;
             }
         }

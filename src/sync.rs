@@ -8,9 +8,6 @@ use crate::scheduler::ScheduleEvaluator;
 
 const RETRY_MAX_ATTEMPTS: i32 = 5;
 
-/// How often (seconds) to do a full GET-based drift check against NextDNS API.
-const DRIFT_CHECK_INTERVAL_SECS: i64 = 1800; // 30 minutes
-
 // === Result types ===
 
 /// Result of a full drift-detection sync (GET + diff).
@@ -425,12 +422,6 @@ pub fn execute_drift_sync(
             unchanged: local_svc_set.intersection(&remote_svc_set).count(), errors: svc_errors,
         },
     })
-}
-
-/// Whether a drift check is due based on the last recorded timestamp.
-pub fn drift_check_due(db: &Database) -> bool {
-    let last = db.with_conn(crate::db::config::get_last_drift_check).unwrap_or(0);
-    crate::common::time::now_unix() - last >= DRIFT_CHECK_INTERVAL_SECS
 }
 
 /// Record the current time as the last drift check timestamp.

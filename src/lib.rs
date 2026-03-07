@@ -10,7 +10,7 @@ pub mod hosts_blocker;
 pub mod notifications;
 pub mod output;
 pub mod pending;
-
+pub mod preflight;
 pub mod retry;
 pub mod scheduler;
 pub mod sync;

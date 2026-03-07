@@ -31,8 +31,18 @@ Binary is `ndb` (not `nextdns-blocker`). Edition 2024, rust-version 1.85.
 ### Command Flow
 
 ```
-main.rs → Cli::parse() → run(command) → handlers::<cmd>::handle(args) → output::render()
+main.rs → Cli::parse() → preflight::run() → run(command) → handlers::<cmd>::handle(args) → output::render()
 ```
+
+### Pre-flight
+
+`preflight` module runs before every command (except init, watchdog, schema). Best-effort, never blocks. Handles:
+- App enforcement (batch `ps` check + killall)
+- Hosts enforcement (re-apply /etc/hosts if drifted)
+- Process due pending actions (if API client available)
+- Process due retries (if API client available)
+
+This makes the watchdog lighter — enforcement happens at command-time instead of polling.
 
 17 top-level commands: init, status, sync, block, unblock, fix, apps, denylist, allowlist, category, nextdns, config, pending, audit, watchdog, hosts, schema.
 
@@ -72,11 +82,11 @@ The `Renderable` trait has only two methods: `command_name()` and `to_json()`. N
 
 ### App Blocker
 
-`app_blocker` module handles local macOS app blocking alongside DNS blocking. When `ndb block whatsapp.com` runs, it also blocks the WhatsApp.app locally (rename `.app` to `.app.blocked` + `killall`). Uses `mdfind` (Spotlight) for app discovery. Known domain-to-bundle-ID mappings in `app_blocker::mappings::KNOWN_MAPPINGS`. DB tables: `app_mappings` (domain↔bundle_id), `blocked_apps` (rename state). `ndb apps scan` auto-populates mappings. Watchdog `run` calls `enforce_blocked_apps()` to kill blocked apps that reappear.
+`app_blocker` module handles local macOS app blocking alongside DNS blocking. When `ndb block whatsapp.com` runs, it also blocks the WhatsApp.app locally (rename `.app` to `.app.blocked` + `killall`). Uses `mdfind` (Spotlight) for app discovery. Known domain-to-bundle-ID mappings in `app_blocker::mappings::KNOWN_MAPPINGS`. DB tables: `app_mappings` (domain↔bundle_id), `blocked_apps` (rename state). `ndb apps scan` auto-populates mappings. `enforce_blocked_apps()` uses batch `ps -Ac` (1 subprocess) instead of N `pgrep` calls. Runs in pre-flight on every command.
 
 ### Hosts Blocker
 
-`hosts_blocker` module is the 3rd blocking layer (DNS + apps + hosts). Writes domains to `/etc/hosts` as `0.0.0.0 domain.com` inside `# ndb-start` / `# ndb-end` markers. Uses `sudo -n cp` for atomic writes and auto-flushes DNS cache (`dscacheutil` + `mDNSResponder`). Requires `ndb hosts setup` first for passwordless sudo. DB table: `hosts_entries`. Watchdog calls `enforce_hosts_entries()` to maintain state. `api.nextdns.io` is a protected domain that is never blocked in hosts.
+`hosts_blocker` module is the 3rd blocking layer (DNS + apps + hosts). Writes domains to `/etc/hosts` as `0.0.0.0 domain.com` inside `# ndb-start` / `# ndb-end` markers. Uses `sudo -n cp` for atomic writes and auto-flushes DNS cache (`dscacheutil` + `mDNSResponder`). Requires `ndb hosts setup` first for passwordless sudo. DB table: `hosts_entries`. `enforce_hosts_entries()` runs in pre-flight on every command. `api.nextdns.io` is a protected domain that is never blocked in hosts.
 
 ### Notifications
 
@@ -84,7 +94,7 @@ The `Renderable` trait has only two methods: `command_name()` and `to_json()`. N
 
 ### Watchdog
 
-`watchdog` module manages a `launchd` plist for periodic execution. `watchdog run` executes sync, processes pending actions, retries failed operations, enforces blocked apps, and sends notifications on changes or errors.
+`watchdog` module manages a `launchd` plist for periodic execution. `watchdog run` only handles schedule transitions (time-based blocking rules) + safety-net pending/retries processing. Enforcement (apps, hosts) and housekeeping (pending, retries) moved to pre-flight. Drift sync (`ndb sync`) is on-demand only.
 
 ### Spec Contract Tests
 
@@ -106,5 +116,7 @@ Do not upgrade: rusqlite 0.31.
 - Error hints: every `AppError` variant includes an optional `hint` for recovery suggestions
 - Use `db.with_transaction()` for multi-write handlers (block, denylist import)
 - Sync failures auto-enqueue to retry_queue for automatic recovery
+- Pending action failures also escalate to retry_queue
+- Exhausted retries are audit-logged before removal (never silently dropped)
 - `block` = quick multi-domain action; `denylist add` = CRUD management
 - Secrets via macOS `security` CLI (zero deps) in `common::keychain`

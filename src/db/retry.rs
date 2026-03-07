@@ -34,6 +34,15 @@ pub fn get_due_retries(conn: &Connection) -> Result<Vec<RetryEntry>, rusqlite::E
     rows.collect()
 }
 
+pub fn has_due_retries(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    let now = now_unix();
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM retry_queue WHERE next_retry_at <= ?1 AND attempts < max_attempts)",
+        params![now],
+        |row| row.get(0),
+    )
+}
+
 pub fn increment_retry(
     conn: &Connection,
     id: &str,

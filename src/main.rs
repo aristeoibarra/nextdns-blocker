@@ -8,6 +8,10 @@ use nextdns_blocker::output;
 fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
 
+    if nextdns_blocker::preflight::should_run(&cli.command) {
+        nextdns_blocker::preflight::run();
+    }
+
     let result = run(cli.command);
 
     match result {

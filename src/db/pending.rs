@@ -58,6 +58,15 @@ pub fn get_due_pending(conn: &Connection) -> Result<Vec<PendingAction>, rusqlite
     rows.collect()
 }
 
+pub fn has_due_pending(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    let now = now_unix();
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pending_actions WHERE status = 'pending' AND execute_at <= ?1)",
+        params![now],
+        |row| row.get(0),
+    )
+}
+
 pub fn update_pending_status(
     conn: &Connection,
     id: &str,
