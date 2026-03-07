@@ -186,4 +186,11 @@ impl AppError {
     }
 }
 
+impl AppError {
+    /// Returns true for authentication/authorization errors (401, 403) that should not be retried.
+    pub fn is_auth_error(&self) -> bool {
+        matches!(self, Self::Api { status_code: Some(401 | 403), .. })
+    }
+}
+
 pub type AppResult<T> = Result<T, AppError>;

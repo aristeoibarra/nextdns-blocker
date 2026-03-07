@@ -48,7 +48,22 @@ fn handle_status() -> Result<ExitCode, AppError> {
 }
 
 fn handle_run() -> Result<ExitCode, AppError> {
-    let env_config = crate::config::types::EnvConfig::from_env()?;
+    let notifier = crate::notifications::macos::MacosAdapter::new();
+
+    let env_config = match crate::config::types::EnvConfig::from_env() {
+        Ok(c) => c,
+        Err(e) => {
+            let notification = crate::notifications::Notification::new(
+                "ndb watchdog",
+                "Run: ndb config set-secret api-key <value>",
+            )
+                .subtitle("Missing API credentials")
+                .sound("Basso");
+            let _ = crate::notifications::NotificationAdapter::send(&notifier, &notification);
+            return Err(e);
+        }
+    };
+
     let db_path = crate::common::platform::db_path();
     let db = crate::db::Database::open(&db_path)?;
 
@@ -76,9 +91,18 @@ fn handle_run() -> Result<ExitCode, AppError> {
     let total_failures = pending_result.failed + retry_result.failed + schedule_errors;
     let total_changes = schedule_changes + pending_changes + retry_changes;
 
-    let notifier = crate::notifications::macos::MacosAdapter::new();
+    // Check if any errors are auth-related (invalid API key / profile ID)
+    let has_auth_errors = schedule_result.errors.iter().any(|e| e.auth_error);
 
-    if total_failures > 0 {
+    if has_auth_errors {
+        let notification = crate::notifications::Notification::new(
+            "ndb watchdog",
+            "Run: ndb config set-secret api-key <value>",
+        )
+            .subtitle("Invalid API credentials (401/403)")
+            .sound("Basso");
+        let _ = crate::notifications::NotificationAdapter::send(&notifier, &notification);
+    } else if total_failures > 0 {
         let mut parts = Vec::new();
         if schedule_errors > 0 { parts.push(format!("{schedule_errors} schedule errors")); }
         if pending_result.failed > 0 { parts.push(format!("{} pending failed", pending_result.failed)); }

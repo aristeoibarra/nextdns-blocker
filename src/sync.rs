@@ -31,6 +31,9 @@ pub struct SyncListResult {
 pub struct SyncError {
     pub domain: String,
     pub error: String,
+    /// True for 401/403 errors that indicate invalid credentials (not retryable).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub auth_error: bool,
 }
 
 /// Result of a lightweight schedule-based sync (no GETs).
@@ -182,8 +185,12 @@ pub fn execute_schedule_sync(
                     added.push(domain.domain.clone());
                 }
                 Err(e) => {
-                    enqueue_retry(db, "add", Some(&domain.domain), "denylist");
-                    errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string() });
+                    let is_auth = e.is_auth_error();
+                    if !is_auth {
+                        enqueue_retry(db, "add", Some(&domain.domain), "denylist");
+                    }
+                    errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string(), auth_error: is_auth });
+                    if is_auth { break; }
                 }
             }
         } else if !should_be_in_nextdns && domain.in_nextdns {
@@ -195,8 +202,12 @@ pub fn execute_schedule_sync(
                     removed.push(domain.domain.clone());
                 }
                 Err(e) => {
-                    enqueue_retry(db, "remove", Some(&domain.domain), "denylist");
-                    errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string() });
+                    let is_auth = e.is_auth_error();
+                    if !is_auth {
+                        enqueue_retry(db, "remove", Some(&domain.domain), "denylist");
+                    }
+                    errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string(), auth_error: is_auth });
+                    if is_auth { break; }
                 }
             }
         }
@@ -296,7 +307,10 @@ pub fn execute_drift_sync(
                 let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_blocked(conn, domain, true));
                 denylist_added.push(domain.clone());
             }
-            Err(e) => denylist_errors.push(SyncError { domain: domain.clone(), error: e.to_string() }),
+            Err(e) => {
+                let se = SyncError { domain: domain.clone(), error: e.to_string(), auth_error: e.is_auth_error() };
+                denylist_errors.push(se);
+            }
         }
     }
     let mut denylist_removed = Vec::new();
@@ -306,7 +320,10 @@ pub fn execute_drift_sync(
                 let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_blocked(conn, domain, false));
                 denylist_removed.push(domain.clone());
             }
-            Err(e) => denylist_errors.push(SyncError { domain: domain.clone(), error: e.to_string() }),
+            Err(e) => {
+                let se = SyncError { domain: domain.clone(), error: e.to_string(), auth_error: e.is_auth_error() };
+                denylist_errors.push(se);
+            }
         }
     }
 
@@ -319,7 +336,10 @@ pub fn execute_drift_sync(
                 let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_allowed(conn, domain, true));
                 allowlist_added.push(domain.clone());
             }
-            Err(e) => allowlist_errors.push(SyncError { domain: domain.clone(), error: e.to_string() }),
+            Err(e) => {
+                let se = SyncError { domain: domain.clone(), error: e.to_string(), auth_error: e.is_auth_error() };
+                allowlist_errors.push(se);
+            }
         }
     }
     let mut allowlist_removed = Vec::new();
@@ -329,7 +349,10 @@ pub fn execute_drift_sync(
                 let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_allowed(conn, domain, false));
                 allowlist_removed.push(domain.clone());
             }
-            Err(e) => allowlist_errors.push(SyncError { domain: domain.clone(), error: e.to_string() }),
+            Err(e) => {
+                let se = SyncError { domain: domain.clone(), error: e.to_string(), auth_error: e.is_auth_error() };
+                allowlist_errors.push(se);
+            }
         }
     }
 
@@ -347,14 +370,20 @@ pub fn execute_drift_sync(
     for id in &to_add_cats {
         match client.set_parental_category(id, true) {
             Ok(()) => cat_added.push(id.clone()),
-            Err(e) => cat_errors.push(SyncError { domain: id.clone(), error: e.to_string() }),
+            Err(e) => {
+                let se = SyncError { domain: id.clone(), error: e.to_string(), auth_error: e.is_auth_error() };
+                cat_errors.push(se);
+            }
         }
     }
     let mut cat_removed = Vec::new();
     for id in &to_remove_cats {
         match client.set_parental_category(id, false) {
             Ok(()) => cat_removed.push(id.clone()),
-            Err(e) => cat_errors.push(SyncError { domain: id.clone(), error: e.to_string() }),
+            Err(e) => {
+                let se = SyncError { domain: id.clone(), error: e.to_string(), auth_error: e.is_auth_error() };
+                cat_errors.push(se);
+            }
         }
     }
 
@@ -364,18 +393,24 @@ pub fn execute_drift_sync(
     for id in &to_add_svcs {
         match client.set_parental_service(id, true) {
             Ok(()) => svc_added.push(id.clone()),
-            Err(e) => svc_errors.push(SyncError { domain: id.clone(), error: e.to_string() }),
+            Err(e) => {
+                let se = SyncError { domain: id.clone(), error: e.to_string(), auth_error: e.is_auth_error() };
+                svc_errors.push(se);
+            }
         }
     }
     let mut svc_removed = Vec::new();
     for id in &to_remove_svcs {
         match client.set_parental_service(id, false) {
             Ok(()) => svc_removed.push(id.clone()),
-            Err(e) => svc_errors.push(SyncError { domain: id.clone(), error: e.to_string() }),
+            Err(e) => {
+                let se = SyncError { domain: id.clone(), error: e.to_string(), auth_error: e.is_auth_error() };
+                svc_errors.push(se);
+            }
         }
     }
 
-    // Enqueue retries for all failed operations
+    // Enqueue retries only for non-auth errors (auth errors are permanent, not retryable)
     let all_errors: Vec<(&str, &str, &SyncError)> = denylist_errors.iter().map(|e| ("add", "denylist", e))
         .chain(allowlist_errors.iter().map(|e| ("add", "allowlist", e)))
         .chain(cat_errors.iter().map(|e| ("add", "category", e)))
@@ -385,6 +420,7 @@ pub fn execute_drift_sync(
     if !all_errors.is_empty() {
         let retry_at = crate::common::time::now_unix() + 60;
         for (action, list_type, err) in &all_errors {
+            if err.auth_error { continue; }
             let id = uuid::Uuid::new_v4().to_string();
             let _ = db.with_conn(|conn| {
                 crate::db::retry::enqueue_retry(

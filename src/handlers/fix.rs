@@ -36,12 +36,35 @@ pub fn handle(args: FixArgs) -> Result<ExitCode, AppError> {
         }
     }
 
-    // Check env vars
-    if std::env::var("NEXTDNS_API_KEY").is_err() {
-        issues.push("NEXTDNS_API_KEY not set".to_string());
-    }
-    if std::env::var("NEXTDNS_PROFILE_ID").is_err() {
-        issues.push("NEXTDNS_PROFILE_ID not set".to_string());
+    // Check credentials (env vars or Keychain) and validate against API
+    match crate::config::types::EnvConfig::from_env() {
+        Err(_) => {
+            let has_api_key = std::env::var("NEXTDNS_API_KEY").is_ok()
+                || crate::common::keychain::get_secret("api-key").ok().flatten().is_some();
+            if !has_api_key {
+                issues.push("NEXTDNS_API_KEY not set (env var or Keychain)".to_string());
+            }
+            let has_profile = std::env::var("NEXTDNS_PROFILE_ID").is_ok()
+                || crate::common::keychain::get_secret("profile-id").ok().flatten().is_some();
+            if !has_profile {
+                issues.push("NEXTDNS_PROFILE_ID not set (env var or Keychain)".to_string());
+            }
+        }
+        Ok(env_config) => {
+            // Credentials exist — validate them against the API
+            match crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id) {
+                Ok(client) => {
+                    if let Err(e) = client.get_denylist() {
+                        if e.is_auth_error() {
+                            issues.push("API credentials rejected (401/403) — update with: ndb config set-secret api-key <value>".to_string());
+                        } else {
+                            issues.push(format!("API connectivity issue: {e}"));
+                        }
+                    }
+                }
+                Err(e) => issues.push(format!("Failed to create API client: {e}")),
+            }
+        }
     }
 
     let result = FixResult { issues, fixed };

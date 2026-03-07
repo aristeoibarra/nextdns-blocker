@@ -232,9 +232,9 @@ fn map_ureq_error(e: ureq::Error) -> AppError {
             message: format!("API returned status {status}"),
             status_code: Some(status),
             hint: Some(match status {
-                401 => "API key is invalid or expired. Check with `ndb config set-secret api_key`".to_string(),
-                403 => "Access denied. Verify your API key and profile ID are correct".to_string(),
-                404 => "Profile not found. Check your profile ID with `ndb config set-secret profile_id`".to_string(),
+                401 => "API key is invalid or expired. Update with `ndb config set-secret api-key <value>`".to_string(),
+                403 => "Access denied. Verify your API key and profile ID with `ndb config validate`".to_string(),
+                404 => "Profile not found. Update with `ndb config set-secret profile-id <value>`".to_string(),
                 429 => "Rate limited by NextDNS. Wait a moment and try again".to_string(),
                 s if s >= 500 => "NextDNS server error. Try again later".to_string(),
                 _ => format!("Unexpected HTTP status {status}"),
