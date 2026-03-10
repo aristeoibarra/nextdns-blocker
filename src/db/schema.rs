@@ -35,5 +35,10 @@ pub fn get_migrations() -> Vec<(i64, &'static str, &'static str)> {
             "hosts_blocking",
             include_str!("../../migrations/006_hosts_blocking.sql"),
         ),
+        (
+            7,
+            "allowlist_schedule",
+            include_str!("../../migrations/007_allowlist_schedule.sql"),
+        ),
     ]
 }

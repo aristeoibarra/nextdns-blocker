@@ -23,6 +23,10 @@ pub struct AllowlistAddArgs {
     /// Description for the domains
     #[arg(long, short)]
     pub description: Option<String>,
+
+    /// Schedule (JSON string or "none")
+    #[arg(long)]
+    pub schedule: Option<String>,
 }
 
 #[derive(Args)]

@@ -88,6 +88,7 @@ pub struct AllowedDomain {
     pub domain: String,
     pub active: bool,
     pub description: Option<String>,
+    pub schedule: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub in_nextdns: bool,

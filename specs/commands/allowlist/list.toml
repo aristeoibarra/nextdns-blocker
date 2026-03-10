@@ -19,7 +19,7 @@ schema = """
   "command": "allowlist list",
   "data": {
     "domains": [
-      { "domain": "example.com", "active": true, "description": "..." }
+      { "domain": "example.com", "active": true, "description": "...", "schedule": null }
     ]
   },
   "summary": { "total": 1, "active": 1 },

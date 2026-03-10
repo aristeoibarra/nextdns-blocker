@@ -31,7 +31,7 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
     db.with_conn(|conn| {
         for domain in &valid {
             let existed = crate::db::domains::is_allowed(conn, domain.as_str())?;
-            crate::db::domains::add_allowed(conn, domain.as_str(), args.description.as_deref())?;
+            crate::db::domains::add_allowed(conn, domain.as_str(), args.description.as_deref(), args.schedule.as_deref())?;
             if existed { skipped.push(domain.to_string()); }
             else { added.push(domain.to_string()); }
             crate::db::audit::log_action(conn, "add", "allowlist", domain.as_str(), None)?;
@@ -42,7 +42,21 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
     if !added.is_empty() {
         if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
             if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id) {
-                crate::sync::eager_push_allowlist(db, &client, &added, true);
+                let domains_to_push = if args.schedule.is_some() {
+                    let tz_str = db.with_conn(crate::db::config::get_timezone).unwrap_or_else(|_| "UTC".to_string());
+                    if let Ok(tz) = tz_str.parse::<chrono_tz::Tz>() {
+                        let evaluator = crate::scheduler::ScheduleEvaluator::new(tz);
+                        let schedule = args.schedule.as_deref().and_then(|s| {
+                            serde_json::from_str::<crate::config::types::Schedule>(s).ok()
+                        });
+                        let parsed = schedule.as_ref().and_then(crate::scheduler::parse_config_schedule);
+                        if evaluator.is_available(parsed.as_ref()) { added.clone() } else { vec![] }
+                    } else { added.clone() }
+                } else { added.clone() };
+
+                if !domains_to_push.is_empty() {
+                    crate::sync::eager_push_allowlist(db, &client, &domains_to_push, true);
+                }
             }
         }
     }
@@ -101,7 +115,7 @@ fn handle_import(db: &Database, args: AllowlistImportArgs) -> Result<ExitCode, A
     db.with_conn(|conn| {
         for domain in &valid {
             let existed = crate::db::domains::is_allowed(conn, domain.as_str())?;
-            crate::db::domains::add_allowed(conn, domain.as_str(), args.description.as_deref())?;
+            crate::db::domains::add_allowed(conn, domain.as_str(), args.description.as_deref(), None)?;
             if existed { skipped += 1; } else { imported += 1; }
         }
         Ok(())

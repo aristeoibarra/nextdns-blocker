@@ -92,7 +92,7 @@ fn test_allowed_domain_crud() {
 
     db.with_conn(|conn| {
         // Add
-        let id = domains::add_allowed(conn, "safe.com", Some("trusted"))?;
+        let id = domains::add_allowed(conn, "safe.com", Some("trusted"), None)?;
         assert!(id > 0);
 
         // List

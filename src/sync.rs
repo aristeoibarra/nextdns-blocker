@@ -214,6 +214,55 @@ pub fn execute_schedule_sync(
         // State is already correct — no API call needed
     }
 
+    // === Allowlist schedule processing ===
+    let allowed_domains = db.with_conn(|conn| crate::db::domains::list_allowed(conn, true))?;
+
+    for domain in &allowed_domains {
+        let Some(schedule_str) = &domain.schedule else { continue };
+
+        let schedule = serde_json::from_str::<crate::config::types::Schedule>(schedule_str).ok();
+        let parsed = schedule.as_ref().and_then(crate::scheduler::parse_config_schedule);
+
+        // Inverted semantics: is_available = should be in NextDNS allowlist
+        let should_be_in_nextdns = evaluator.is_available(parsed.as_ref());
+
+        if should_be_in_nextdns && !domain.in_nextdns {
+            match client.add_to_allowlist(&domain.domain) {
+                Ok(()) => {
+                    let _ = db.with_conn(|conn| {
+                        crate::db::domains::set_in_nextdns_allowed(conn, &domain.domain, true)
+                    });
+                    added.push(domain.domain.clone());
+                }
+                Err(e) => {
+                    let is_auth = e.is_auth_error();
+                    if !is_auth {
+                        enqueue_retry(db, "add", Some(&domain.domain), "allowlist");
+                    }
+                    errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string(), auth_error: is_auth });
+                    if is_auth { break; }
+                }
+            }
+        } else if !should_be_in_nextdns && domain.in_nextdns {
+            match client.remove_from_allowlist(&domain.domain) {
+                Ok(()) => {
+                    let _ = db.with_conn(|conn| {
+                        crate::db::domains::set_in_nextdns_allowed(conn, &domain.domain, false)
+                    });
+                    removed.push(domain.domain.clone());
+                }
+                Err(e) => {
+                    let is_auth = e.is_auth_error();
+                    if !is_auth {
+                        enqueue_retry(db, "remove", Some(&domain.domain), "allowlist");
+                    }
+                    errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string(), auth_error: is_auth });
+                    if is_auth { break; }
+                }
+            }
+        }
+    }
+
     if !added.is_empty() || !removed.is_empty() {
         crate::common::platform::flush_dns_cache();
     }
@@ -253,7 +302,20 @@ pub fn execute_drift_sync(
         .map(|d| d.domain.clone())
         .collect();
 
-    let should_allow: HashSet<String> = local_allowed.iter().map(|d| d.domain.clone()).collect();
+    let should_allow: HashSet<String> = local_allowed
+        .iter()
+        .filter(|d| {
+            match &d.schedule {
+                Some(s) => {
+                    let schedule = serde_json::from_str::<crate::config::types::Schedule>(s).ok();
+                    let parsed = schedule.as_ref().and_then(crate::scheduler::parse_config_schedule);
+                    evaluator.is_available(parsed.as_ref())
+                }
+                None => true,
+            }
+        })
+        .map(|d| d.domain.clone())
+        .collect();
 
     let to_add_blocked: Vec<String> = should_block.difference(&remote_blocked_set).cloned().collect();
     let to_remove_blocked: Vec<String> = remote_blocked_set.difference(&should_block).cloned().collect();

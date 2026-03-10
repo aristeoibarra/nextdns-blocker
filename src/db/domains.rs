@@ -115,16 +115,18 @@ pub fn add_allowed(
     conn: &Connection,
     domain: &str,
     description: Option<&str>,
+    schedule: Option<&str>,
 ) -> Result<i64, rusqlite::Error> {
     let now = now_unix();
     conn.execute(
-        "INSERT INTO allowed_domains (domain, description, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?3)
+        "INSERT INTO allowed_domains (domain, description, schedule, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?4)
          ON CONFLICT(domain) DO UPDATE SET
            active = 1,
            description = COALESCE(?2, description),
-           updated_at = ?3",
-        params![domain, description, now],
+           schedule = COALESCE(?3, schedule),
+           updated_at = ?4",
+        params![domain, description, schedule, now],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -136,7 +138,7 @@ pub fn remove_allowed(conn: &Connection, domain: &str) -> Result<bool, rusqlite:
 
 pub fn get_allowed(conn: &Connection, domain: &str) -> Result<Option<AllowedDomain>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, domain, active, description, created_at, updated_at, in_nextdns
+        "SELECT id, domain, active, description, schedule, created_at, updated_at, in_nextdns
          FROM allowed_domains WHERE domain = ?1",
     )?;
     let mut rows = stmt.query_map(params![domain], map_allowed)?;
@@ -145,10 +147,10 @@ pub fn get_allowed(conn: &Connection, domain: &str) -> Result<Option<AllowedDoma
 
 pub fn list_allowed(conn: &Connection, active_only: bool) -> Result<Vec<AllowedDomain>, rusqlite::Error> {
     let sql = if active_only {
-        "SELECT id, domain, active, description, created_at, updated_at, in_nextdns
+        "SELECT id, domain, active, description, schedule, created_at, updated_at, in_nextdns
          FROM allowed_domains WHERE active = 1 ORDER BY domain"
     } else {
-        "SELECT id, domain, active, description, created_at, updated_at, in_nextdns
+        "SELECT id, domain, active, description, schedule, created_at, updated_at, in_nextdns
          FROM allowed_domains ORDER BY domain"
     };
     let mut stmt = conn.prepare(sql)?;
@@ -178,8 +180,9 @@ fn map_allowed(row: &rusqlite::Row) -> Result<AllowedDomain, rusqlite::Error> {
         domain: row.get(1)?,
         active: row.get::<_, i64>(2)? != 0,
         description: row.get(3)?,
-        created_at: row.get(4)?,
-        updated_at: row.get(5)?,
-        in_nextdns: row.get::<_, i64>(6)? != 0,
+        schedule: row.get(4)?,
+        created_at: row.get(5)?,
+        updated_at: row.get(6)?,
+        in_nextdns: row.get::<_, i64>(7)? != 0,
     })
 }

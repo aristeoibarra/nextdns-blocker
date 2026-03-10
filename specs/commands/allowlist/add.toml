@@ -18,6 +18,11 @@ short = "-d"
 type = "string"
 required = false
 
+[[flags]]
+name = "--schedule"
+type = "string"
+required = false
+
 [output.success]
 schema = """
 {
