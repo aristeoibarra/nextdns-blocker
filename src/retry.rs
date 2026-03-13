@@ -53,7 +53,8 @@ pub fn process_retries(db: &Database, client: &NextDnsClient) -> Result<RetryRes
                     exhausted += 1;
                 } else {
                     let delay = calculate_backoff(next_attempt as u32);
-                    let next_retry = crate::common::time::now_unix() + delay as i64;
+                    let next_retry = crate::common::time::now_unix()
+                        + i64::try_from(delay).unwrap_or(i64::MAX);
                     let err_msg = e.to_string();
                     db.with_conn(|conn| {
                         crate::db::retry::increment_retry(conn, &entry.id, &err_msg, next_retry)
@@ -74,16 +75,19 @@ fn calculate_backoff(attempt: u32) -> u64 {
     let exp_delay = base.saturating_mul(2u64.saturating_pow(attempt));
     let capped = exp_delay.min(max);
     // Ensure minimum delay of 1s to prevent immediate retries from jitter
-    (cheap_random_u64() % capped).saturating_add(1)
+    (cheap_jitter(attempt) % capped).saturating_add(1)
 }
 
 /// Quick non-crypto random u64 using std only (sufficient for jitter).
-fn cheap_random_u64() -> u64 {
+/// Includes attempt number so retries processed in the same millisecond
+/// get different jitter values (prevents thundering herd).
+fn cheap_jitter(attempt: u32) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut h = DefaultHasher::new();
     std::time::SystemTime::now().hash(&mut h);
     std::thread::current().id().hash(&mut h);
+    attempt.hash(&mut h);
     h.finish()
 }
 

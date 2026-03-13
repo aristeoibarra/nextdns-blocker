@@ -209,11 +209,11 @@ fn write_hosts_file(non_ndb_lines: &[String], ndb_entries: &[HostEntry]) -> Resu
         .open(&tmp_path)
         .map_err(|e| AppError::General {
             message: format!("Failed to create temp file: {e}"),
-            hint: None,
+            hint: Some("Check /tmp permissions and disk space".to_string()),
         })?;
     file.write_all(content.as_bytes()).map_err(|e| AppError::General {
         message: format!("Failed to write temp file: {e}"),
-        hint: None,
+        hint: Some("Check disk space".to_string()),
     })?;
     drop(file);
 

@@ -114,11 +114,12 @@ fn handle_map(args: AppsMapArgs) -> Result<ExitCode, AppError> {
             .unwrap_or_else(|| args.bundle_id.clone())
     });
 
-    db.with_conn(|conn| {
+    db.with_transaction(|conn| {
         crate::db::apps::add_mapping(conn, &args.domain, &args.bundle_id, &app_name, false)
-    })?;
-    db.with_conn(|conn| {
+            .map_err(AppError::from)?;
         crate::db::audit::log_action(conn, "map_app", "app", &args.bundle_id, Some(&args.domain))
+            .map_err(AppError::from)?;
+        Ok(())
     })?;
 
     let result = AppsResult {
@@ -136,8 +137,15 @@ fn handle_map(args: AppsMapArgs) -> Result<ExitCode, AppError> {
 fn handle_unmap(args: AppsUnmapArgs) -> Result<ExitCode, AppError> {
     let db = Database::open(&crate::common::platform::db_path())?;
 
-    let removed =
-        db.with_conn(|conn| crate::db::apps::remove_mapping(conn, &args.domain, &args.bundle_id))?;
+    let removed = db.with_transaction(|conn| {
+        let removed = crate::db::apps::remove_mapping(conn, &args.domain, &args.bundle_id)
+            .map_err(AppError::from)?;
+        if removed {
+            crate::db::audit::log_action(conn, "unmap_app", "app", &args.bundle_id, Some(&args.domain))
+                .map_err(AppError::from)?;
+        }
+        Ok(removed)
+    })?;
 
     if !removed {
         return Err(AppError::NotFound {
@@ -148,16 +156,6 @@ fn handle_unmap(args: AppsUnmapArgs) -> Result<ExitCode, AppError> {
             hint: Some("Use 'ndb apps list' to see current mappings".to_string()),
         });
     }
-
-    db.with_conn(|conn| {
-        crate::db::audit::log_action(
-            conn,
-            "unmap_app",
-            "app",
-            &args.bundle_id,
-            Some(&args.domain),
-        )
-    })?;
 
     let result = AppsResult {
         command: "apps unmap",

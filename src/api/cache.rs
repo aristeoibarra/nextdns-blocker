@@ -24,14 +24,20 @@ impl<V: Clone> TtlCache<V> {
     }
 
     pub fn get(&self, key: &str) -> Option<V> {
-        let cache = self.inner.read().unwrap_or_else(|e| e.into_inner());
-        cache.get(key).and_then(|entry| {
-            if entry.inserted_at.elapsed() < self.ttl {
-                Some(entry.value.clone())
-            } else {
-                None
+        // Try read-only first for the fast path
+        {
+            let cache = self.inner.read().unwrap_or_else(|e| e.into_inner());
+            if let Some(entry) = cache.get(key) {
+                if entry.inserted_at.elapsed() < self.ttl {
+                    return Some(entry.value.clone());
+                }
             }
-        })
+        }
+        // Entry is expired or missing — acquire write lock to evict expired entries
+        if let Ok(mut cache) = self.inner.write() {
+            cache.retain(|_, entry| entry.inserted_at.elapsed() < self.ttl);
+        }
+        None
     }
 
     pub fn set(&self, key: String, value: V) {

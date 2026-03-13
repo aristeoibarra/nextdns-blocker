@@ -151,7 +151,8 @@ impl Renderable for DenylistListResult {
 
 fn handle_import(db: &Database, args: DenylistImportArgs) -> Result<ExitCode, AppError> {
     let content = std::fs::read_to_string(&args.file).map_err(|e| AppError::General {
-        message: format!("Failed to read file '{}': {e}", args.file), hint: None,
+        message: format!("Failed to read file '{}': {e}", args.file),
+        hint: Some("Ensure the file exists and is readable".to_string()),
     })?;
 
     let lines: Vec<String> = content.lines()

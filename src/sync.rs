@@ -198,6 +198,7 @@ pub fn execute_schedule_sync(
     let mut added = Vec::new();
     let mut removed = Vec::new();
     let mut errors = Vec::new();
+    let mut auth_failed = false;
 
     for domain in &domains {
         let schedule = domain.schedule.as_deref().and_then(|s| {
@@ -218,6 +219,10 @@ pub fn execute_schedule_sync(
         let should_be_in_nextdns = evaluator.should_block(parsed.as_ref());
 
         if should_be_in_nextdns && !domain.in_nextdns {
+            if auth_failed {
+                errors.push(SyncError { domain: domain.domain.clone(), error: "Skipped: auth credentials invalid".to_string(), auth_error: true });
+                continue;
+            }
             match client.add_to_denylist(&domain.domain) {
                 Ok(()) => {
                     update_in_nextdns(db, &domain.domain, "denylist", true);
@@ -227,12 +232,17 @@ pub fn execute_schedule_sync(
                     let is_auth = e.is_auth_error();
                     if !is_auth {
                         enqueue_retry(db, "add", Some(&domain.domain), "denylist");
+                    } else {
+                        auth_failed = true;
                     }
                     errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string(), auth_error: is_auth });
-                    if is_auth { break; }
                 }
             }
         } else if !should_be_in_nextdns && domain.in_nextdns {
+            if auth_failed {
+                errors.push(SyncError { domain: domain.domain.clone(), error: "Skipped: auth credentials invalid".to_string(), auth_error: true });
+                continue;
+            }
             match client.remove_from_denylist(&domain.domain) {
                 Ok(()) => {
                     update_in_nextdns(db, &domain.domain, "denylist", false);
@@ -242,9 +252,10 @@ pub fn execute_schedule_sync(
                     let is_auth = e.is_auth_error();
                     if !is_auth {
                         enqueue_retry(db, "remove", Some(&domain.domain), "denylist");
+                    } else {
+                        auth_failed = true;
                     }
                     errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string(), auth_error: is_auth });
-                    if is_auth { break; }
                 }
             }
         }
@@ -275,6 +286,10 @@ pub fn execute_schedule_sync(
         let should_be_in_nextdns = evaluator.is_available(parsed.as_ref());
 
         if should_be_in_nextdns && !domain.in_nextdns {
+            if auth_failed {
+                errors.push(SyncError { domain: domain.domain.clone(), error: "Skipped: auth credentials invalid".to_string(), auth_error: true });
+                continue;
+            }
             match client.add_to_allowlist(&domain.domain) {
                 Ok(()) => {
                     update_in_nextdns(db, &domain.domain, "allowlist", true);
@@ -284,12 +299,17 @@ pub fn execute_schedule_sync(
                     let is_auth = e.is_auth_error();
                     if !is_auth {
                         enqueue_retry(db, "add", Some(&domain.domain), "allowlist");
+                    } else {
+                        auth_failed = true;
                     }
                     errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string(), auth_error: is_auth });
-                    if is_auth { break; }
                 }
             }
         } else if !should_be_in_nextdns && domain.in_nextdns {
+            if auth_failed {
+                errors.push(SyncError { domain: domain.domain.clone(), error: "Skipped: auth credentials invalid".to_string(), auth_error: true });
+                continue;
+            }
             match client.remove_from_allowlist(&domain.domain) {
                 Ok(()) => {
                     update_in_nextdns(db, &domain.domain, "allowlist", false);
@@ -299,9 +319,10 @@ pub fn execute_schedule_sync(
                     let is_auth = e.is_auth_error();
                     if !is_auth {
                         enqueue_retry(db, "remove", Some(&domain.domain), "allowlist");
+                    } else {
+                        auth_failed = true;
                     }
                     errors.push(SyncError { domain: domain.domain.clone(), error: e.to_string(), auth_error: is_auth });
-                    if is_auth { break; }
                 }
             }
         }

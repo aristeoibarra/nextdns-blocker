@@ -10,21 +10,28 @@ pub fn process_pending(db: &Database, client: &NextDnsClient) -> Result<PendingR
     let mut failed = 0;
 
     for action in actions {
+        // Skip actions with missing domain — mark completed and audit-log the anomaly
+        let domain = match &action.domain {
+            Some(d) => d.clone(),
+            None => {
+                let _ = db.with_conn(|conn| {
+                    crate::db::audit::log_action(
+                        conn, "pending_no_domain", &action.list_type, &action.id,
+                        Some(&format!("Pending action '{}' has no domain, marking completed", action.action)),
+                    )
+                });
+                db.with_conn(|conn| crate::db::pending::update_pending_status(conn, &action.id, "completed"))?;
+                continue;
+            }
+        };
+
         db.with_conn(|conn| crate::db::pending::update_pending_status(conn, &action.id, "executing"))?;
 
         let result = match (action.action.as_str(), action.list_type.as_str()) {
-            ("add", "denylist") => {
-                action.domain.as_ref().map_or(Ok(()), |d| client.add_to_denylist(d))
-            }
-            ("remove", "denylist") => {
-                action.domain.as_ref().map_or(Ok(()), |d| client.remove_from_denylist(d))
-            }
-            ("add", "allowlist") => {
-                action.domain.as_ref().map_or(Ok(()), |d| client.add_to_allowlist(d))
-            }
-            ("remove", "allowlist") => {
-                action.domain.as_ref().map_or(Ok(()), |d| client.remove_from_allowlist(d))
-            }
+            ("add", "denylist") => client.add_to_denylist(&domain),
+            ("remove", "denylist") => client.remove_from_denylist(&domain),
+            ("add", "allowlist") => client.add_to_allowlist(&domain),
+            ("remove", "allowlist") => client.remove_from_allowlist(&domain),
             _ => Ok(()),
         };
 

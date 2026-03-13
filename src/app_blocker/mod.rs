@@ -115,6 +115,8 @@ pub fn block_app(
 }
 
 /// Unblock an app: restore .app.blocked to .app and remove from DB.
+/// Filesystem operations happen BEFORE DB changes to prevent inconsistency:
+/// if rename fails, DB still reflects the blocked state accurately.
 pub fn unblock_app(db: &Database, bundle_id: &str) -> Result<Option<AppUnblockResult>, AppError> {
     let record = match db.with_conn(|conn| crate::db::apps::get_blocked_app(conn, bundle_id))? {
         Some(r) => r,
@@ -123,19 +125,21 @@ pub fn unblock_app(db: &Database, bundle_id: &str) -> Result<Option<AppUnblockRe
 
     let blocked = Path::new(&record.blocked_path);
     let original = Path::new(&record.original_path);
-
-    // Remove from DB first, then restore filesystem.
-    // If rename fails, re-add to DB so state stays consistent.
-    db.with_conn(|conn| crate::db::apps::remove_blocked_app(conn, bundle_id))?;
-
     let mut conflict_path = None;
 
+    // 1. Restore filesystem FIRST (before DB change)
     if blocked.exists() {
         if original.exists() {
             // App was reinstalled while blocked. Don't delete the new install.
             // Move the old blocked copy aside so nothing is lost.
             let conflict = format!("{}.conflict", record.original_path);
-            let _ = std::fs::rename(blocked, &conflict);
+            std::fs::rename(blocked, &conflict).map_err(|e| AppError::General {
+                message: format!("Failed to move blocked app aside {}: {e}", record.app_name),
+                hint: Some(
+                    "Ensure ndb has Full Disk Access in System Settings > Privacy & Security"
+                        .to_string(),
+                ),
+            })?;
             let _ = db.with_conn(|conn| {
                 crate::db::audit::log_action(
                     conn,
@@ -149,26 +153,26 @@ pub fn unblock_app(db: &Database, bundle_id: &str) -> Result<Option<AppUnblockRe
                 )
             });
             conflict_path = Some(conflict);
-        } else if let Err(e) = std::fs::rename(blocked, original) {
-            // Re-add to DB since we couldn't complete the unblock
-            let _ = db.with_conn(|conn| {
-                crate::db::apps::add_blocked_app(
-                    conn,
-                    bundle_id,
-                    &record.app_name,
-                    &record.original_path,
-                    &record.blocked_path,
-                    record.source_domain.as_deref(),
-                )
-            });
-            return Err(AppError::General {
+        } else {
+            std::fs::rename(blocked, original).map_err(|e| AppError::General {
                 message: format!("Failed to restore app {}: {e}", record.app_name),
                 hint: Some(
                     "Ensure ndb has Full Disk Access in System Settings > Privacy & Security"
                         .to_string(),
                 ),
-            });
+            })?;
         }
+    }
+
+    // 2. Remove from DB AFTER filesystem is restored.
+    // If DB write fails, rollback the filesystem change.
+    if let Err(e) = db.with_conn(|conn| crate::db::apps::remove_blocked_app(conn, bundle_id)) {
+        if conflict_path.is_some() {
+            // Conflict case: can't easily rollback, just report the error
+        } else if original.exists() && !blocked.exists() {
+            let _ = std::fs::rename(original, blocked);
+        }
+        return Err(e);
     }
 
     Ok(Some(AppUnblockResult {
@@ -342,20 +346,20 @@ pub fn scan_installed_apps() -> Result<Vec<(String, String, String)>, AppError> 
         .output()
         .map_err(|e| AppError::General {
             message: format!("Failed to run system_profiler: {e}"),
-            hint: None,
+            hint: Some("Ensure system_profiler is available at /usr/sbin/system_profiler".to_string()),
         })?;
 
     if !output.status.success() {
         return Err(AppError::General {
             message: "system_profiler failed".to_string(),
-            hint: None,
+            hint: Some("Try running 'system_profiler SPApplicationsDataType' manually".to_string()),
         });
     }
 
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).map_err(|e| AppError::General {
             message: format!("Failed to parse system_profiler output: {e}"),
-            hint: None,
+            hint: Some("system_profiler returned unexpected format".to_string()),
         })?;
 
     let mut apps = Vec::new();

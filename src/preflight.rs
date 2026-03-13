@@ -28,8 +28,23 @@ fn run_inner() -> Result<(), crate::error::AppError> {
     let _ = crate::watchdog::ensure_healthy();
 
     // Enforcement (DB-only, no API needed)
-    let _ = crate::app_blocker::enforce_blocked_apps(&db);
-    let _ = crate::hosts_blocker::enforce_hosts_entries(&db);
+    // Audit-log failures so they're visible in `ndb audit list`
+    if let Err(e) = crate::app_blocker::enforce_blocked_apps(&db) {
+        let _ = db.with_conn(|conn| {
+            crate::db::audit::log_action(
+                conn, "enforce_failed", "app_blocker", "preflight",
+                Some(&e.to_string()),
+            )
+        });
+    }
+    if let Err(e) = crate::hosts_blocker::enforce_hosts_entries(&db) {
+        let _ = db.with_conn(|conn| {
+            crate::db::audit::log_action(
+                conn, "enforce_failed", "hosts_blocker", "preflight",
+                Some(&e.to_string()),
+            )
+        });
+    }
 
     // Check if there's pending/retry work before building API client
     let has_pending = db.with_conn(crate::db::pending::has_due_pending)?;

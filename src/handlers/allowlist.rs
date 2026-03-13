@@ -111,7 +111,7 @@ fn handle_list(db: &Database, args: AllowlistListArgs) -> Result<ExitCode, AppEr
 }
 
 fn handle_import(db: &Database, args: AllowlistImportArgs) -> Result<ExitCode, AppError> {
-    let content = std::fs::read_to_string(&args.file).map_err(|e| AppError::General { message: format!("Failed to read file: {e}"), hint: None })?;
+    let content = std::fs::read_to_string(&args.file).map_err(|e| AppError::General { message: format!("Failed to read file '{}': {e}", args.file), hint: Some("Ensure the file exists and is readable".to_string()) })?;
     let lines: Vec<String> = content.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty() && !l.starts_with('#')).collect();
     let (valid, _errors) = parse_domains(&lines);
 
