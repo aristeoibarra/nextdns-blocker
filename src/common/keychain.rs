@@ -1,75 +1,92 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+
 use crate::error::AppError;
 
-const SERVICE: &str = "ndb-nextdns-blocker";
-
-/// Store a secret in the macOS Keychain.
-pub fn set_secret(account: &str, value: &str) -> Result<(), AppError> {
-    // Delete existing entry first (ignore errors if it doesn't exist)
-    let _ = std::process::Command::new("security")
-        .args(["delete-generic-password", "-a", account, "-s", SERVICE])
-        .output();
-
-    let output = std::process::Command::new("security")
-        .args([
-            "add-generic-password",
-            "-a", account,
-            "-s", SERVICE,
-            "-w", value,
-            "-U", // update if exists
-        ])
-        .output()
-        .map_err(|e| AppError::General {
-            message: format!("Failed to access macOS Keychain: {e}"),
-            hint: Some("Ensure you have Keychain access permissions".to_string()),
-        })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(AppError::General {
-            message: format!("Keychain set failed: {stderr}"),
-            hint: None,
-        });
-    }
-
-    Ok(())
+/// Path to the .env file in the data directory.
+fn env_file_path() -> PathBuf {
+    super::platform::data_dir().join(".env")
 }
 
-/// Retrieve a secret from the macOS Keychain.
-pub fn get_secret(account: &str) -> Result<Option<String>, AppError> {
-    let output = std::process::Command::new("security")
-        .args([
-            "find-generic-password",
-            "-a", account,
-            "-s", SERVICE,
-            "-w", // output password only
-        ])
-        .output()
-        .map_err(|e| AppError::General {
-            message: format!("Failed to access macOS Keychain: {e}"),
-            hint: None,
-        })?;
+/// Store a secret in the .env file.
+pub fn set_secret(name: &str, value: &str) -> Result<(), AppError> {
+    let path = env_file_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
 
-    if !output.status.success() {
+    let mut entries = read_env_file(&path);
+    let key = secret_name_to_env_key(name);
+    entries.insert(key, value.to_string());
+    write_env_file(&path, &entries)
+}
+
+/// Retrieve a secret from the .env file.
+pub fn get_secret(name: &str) -> Result<Option<String>, AppError> {
+    let path = env_file_path();
+    if !path.exists() {
         return Ok(None);
     }
+    let entries = read_env_file(&path);
+    let key = secret_name_to_env_key(name);
+    Ok(entries.get(&key).cloned())
+}
 
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if value.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(value))
+/// Remove a secret from the .env file.
+pub fn remove_secret(name: &str) -> Result<bool, AppError> {
+    let path = env_file_path();
+    if !path.exists() {
+        return Ok(false);
+    }
+    let mut entries = read_env_file(&path);
+    let key = secret_name_to_env_key(name);
+    let removed = entries.remove(&key).is_some();
+    if removed {
+        write_env_file(&path, &entries)?;
+    }
+    Ok(removed)
+}
+
+/// Map secret names to env var keys.
+fn secret_name_to_env_key(name: &str) -> String {
+    match name {
+        "api-key" => "NEXTDNS_API_KEY".to_string(),
+        "profile-id" => "NEXTDNS_PROFILE_ID".to_string(),
+        other => other.to_uppercase().replace('-', "_"),
     }
 }
 
-/// Remove a secret from the macOS Keychain.
-pub fn remove_secret(account: &str) -> Result<bool, AppError> {
-    let output = std::process::Command::new("security")
-        .args(["delete-generic-password", "-a", account, "-s", SERVICE])
-        .output()
-        .map_err(|e| AppError::General {
-            message: format!("Failed to access macOS Keychain: {e}"),
-            hint: None,
-        })?;
+/// Read the .env file into a key-value map.
+fn read_env_file(path: &std::path::Path) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return map,
+    };
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            let key = key.trim().to_string();
+            let value = value.trim().trim_matches('"').trim_matches('\'').to_string();
+            map.insert(key, value);
+        }
+    }
+    map
+}
 
-    Ok(output.status.success())
+/// Write the key-value map back to the .env file.
+fn write_env_file(path: &std::path::Path, entries: &HashMap<String, String>) -> Result<(), AppError> {
+    let mut lines: Vec<String> = entries
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect();
+    lines.sort();
+    let content = lines.join("\n") + "\n";
+    std::fs::write(path, content).map_err(|e| AppError::General {
+        message: format!("Failed to write .env file: {e}"),
+        hint: Some(format!("Path: {}", path.display())),
+    })
 }

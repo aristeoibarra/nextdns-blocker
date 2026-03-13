@@ -25,11 +25,13 @@ fn handle_create(db: &Database, args: CategoryCreateArgs) -> Result<ExitCode, Ap
         });
     }
 
-    let id = db.with_conn(|conn| {
-        crate::db::categories::create_category(conn, &args.name, args.description.as_deref(), args.schedule.as_deref())
+    let id = db.with_transaction(|conn| {
+        let id = crate::db::categories::create_category(conn, &args.name, args.description.as_deref(), args.schedule.as_deref())
+            .map_err(AppError::from)?;
+        crate::db::audit::log_action(conn, "create", "category", &args.name, None)
+            .map_err(AppError::from)?;
+        Ok(id)
     })?;
-
-    db.with_conn(|conn| crate::db::audit::log_action(conn, "create", "category", &args.name, None))?;
 
     let result = SimpleResult { command: "category create", data: serde_json::json!({ "id": id, "name": args.name }), summary: serde_json::json!({ "created": 1 }) };
     output::render(&result);
@@ -104,10 +106,14 @@ fn handle_add_domain(db: &Database, args: CategoryAddDomainArgs) -> Result<ExitC
     let mut added = Vec::new();
     let mut skipped = Vec::new();
 
-    for domain in &valid {
-        let ok = db.with_conn(|conn| crate::db::categories::add_domain_to_category(conn, &args.category, domain.as_str()))?;
-        if ok { added.push(domain.to_string()); } else { skipped.push(domain.to_string()); }
-    }
+    db.with_transaction(|conn| {
+        for domain in &valid {
+            let ok = crate::db::categories::add_domain_to_category(conn, &args.category, domain.as_str())
+                .map_err(AppError::from)?;
+            if ok { added.push(domain.to_string()); } else { skipped.push(domain.to_string()); }
+        }
+        Ok(())
+    })?;
 
     if added.is_empty() && !valid.is_empty() {
         return Err(AppError::NotFound {
@@ -127,11 +133,15 @@ fn handle_add_domain(db: &Database, args: CategoryAddDomainArgs) -> Result<ExitC
 
 fn handle_remove_domain(db: &Database, args: CategoryRemoveDomainArgs) -> Result<ExitCode, AppError> {
     let mut removed = Vec::new();
-    for domain in &args.domains {
-        let d = domain.to_lowercase();
-        let ok = db.with_conn(|conn| crate::db::categories::remove_domain_from_category(conn, &args.category, &d))?;
-        if ok { removed.push(d); }
-    }
+    db.with_transaction(|conn| {
+        for domain in &args.domains {
+            let d = domain.to_lowercase();
+            let ok = crate::db::categories::remove_domain_from_category(conn, &args.category, &d)
+                .map_err(AppError::from)?;
+            if ok { removed.push(d); }
+        }
+        Ok(())
+    })?;
 
     let result = SimpleResult {
         command: "category remove-domain",

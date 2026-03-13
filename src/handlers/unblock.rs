@@ -18,7 +18,13 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
 
     // Unblock mapped apps for this domain
     let apps_unblocked = if is_domain {
-        crate::app_blocker::unblock_apps_for_domain(&db, &args.target).unwrap_or_default()
+        crate::app_blocker::unblock_apps_for_domain(&db, &args.target)
+            .unwrap_or_else(|e| {
+                let _ = db.with_conn(|conn| {
+                    crate::db::audit::log_action(conn, "unblock_app_failed", "app", &e.to_string(), None)
+                });
+                Vec::new()
+            })
     } else {
         Vec::new()
     };
@@ -30,7 +36,13 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
 
     // Unblock from /etc/hosts
     let hosts_unblocked = if is_domain {
-        crate::hosts_blocker::unblock_hosts_for_domain(&db, &args.target).unwrap_or_default()
+        crate::hosts_blocker::unblock_hosts_for_domain(&db, &args.target)
+            .unwrap_or_else(|e| {
+                let _ = db.with_conn(|conn| {
+                    crate::db::audit::log_action(conn, "unblock_hosts_failed", "hosts", &e.to_string(), None)
+                });
+                Vec::new()
+            })
     } else {
         Vec::new()
     };
@@ -54,22 +66,29 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         let id = uuid::Uuid::new_v4().to_string();
 
         if is_domain {
-            db.with_conn(|conn| crate::db::domains::deactivate_blocked(conn, &args.target))?;
-            db.with_conn(|conn| crate::db::pending::create_pending(
-                conn, &id, "add", Some(&args.target), "denylist", execute_at,
-                Some(&format!("Auto re-block after {dur_str}")),
-            ))?;
+            // Atomic: deactivate + create pending + audit in one transaction
+            db.with_transaction(|conn| {
+                crate::db::domains::deactivate_blocked(conn, &args.target)
+                    .map_err(crate::error::AppError::from)?;
+                crate::db::pending::create_pending(
+                    conn, &id, "add", Some(&args.target), "denylist", execute_at,
+                    Some(&format!("Auto re-block after {dur_str}")),
+                ).map_err(crate::error::AppError::from)?;
+                crate::db::audit::log_action(conn, "unblock", "domain", &args.target, Some(dur_str))
+                    .map_err(crate::error::AppError::from)?;
+                Ok(())
+            })?;
             if let Some((_, ref client)) = api_client {
                 crate::sync::eager_push_denylist(&db, client, &[args.target.clone()], false);
             }
+        } else {
+            db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "category", &args.target, Some(dur_str)))?;
         }
-
-        db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", if is_domain { "domain" } else { "category" }, &args.target, Some(dur_str)))?;
 
         let mut watchdog_warning = None;
         if let Ok(status) = crate::watchdog::status() {
-            if !status.installed {
-                watchdog_warning = Some("Watchdog not installed — pending action will not execute automatically. Run 'ndb watchdog install --interval 5m'".to_string());
+            if !status.healthy {
+                watchdog_warning = Some("Watchdog unhealthy — pending action may not execute automatically. Run 'ndb fix' or 'ndb watchdog install --interval 5m'".to_string());
             }
         }
 

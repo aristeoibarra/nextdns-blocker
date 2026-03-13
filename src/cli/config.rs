@@ -6,9 +6,9 @@ pub enum ConfigCommands {
     Show(ConfigShowArgs),
     /// Set a configuration value
     Set(ConfigSetArgs),
-    /// Store a secret in macOS Keychain
+    /// Store a secret in .env file
     SetSecret(ConfigSetSecretArgs),
-    /// Remove a secret from macOS Keychain
+    /// Remove a secret from .env file
     RemoveSecret(ConfigRemoveSecretArgs),
     /// Validate configuration
     Validate(ConfigValidateArgs),

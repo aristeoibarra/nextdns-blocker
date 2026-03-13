@@ -102,12 +102,12 @@ fn handle_validate() -> Result<ExitCode, AppError> {
     let has_api_key = std::env::var("NEXTDNS_API_KEY").is_ok()
         || crate::common::keychain::get_secret("api-key").ok().flatten().is_some();
     if !has_api_key {
-        errors.push(serde_json::json!({ "key": "NEXTDNS_API_KEY", "reason": "Not set (env var or Keychain)" }));
+        errors.push(serde_json::json!({ "key": "NEXTDNS_API_KEY", "reason": "Not set (env var or .env file)" }));
     }
     let has_profile = std::env::var("NEXTDNS_PROFILE_ID").is_ok()
         || crate::common::keychain::get_secret("profile-id").ok().flatten().is_some();
     if !has_profile {
-        errors.push(serde_json::json!({ "key": "NEXTDNS_PROFILE_ID", "reason": "Not set (env var or Keychain)" }));
+        errors.push(serde_json::json!({ "key": "NEXTDNS_PROFILE_ID", "reason": "Not set (env var or .env file)" }));
     }
 
     let valid = errors.is_empty();
@@ -132,9 +132,10 @@ fn handle_set_secret(args: ConfigSetSecretArgs) -> Result<ExitCode, AppError> {
 
     crate::common::keychain::set_secret(&args.name, &args.value)?;
 
+    let env_path = crate::common::platform::data_dir().join(".env");
     let result = ConfigResult {
         command: "config set-secret",
-        data: serde_json::json!({ "name": args.name, "stored_in": "macOS Keychain" }),
+        data: serde_json::json!({ "name": args.name, "stored_in": env_path.to_string_lossy() }),
     };
     output::render(&result);
     Ok(ExitCode::Success)
@@ -144,7 +145,7 @@ fn handle_remove_secret(args: ConfigRemoveSecretArgs) -> Result<ExitCode, AppErr
     let removed = crate::common::keychain::remove_secret(&args.name)?;
     if !removed {
         return Err(AppError::NotFound {
-            message: format!("Secret '{}' not found in Keychain", args.name),
+            message: format!("Secret '{}' not found in .env file", args.name),
             hint: None,
         });
     }

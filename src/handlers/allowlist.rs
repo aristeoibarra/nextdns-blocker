@@ -28,13 +28,16 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
     let mut added = Vec::new();
     let mut skipped = Vec::new();
 
-    db.with_conn(|conn| {
+    db.with_transaction(|conn| {
         for domain in &valid {
-            let existed = crate::db::domains::is_allowed(conn, domain.as_str())?;
-            crate::db::domains::add_allowed(conn, domain.as_str(), args.description.as_deref(), args.schedule.as_deref())?;
+            let existed = crate::db::domains::is_allowed(conn, domain.as_str())
+                .map_err(AppError::from)?;
+            crate::db::domains::add_allowed(conn, domain.as_str(), args.description.as_deref(), args.schedule.as_deref())
+                .map_err(AppError::from)?;
             if existed { skipped.push(domain.to_string()); }
             else { added.push(domain.to_string()); }
-            crate::db::audit::log_action(conn, "add", "allowlist", domain.as_str(), None)?;
+            crate::db::audit::log_action(conn, "add", "allowlist", domain.as_str(), None)
+                .map_err(AppError::from)?;
         }
         Ok(())
     })?;
@@ -70,11 +73,13 @@ fn handle_remove(db: &Database, args: AllowlistRemoveArgs) -> Result<ExitCode, A
     let mut removed = Vec::new();
     let mut not_found = Vec::new();
 
-    db.with_conn(|conn| {
+    db.with_transaction(|conn| {
         for domain in &args.domains {
             let d = domain.to_lowercase();
-            if crate::db::domains::remove_allowed(conn, &d)? {
-                crate::db::audit::log_action(conn, "remove", "allowlist", &d, None)?;
+            if crate::db::domains::remove_allowed(conn, &d)
+                .map_err(AppError::from)? {
+                crate::db::audit::log_action(conn, "remove", "allowlist", &d, None)
+                    .map_err(AppError::from)?;
                 removed.push(d);
             } else {
                 not_found.push(domain.clone());
@@ -112,10 +117,12 @@ fn handle_import(db: &Database, args: AllowlistImportArgs) -> Result<ExitCode, A
 
     let mut imported = 0;
     let mut skipped = 0;
-    db.with_conn(|conn| {
+    db.with_transaction(|conn| {
         for domain in &valid {
-            let existed = crate::db::domains::is_allowed(conn, domain.as_str())?;
-            crate::db::domains::add_allowed(conn, domain.as_str(), args.description.as_deref(), None)?;
+            let existed = crate::db::domains::is_allowed(conn, domain.as_str())
+                .map_err(AppError::from)?;
+            crate::db::domains::add_allowed(conn, domain.as_str(), args.description.as_deref(), None)
+                .map_err(AppError::from)?;
             if existed { skipped += 1; } else { imported += 1; }
         }
         Ok(())

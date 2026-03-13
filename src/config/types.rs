@@ -29,7 +29,7 @@ pub struct EnvConfig {
 }
 
 impl EnvConfig {
-    /// Load API credentials. Priority: env vars > macOS Keychain.
+    /// Load API credentials. Priority: env vars > .env file.
     pub fn from_env() -> Result<Self, crate::error::AppError> {
         let api_key = std::env::var("NEXTDNS_API_KEY").ok()
             .or_else(|| crate::common::keychain::get_secret("api-key").ok().flatten())

@@ -36,16 +36,18 @@ fn handle_add(db: &Database, args: DenylistAddArgs) -> Result<ExitCode, AppError
     let mut added = Vec::new();
     let mut skipped = Vec::new();
 
-    db.with_conn(|conn| {
+    db.with_transaction(|conn| {
         for domain in &valid {
-            let existed = crate::db::domains::is_blocked(conn, domain.as_str())?;
+            let existed = crate::db::domains::is_blocked(conn, domain.as_str())
+                .map_err(AppError::from)?;
             crate::db::domains::add_blocked(
                 conn, domain.as_str(), args.description.as_deref(),
                 args.category.as_deref(), args.schedule.as_deref(),
-            )?;
+            ).map_err(AppError::from)?;
             if existed { skipped.push(domain.to_string()); }
             else { added.push(domain.to_string()); }
-            crate::db::audit::log_action(conn, "add", "denylist", domain.as_str(), None)?;
+            crate::db::audit::log_action(conn, "add", "denylist", domain.as_str(), None)
+                .map_err(AppError::from)?;
         }
         Ok(())
     })?;
@@ -81,11 +83,13 @@ fn handle_remove(db: &Database, args: DenylistRemoveArgs) -> Result<ExitCode, Ap
     let mut removed = Vec::new();
     let mut not_found = Vec::new();
 
-    db.with_conn(|conn| {
+    db.with_transaction(|conn| {
         for domain in &args.domains {
             let domain_lower = domain.to_lowercase();
-            if crate::db::domains::remove_blocked(conn, &domain_lower)? {
-                crate::db::audit::log_action(conn, "remove", "denylist", &domain_lower, None)?;
+            if crate::db::domains::remove_blocked(conn, &domain_lower)
+                .map_err(AppError::from)? {
+                crate::db::audit::log_action(conn, "remove", "denylist", &domain_lower, None)
+                    .map_err(AppError::from)?;
                 removed.push(domain_lower);
             } else {
                 not_found.push(domain.clone());
@@ -160,10 +164,12 @@ fn handle_import(db: &Database, args: DenylistImportArgs) -> Result<ExitCode, Ap
     let mut imported = 0;
     let mut skipped = 0;
 
-    db.with_conn(|conn| {
+    db.with_transaction(|conn| {
         for domain in &valid {
-            let existed = crate::db::domains::is_blocked(conn, domain.as_str())?;
-            crate::db::domains::add_blocked(conn, domain.as_str(), args.description.as_deref(), None, None)?;
+            let existed = crate::db::domains::is_blocked(conn, domain.as_str())
+                .map_err(AppError::from)?;
+            crate::db::domains::add_blocked(conn, domain.as_str(), args.description.as_deref(), None, None)
+                .map_err(AppError::from)?;
             if existed { skipped += 1; } else { imported += 1; }
         }
         Ok(())

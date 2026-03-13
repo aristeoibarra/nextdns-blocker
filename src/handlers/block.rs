@@ -53,23 +53,31 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         pending_id = Some(id);
 
         if let Ok(status) = crate::watchdog::status() {
-            if !status.installed {
-                watchdog_warning = Some("Watchdog not installed — pending action will not execute automatically. Run 'ndb watchdog install --interval 5m'".to_string());
+            if !status.healthy {
+                watchdog_warning = Some("Watchdog unhealthy — pending action may not execute automatically. Run 'ndb fix' or 'ndb watchdog install --interval 5m'".to_string());
             }
         }
     }
 
     // Eager push newly added domains to NextDNS API immediately
+    let mut api_retrying = 0usize;
     if !added.is_empty() {
         if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
             if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id) {
-                crate::sync::eager_push_denylist(&db, &client, &added, true);
+                let push = crate::sync::eager_push_denylist(&db, &client, &added, true);
+                api_retrying = push.retrying;
             }
         }
     }
 
     // Block mapped apps for newly added domains
-    let apps_blocked = crate::app_blocker::block_apps_for_domains(&db, &added).unwrap_or_default();
+    let apps_blocked = crate::app_blocker::block_apps_for_domains(&db, &added)
+        .unwrap_or_else(|e| {
+            let _ = db.with_conn(|conn| {
+                crate::db::audit::log_action(conn, "block_app_failed", "app", &e.to_string(), None)
+            });
+            Vec::new()
+        });
     for app in &apps_blocked {
         let _ = db.with_conn(|conn| {
             crate::db::audit::log_action(conn, "block_app", "app", &app.bundle_id, Some(&app.app_name))
@@ -77,11 +85,24 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
     }
 
     // Block domains in /etc/hosts
-    let hosts_blocked = crate::hosts_blocker::block_hosts_for_domains(&db, &added).unwrap_or_default();
+    let hosts_blocked = crate::hosts_blocker::block_hosts_for_domains(&db, &added)
+        .unwrap_or_else(|e| {
+            let _ = db.with_conn(|conn| {
+                crate::db::audit::log_action(conn, "block_hosts_failed", "hosts", &e.to_string(), None)
+            });
+            Vec::new()
+        });
     for domain in &hosts_blocked {
         let _ = db.with_conn(|conn| {
             crate::db::audit::log_action(conn, "block_hosts", "hosts", domain, None)
         });
+    }
+
+    // Surface API retry warning so caller knows push is deferred
+    if api_retrying > 0 && watchdog_warning.is_none() {
+        watchdog_warning = Some(format!(
+            "{api_retrying} domain(s) failed to push to NextDNS API — queued for automatic retry"
+        ));
     }
 
     let result = BlockResult {

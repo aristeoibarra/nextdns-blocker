@@ -33,17 +33,19 @@ pub fn process_retries(db: &Database, client: &NextDnsClient) -> Result<RetryRes
             Err(e) => {
                 let next_attempt = entry.attempts + 1;
                 if next_attempt >= entry.max_attempts {
-                    // Audit log before removing — don't lose trace
+                    // Atomic: audit log + remove in one transaction
                     let details = format!(
                         "Exhausted after {} attempts. Last error: {}",
                         entry.max_attempts, e
                     );
-                    let _ = db.with_conn(|conn| {
+                    let _ = db.with_transaction(|conn| {
                         crate::db::audit::log_action(
                             conn, "retry_exhausted", "domain", domain, Some(&details),
-                        )
+                        ).map_err(crate::error::AppError::from)?;
+                        crate::db::retry::remove_retry(conn, &entry.id)
+                            .map_err(crate::error::AppError::from)?;
+                        Ok(())
                     });
-                    let _ = db.with_conn(|conn| crate::db::retry::remove_retry(conn, &entry.id));
                     exhausted += 1;
                 } else {
                     let delay = calculate_backoff(next_attempt as u32);

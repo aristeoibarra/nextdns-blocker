@@ -36,18 +36,50 @@ pub fn handle(args: FixArgs) -> Result<ExitCode, AppError> {
         }
     }
 
+    // Check watchdog health
+    match crate::watchdog::status() {
+        Ok(status) => {
+            if !status.installed {
+                issues.push("Watchdog not installed".to_string());
+                if !args.check_only {
+                    if crate::watchdog::install(300).is_ok() {
+                        fixed.push("Installed watchdog (300s interval)".to_string());
+                    }
+                }
+            } else if !status.binary_valid {
+                issues.push(format!(
+                    "Watchdog binary path stale: {}",
+                    status.binary_path.as_deref().unwrap_or("unknown")
+                ));
+                if !args.check_only {
+                    if crate::watchdog::ensure_healthy().is_ok() {
+                        fixed.push("Repaired watchdog binary path".to_string());
+                    }
+                }
+            } else if !status.running {
+                issues.push("Watchdog installed but not running".to_string());
+                if !args.check_only {
+                    if crate::watchdog::ensure_healthy().is_ok() {
+                        fixed.push("Reloaded watchdog into launchd".to_string());
+                    }
+                }
+            }
+        }
+        Err(e) => issues.push(format!("Watchdog status check failed: {e}")),
+    }
+
     // Check credentials (env vars or Keychain) and validate against API
     match crate::config::types::EnvConfig::from_env() {
         Err(_) => {
             let has_api_key = std::env::var("NEXTDNS_API_KEY").is_ok()
                 || crate::common::keychain::get_secret("api-key").ok().flatten().is_some();
             if !has_api_key {
-                issues.push("NEXTDNS_API_KEY not set (env var or Keychain)".to_string());
+                issues.push("NEXTDNS_API_KEY not set (env var or .env file)".to_string());
             }
             let has_profile = std::env::var("NEXTDNS_PROFILE_ID").is_ok()
                 || crate::common::keychain::get_secret("profile-id").ok().flatten().is_some();
             if !has_profile {
-                issues.push("NEXTDNS_PROFILE_ID not set (env var or Keychain)".to_string());
+                issues.push("NEXTDNS_PROFILE_ID not set (env var or .env file)".to_string());
             }
         }
         Ok(env_config) => {

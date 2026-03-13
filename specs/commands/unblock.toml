@@ -26,9 +26,16 @@ schema = """
   "data": {
     "target": "example.com",
     "duration": "1h",
-    "pending_id": "uuid"
+    "pending_id": "uuid",
+    "watchdog_warning": null,
+    "apps_unblocked": [],
+    "hosts_unblocked": []
   },
-  "summary": { "unblocked": 1 },
+  "summary": {
+    "unblocked": 1,
+    "apps_unblocked": 0,
+    "hosts_unblocked": 0
+  },
   "timestamp": "..."
 }
 """

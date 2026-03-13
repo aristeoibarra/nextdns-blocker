@@ -88,12 +88,16 @@ pub fn block_app(
         hint: Some("Ensure ndb has Full Disk Access in System Settings > Privacy & Security".to_string()),
     })?;
 
-    // 3. Record in DB
-    db.with_conn(|conn| {
+    // 3. Record in DB — rollback rename if DB write fails
+    if let Err(e) = db.with_conn(|conn| {
         crate::db::apps::add_blocked_app(
             conn, bundle_id, app_name, &path, &blocked_path, source_domain,
         )
-    })?;
+    }) {
+        // Rollback: restore .app from .app.blocked
+        let _ = std::fs::rename(&blocked_path, &path);
+        return Err(e);
+    }
 
     Ok(Some(AppBlockResult {
         bundle_id: bundle_id.to_string(),
@@ -112,25 +116,45 @@ pub fn unblock_app(db: &Database, bundle_id: &str) -> Result<Option<AppUnblockRe
     let blocked = Path::new(&record.blocked_path);
     let original = Path::new(&record.original_path);
 
+    // Remove from DB first, then restore filesystem.
+    // If rename fails, re-add to DB so state stays consistent.
+    db.with_conn(|conn| crate::db::apps::remove_blocked_app(conn, bundle_id))?;
+
     if blocked.exists() {
         // Remove original if somehow recreated
         if original.exists() {
-            std::fs::remove_dir_all(original).map_err(|e| AppError::General {
-                message: format!("Failed to clean up {}: {e}", record.original_path),
-                hint: None,
+            std::fs::remove_dir_all(original).map_err(|e| {
+                // Re-add to DB since we couldn't complete the unblock
+                let _ = db.with_conn(|conn| {
+                    crate::db::apps::add_blocked_app(
+                        conn, bundle_id, &record.app_name, &record.original_path,
+                        &record.blocked_path, record.source_domain.as_deref(),
+                    )
+                });
+                AppError::General {
+                    message: format!("Failed to clean up {}: {e}", record.original_path),
+                    hint: None,
+                }
             })?;
         }
 
-        std::fs::rename(blocked, original).map_err(|e| AppError::General {
-            message: format!("Failed to restore app {}: {e}", record.app_name),
-            hint: Some(
-                "Ensure ndb has Full Disk Access in System Settings > Privacy & Security"
-                    .to_string(),
-            ),
-        })?;
+        if let Err(e) = std::fs::rename(blocked, original) {
+            // Re-add to DB since we couldn't complete the unblock
+            let _ = db.with_conn(|conn| {
+                crate::db::apps::add_blocked_app(
+                    conn, bundle_id, &record.app_name, &record.original_path,
+                    &record.blocked_path, record.source_domain.as_deref(),
+                )
+            });
+            return Err(AppError::General {
+                message: format!("Failed to restore app {}: {e}", record.app_name),
+                hint: Some(
+                    "Ensure ndb has Full Disk Access in System Settings > Privacy & Security"
+                        .to_string(),
+                ),
+            });
+        }
     }
-
-    db.with_conn(|conn| crate::db::apps::remove_blocked_app(conn, bundle_id))?;
 
     Ok(Some(AppUnblockResult {
         bundle_id: bundle_id.to_string(),

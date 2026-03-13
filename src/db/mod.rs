@@ -130,7 +130,15 @@ impl Database {
                 Ok(val)
             }
             Err(e) => {
-                let _ = conn.execute_batch("ROLLBACK");
+                if let Err(rollback_err) = conn.execute_batch("ROLLBACK") {
+                    // Surface rollback failure alongside the original error
+                    return Err(AppError::General {
+                        message: format!(
+                            "Transaction failed: {e}. Additionally, ROLLBACK failed: {rollback_err}"
+                        ),
+                        hint: Some("Database may be in an inconsistent state. Restart the application.".to_string()),
+                    });
+                }
                 Err(e)
             }
         }

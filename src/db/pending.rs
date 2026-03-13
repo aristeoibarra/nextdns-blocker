@@ -48,21 +48,30 @@ pub fn list_pending(conn: &Connection, status: Option<&str>) -> Result<Vec<Pendi
     }
 }
 
+/// Get pending actions that are due: status='pending' and execute_at <= now,
+/// OR stuck in 'executing' for more than 5 minutes (process likely died).
 pub fn get_due_pending(conn: &Connection) -> Result<Vec<PendingAction>, rusqlite::Error> {
     let now = now_unix();
+    let stuck_threshold = now - 300; // 5 minutes
     let mut stmt = conn.prepare(
         "SELECT id, action, domain, list_type, scheduled_at, execute_at, status, description, created_at
-         FROM pending_actions WHERE status = 'pending' AND execute_at <= ?1 ORDER BY execute_at",
+         FROM pending_actions
+         WHERE (status = 'pending' AND execute_at <= ?1)
+            OR (status = 'executing' AND execute_at <= ?2)
+         ORDER BY execute_at",
     )?;
-    let rows = stmt.query_map(params![now], map_pending)?;
+    let rows = stmt.query_map(params![now, stuck_threshold], map_pending)?;
     rows.collect()
 }
 
 pub fn has_due_pending(conn: &Connection) -> Result<bool, rusqlite::Error> {
     let now = now_unix();
+    let stuck_threshold = now - 300;
     conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM pending_actions WHERE status = 'pending' AND execute_at <= ?1)",
-        params![now],
+        "SELECT EXISTS(SELECT 1 FROM pending_actions
+         WHERE (status = 'pending' AND execute_at <= ?1)
+            OR (status = 'executing' AND execute_at <= ?2))",
+        params![now, stuck_threshold],
         |row| row.get(0),
     )
 }

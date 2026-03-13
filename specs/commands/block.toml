@@ -36,12 +36,17 @@ schema = """
     "skipped": [],
     "errors": [],
     "duration": null,
-    "pending_id": null
+    "pending_id": null,
+    "watchdog_warning": null,
+    "apps_blocked": [],
+    "hosts_blocked": []
   },
   "summary": {
     "added": 1,
     "skipped": 0,
-    "errors": 0
+    "errors": 0,
+    "apps_blocked": 0,
+    "hosts_blocked": 0
   },
   "timestamp": "..."
 }

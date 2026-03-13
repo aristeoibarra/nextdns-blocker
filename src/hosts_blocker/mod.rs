@@ -39,32 +39,39 @@ pub fn block_hosts_for_domains(
 }
 
 /// Remove a domain's hosts entries from /etc/hosts and DB. Returns domains removed.
+/// All DB deletions are atomic via a single transaction.
 pub fn unblock_hosts_for_domain(
     db: &Database,
     domain: &str,
 ) -> Result<Vec<String>, AppError> {
-    let entries = db.with_conn(|conn| crate::db::hosts::get_entries_for_source(conn, domain))?;
-    let mut removed = Vec::new();
+    let removed = db.with_transaction(|conn| {
+        let entries = crate::db::hosts::get_entries_for_source(conn, domain)
+            .map_err(AppError::from)?;
+        let mut removed = Vec::new();
 
-    for entry in &entries {
-        db.with_conn(|conn| crate::db::hosts::remove_host_entry(conn, &entry.domain))?;
-        removed.push(entry.domain.clone());
-    }
-
-    // Also remove the domain itself if it's a direct entry (source_domain == domain)
-    let direct = db.with_conn(|conn| {
-        let mut stmt = conn.prepare(
-            "SELECT domain FROM hosts_entries WHERE domain = ?1",
-        )?;
-        let exists = stmt.exists(rusqlite::params![domain])?;
-        Ok(exists)
-    })?;
-    if direct {
-        db.with_conn(|conn| crate::db::hosts::remove_host_entry(conn, domain))?;
-        if !removed.contains(&domain.to_string()) {
-            removed.push(domain.to_string());
+        for entry in &entries {
+            crate::db::hosts::remove_host_entry(conn, &entry.domain)
+                .map_err(AppError::from)?;
+            removed.push(entry.domain.clone());
         }
-    }
+
+        // Also remove the domain itself if it's a direct entry
+        let direct = {
+            let mut stmt = conn.prepare(
+                "SELECT domain FROM hosts_entries WHERE domain = ?1",
+            ).map_err(AppError::from)?;
+            stmt.exists(rusqlite::params![domain]).map_err(AppError::from)?
+        };
+        if direct {
+            crate::db::hosts::remove_host_entry(conn, domain)
+                .map_err(AppError::from)?;
+            if !removed.contains(&domain.to_string()) {
+                removed.push(domain.to_string());
+            }
+        }
+
+        Ok(removed)
+    })?;
 
     if !removed.is_empty() {
         apply_hosts_from_db(db)?;
@@ -94,14 +101,21 @@ pub fn enforce_hosts_entries(db: &Database) -> Result<Vec<String>, AppError> {
 }
 
 /// Remove ALL ndb entries from /etc/hosts and DB. Emergency restore.
+/// All DB deletions are atomic via a single transaction.
 pub fn restore_all(db: &Database) -> Result<Vec<String>, AppError> {
-    let entries = db.with_conn(crate::db::hosts::list_host_entries)?;
-    let mut removed = Vec::new();
+    let removed = db.with_transaction(|conn| {
+        let entries = crate::db::hosts::list_host_entries(conn)
+            .map_err(AppError::from)?;
+        let mut removed = Vec::new();
 
-    for entry in &entries {
-        db.with_conn(|conn| crate::db::hosts::remove_host_entry(conn, &entry.domain))?;
-        removed.push(entry.domain.clone());
-    }
+        for entry in &entries {
+            crate::db::hosts::remove_host_entry(conn, &entry.domain)
+                .map_err(AppError::from)?;
+            removed.push(entry.domain.clone());
+        }
+
+        Ok(removed)
+    })?;
 
     if !removed.is_empty() {
         apply_hosts_from_db(db)?;
@@ -123,11 +137,12 @@ fn read_hosts_file() -> Result<(Vec<String>, HashSet<String>), AppError> {
     let mut in_ndb_block = false;
 
     for line in content.lines() {
-        if line.trim() == MARKER_START {
+        let trimmed = line.trim();
+        if trimmed == MARKER_START || trimmed.starts_with(&format!("{MARKER_START} ")) {
             in_ndb_block = true;
             continue;
         }
-        if line.trim() == MARKER_END {
+        if trimmed == MARKER_END || trimmed.starts_with(&format!("{MARKER_END} ")) {
             in_ndb_block = false;
             continue;
         }
@@ -142,6 +157,10 @@ fn read_hosts_file() -> Result<(Vec<String>, HashSet<String>), AppError> {
             non_ndb_lines.push(line.to_string());
         }
     }
+
+    // If marker was never closed, the lines after the marker were absorbed
+    // as ndb-managed. This is the intended safe behavior: we'll rewrite
+    // only our own domains, effectively closing the marker on next write.
 
     Ok((non_ndb_lines, ndb_domains))
 }

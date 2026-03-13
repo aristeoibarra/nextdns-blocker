@@ -199,7 +199,10 @@ impl NextDnsClient {
         } else {
             cats.retain(|c| c.id != id);
         }
-        let body = serde_json::to_value(&cats).unwrap();
+        let body = serde_json::to_value(&cats).map_err(|e| AppError::General {
+            message: format!("Failed to serialize categories: {e}"),
+            hint: None,
+        })?;
         self.put_json(&self.endpoint("parentalControl/categories"), &body)
     }
 
@@ -221,7 +224,10 @@ impl NextDnsClient {
         } else {
             svcs.retain(|s| s.id != id);
         }
-        let body = serde_json::to_value(&svcs).unwrap();
+        let body = serde_json::to_value(&svcs).map_err(|e| AppError::General {
+            message: format!("Failed to serialize services: {e}"),
+            hint: None,
+        })?;
         self.put_json(&self.endpoint("parentalControl/services"), &body)
     }
 }

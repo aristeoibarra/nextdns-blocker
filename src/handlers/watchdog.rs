@@ -71,7 +71,10 @@ fn handle_run() -> Result<ExitCode, AppError> {
 
     let tz_str = db.with_conn(crate::db::config::get_timezone)?;
     let tz: chrono_tz::Tz = tz_str.parse()
-        .map_err(|_| AppError::Config { message: format!("Invalid timezone: {tz_str}"), hint: None })?;
+        .map_err(|_| AppError::Config {
+            message: format!("Invalid timezone: {tz_str}"),
+            hint: Some("Fix with 'ndb config set timezone America/Mexico_City'".to_string()),
+        })?;
     let evaluator = crate::scheduler::ScheduleEvaluator::new(tz);
 
     let sound = db.with_conn(crate::db::config::get_notification_sound)?;

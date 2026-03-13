@@ -24,6 +24,9 @@ fn run_inner() -> Result<(), crate::error::AppError> {
     }
     let db = crate::db::Database::open(&db_path)?;
 
+    // Watchdog health: auto-repair if missing or binary path stale
+    let _ = crate::watchdog::ensure_healthy();
+
     // Enforcement (DB-only, no API needed)
     let _ = crate::app_blocker::enforce_blocked_apps(&db);
     let _ = crate::hosts_blocker::enforce_hosts_entries(&db);

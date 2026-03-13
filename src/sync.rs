@@ -71,58 +71,75 @@ impl Renderable for SyncResult {
 
 // === Eager push helpers (called from command handlers) ===
 
+/// Result of an eager push attempt.
+#[derive(Debug, Default)]
+pub struct EagerPushResult {
+    pub pushed: usize,
+    pub retrying: usize,
+}
+
 /// Immediately push denylist changes to NextDNS.
-/// On success, updates `in_nextdns`. On failure, silently enqueues retry.
-pub fn eager_push_denylist(db: &Database, client: &NextDnsClient, domains: &[String], add: bool) {
+/// On success, updates `in_nextdns`. On failure, enqueues retry.
+/// Returns counts so callers can report API failures to the user.
+pub fn eager_push_denylist(db: &Database, client: &NextDnsClient, domains: &[String], add: bool) -> EagerPushResult {
+    let mut result = EagerPushResult::default();
     let mut changed = false;
     for domain in domains {
-        let result = if add {
+        let api_result = if add {
             client.add_to_denylist(domain)
         } else {
             client.remove_from_denylist(domain)
         };
-        match result {
+        match api_result {
             Ok(()) => {
                 changed = true;
-                if add {
-                    let _ = db.with_conn(|conn| {
-                        crate::db::domains::set_in_nextdns_blocked(conn, domain, true)
-                    });
-                }
+                result.pushed += 1;
+                let _ = db.with_conn(|conn| {
+                    crate::db::domains::set_in_nextdns_blocked(conn, domain, add)
+                });
             }
-            Err(_) => enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "denylist"),
+            Err(_) => {
+                enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "denylist");
+                result.retrying += 1;
+            }
         }
     }
     if changed {
         crate::common::platform::flush_dns_cache();
     }
+    result
 }
 
 /// Immediately push allowlist changes to NextDNS.
-/// On success, updates `in_nextdns`. On failure, silently enqueues retry.
-pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[String], add: bool) {
+/// On success, updates `in_nextdns`. On failure, enqueues retry.
+/// Returns counts so callers can report API failures to the user.
+pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[String], add: bool) -> EagerPushResult {
+    let mut result = EagerPushResult::default();
     let mut changed = false;
     for domain in domains {
-        let result = if add {
+        let api_result = if add {
             client.add_to_allowlist(domain)
         } else {
             client.remove_from_allowlist(domain)
         };
-        match result {
+        match api_result {
             Ok(()) => {
                 changed = true;
-                if add {
-                    let _ = db.with_conn(|conn| {
-                        crate::db::domains::set_in_nextdns_allowed(conn, domain, true)
-                    });
-                }
+                result.pushed += 1;
+                let _ = db.with_conn(|conn| {
+                    crate::db::domains::set_in_nextdns_allowed(conn, domain, add)
+                });
             }
-            Err(_) => enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "allowlist"),
+            Err(_) => {
+                enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "allowlist");
+                result.retrying += 1;
+            }
         }
     }
     if changed {
         crate::common::platform::flush_dns_cache();
     }
+    result
 }
 
 /// Immediately push a parental control category change. On failure, enqueues retry.
@@ -171,7 +188,18 @@ pub fn execute_schedule_sync(
 
     for domain in &domains {
         let schedule = domain.schedule.as_deref().and_then(|s| {
-            serde_json::from_str::<crate::config::types::Schedule>(s).ok()
+            match serde_json::from_str::<crate::config::types::Schedule>(s) {
+                Ok(sched) => Some(sched),
+                Err(e) => {
+                    let _ = db.with_conn(|conn| {
+                        crate::db::audit::log_action(
+                            conn, "schedule_parse_error", "domain", &domain.domain,
+                            Some(&format!("Malformed schedule JSON: {e}")),
+                        )
+                    });
+                    None
+                }
+            }
         });
         let parsed = schedule.as_ref().and_then(crate::scheduler::parse_config_schedule);
         let should_be_in_nextdns = evaluator.should_block(parsed.as_ref());
@@ -220,7 +248,18 @@ pub fn execute_schedule_sync(
     for domain in &allowed_domains {
         let Some(schedule_str) = &domain.schedule else { continue };
 
-        let schedule = serde_json::from_str::<crate::config::types::Schedule>(schedule_str).ok();
+        let schedule = match serde_json::from_str::<crate::config::types::Schedule>(schedule_str) {
+            Ok(sched) => Some(sched),
+            Err(e) => {
+                let _ = db.with_conn(|conn| {
+                    crate::db::audit::log_action(
+                        conn, "schedule_parse_error", "allowlist", &domain.domain,
+                        Some(&format!("Malformed schedule JSON: {e}")),
+                    )
+                });
+                None
+            }
+        };
         let parsed = schedule.as_ref().and_then(crate::scheduler::parse_config_schedule);
 
         // Inverted semantics: is_available = should be in NextDNS allowlist
@@ -260,6 +299,26 @@ pub fn execute_schedule_sync(
                     if is_auth { break; }
                 }
             }
+        }
+    }
+
+    // Block/unblock apps for schedule-driven denylist changes
+    if !added.is_empty() {
+        let deny_added: Vec<String> = added.iter()
+            .filter(|d| domains.iter().any(|dd| dd.domain == **d))
+            .cloned()
+            .collect();
+        if !deny_added.is_empty() {
+            let _ = crate::app_blocker::block_apps_for_domains(db, &deny_added);
+        }
+    }
+    if !removed.is_empty() {
+        let deny_removed: Vec<String> = removed.iter()
+            .filter(|d| domains.iter().any(|dd| dd.domain == **d))
+            .cloned()
+            .collect();
+        for domain in &deny_removed {
+            let _ = crate::app_blocker::unblock_apps_for_domain(db, domain);
         }
     }
 
