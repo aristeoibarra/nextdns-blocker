@@ -103,21 +103,14 @@ pub fn eager_push_denylist(db: &Database, client: &NextDnsClient, domains: &[Str
     let mut result = EagerPushResult::default();
     let mut changed = false;
     for domain in domains {
-        let api_result = if add {
-            client.add_to_denylist(domain)
+        let api_call = || if add { client.add_to_denylist(domain) } else { client.remove_from_denylist(domain) };
+        if api_call().is_ok() || api_call().is_ok() {
+            changed = true;
+            result.pushed += 1;
+            update_in_nextdns(db, domain, "denylist", add);
         } else {
-            client.remove_from_denylist(domain)
-        };
-        match api_result {
-            Ok(()) => {
-                changed = true;
-                result.pushed += 1;
-                update_in_nextdns(db, domain, "denylist", add);
-            }
-            Err(_) => {
-                enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "denylist");
-                result.retrying += 1;
-            }
+            enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "denylist");
+            result.retrying += 1;
         }
     }
     if changed {
@@ -133,21 +126,14 @@ pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[St
     let mut result = EagerPushResult::default();
     let mut changed = false;
     for domain in domains {
-        let api_result = if add {
-            client.add_to_allowlist(domain)
+        let api_call = || if add { client.add_to_allowlist(domain) } else { client.remove_from_allowlist(domain) };
+        if api_call().is_ok() || api_call().is_ok() {
+            changed = true;
+            result.pushed += 1;
+            update_in_nextdns(db, domain, "allowlist", add);
         } else {
-            client.remove_from_allowlist(domain)
-        };
-        match api_result {
-            Ok(()) => {
-                changed = true;
-                result.pushed += 1;
-                update_in_nextdns(db, domain, "allowlist", add);
-            }
-            Err(_) => {
-                enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "allowlist");
-                result.retrying += 1;
-            }
+            enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "allowlist");
+            result.retrying += 1;
         }
     }
     if changed {
@@ -156,10 +142,12 @@ pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[St
     result
 }
 
-/// Immediately push a parental control category change. On failure, enqueues retry.
+/// Immediately push a parental control category change. Retries once on failure before enqueuing.
 pub fn eager_push_category(db: &Database, client: &NextDnsClient, id: &str, add: bool) -> EagerPushResult {
     let mut result = EagerPushResult::default();
-    if client.set_parental_category(id, add).is_ok() {
+    let ok = client.set_parental_category(id, add).is_ok()
+        || client.set_parental_category(id, add).is_ok();
+    if ok {
         crate::common::platform::flush_dns_cache();
         result.pushed = 1;
     } else {
@@ -169,10 +157,12 @@ pub fn eager_push_category(db: &Database, client: &NextDnsClient, id: &str, add:
     result
 }
 
-/// Immediately push a parental control service change. On failure, enqueues retry.
+/// Immediately push a parental control service change. Retries once on failure before enqueuing.
 pub fn eager_push_service(db: &Database, client: &NextDnsClient, id: &str, add: bool) -> EagerPushResult {
     let mut result = EagerPushResult::default();
-    if client.set_parental_service(id, add).is_ok() {
+    let ok = client.set_parental_service(id, add).is_ok()
+        || client.set_parental_service(id, add).is_ok();
+    if ok {
         crate::common::platform::flush_dns_cache();
         result.pushed = 1;
     } else {

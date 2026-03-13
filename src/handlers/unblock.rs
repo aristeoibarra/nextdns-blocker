@@ -88,6 +88,8 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                 .map(|c| (env, c))
         });
 
+    let mut eager_push_failed = false;
+
     if let Some(ref dur_str) = args.duration {
         let duration = crate::common::time::parse_duration(dur_str)?;
         let execute_at = crate::common::time::now_unix() + duration.as_secs() as i64;
@@ -107,7 +109,8 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                     Ok(())
                 })?;
                 if let Some((_, ref client)) = api_client {
-                    crate::sync::eager_push_denylist(&db, client, &[args.target.clone()], false);
+                    let r = crate::sync::eager_push_denylist(&db, client, &[args.target.clone()], false);
+                    if r.pushed == 0 { eager_push_failed = true; }
                 }
             }
             UnblockTarget::LocalCategory => {
@@ -126,7 +129,8 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                     Ok(())
                 })?;
                 if let Some((_, ref client)) = api_client {
-                    crate::sync::eager_push_category(&db, client, &args.target, false);
+                    let r = crate::sync::eager_push_category(&db, client, &args.target, false);
+                    if r.pushed == 0 { eager_push_failed = true; }
                 }
             }
             UnblockTarget::NextdnsService => {
@@ -142,7 +146,8 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                     Ok(())
                 })?;
                 if let Some((_, ref client)) = api_client {
-                    crate::sync::eager_push_service(&db, client, &args.target, false);
+                    let r = crate::sync::eager_push_service(&db, client, &args.target, false);
+                    if r.pushed == 0 { eager_push_failed = true; }
                 }
             }
         }
@@ -154,7 +159,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
             }
         }
 
-        let result = UnblockResult { target: args.target, duration: Some(dur_str.clone()), pending_id: Some(id), watchdog_warning, apps_unblocked, hosts_unblocked };
+        let result = UnblockResult { target: args.target, duration: Some(dur_str.clone()), pending_id: Some(id), watchdog_warning, eager_push_failed, apps_unblocked, hosts_unblocked };
         output::render(&result);
     } else {
         match target_kind {
@@ -167,7 +172,8 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                     Ok(())
                 })?;
                 if let Some((_, ref client)) = api_client {
-                    crate::sync::eager_push_denylist(&db, client, &[args.target.clone()], false);
+                    let r = crate::sync::eager_push_denylist(&db, client, &[args.target.clone()], false);
+                    if r.pushed == 0 { eager_push_failed = true; }
                 }
             }
             UnblockTarget::LocalCategory => {
@@ -177,19 +183,21 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                 db.with_conn(|conn| crate::db::nextdns::remove_nextdns_category(conn, &args.target))?;
                 db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "nextdns_category", &args.target, None, "cli"))?;
                 if let Some((_, ref client)) = api_client {
-                    crate::sync::eager_push_category(&db, client, &args.target, false);
+                    let r = crate::sync::eager_push_category(&db, client, &args.target, false);
+                    if r.pushed == 0 { eager_push_failed = true; }
                 }
             }
             UnblockTarget::NextdnsService => {
                 db.with_conn(|conn| crate::db::nextdns::remove_nextdns_service(conn, &args.target))?;
                 db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "nextdns_service", &args.target, None, "cli"))?;
                 if let Some((_, ref client)) = api_client {
-                    crate::sync::eager_push_service(&db, client, &args.target, false);
+                    let r = crate::sync::eager_push_service(&db, client, &args.target, false);
+                    if r.pushed == 0 { eager_push_failed = true; }
                 }
             }
         }
 
-        let result = UnblockResult { target: args.target, duration: None, pending_id: None, watchdog_warning: None, apps_unblocked, hosts_unblocked };
+        let result = UnblockResult { target: args.target, duration: None, pending_id: None, watchdog_warning: None, eager_push_failed, apps_unblocked, hosts_unblocked };
         output::render(&result);
     }
 
@@ -201,6 +209,7 @@ struct UnblockResult {
     duration: Option<String>,
     pending_id: Option<String>,
     watchdog_warning: Option<String>,
+    eager_push_failed: bool,
     apps_unblocked: Vec<crate::app_blocker::AppUnblockResult>,
     hosts_unblocked: Vec<String>,
 }
@@ -211,6 +220,7 @@ impl Renderable for UnblockResult {
             "data": {
                 "target": self.target, "duration": self.duration,
                 "pending_id": self.pending_id, "watchdog_warning": self.watchdog_warning,
+                "eager_push_failed": self.eager_push_failed,
                 "apps_unblocked": self.apps_unblocked,
                 "hosts_unblocked": self.hosts_unblocked,
             },
