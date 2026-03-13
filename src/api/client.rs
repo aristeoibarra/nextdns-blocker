@@ -97,22 +97,6 @@ impl NextDnsClient {
         Ok(())
     }
 
-    fn patch_json(&self, url: &str, body: &serde_json::Value) -> ApiResult<()> {
-        self.pre_request_check()?;
-
-        self.agent.patch(url)
-            .header("Content-Type", "application/json")
-            .header("X-Api-Key", &self.api_key)
-            .send_json(body)
-            .map_err(|e| {
-                self.circuit_breaker.record_failure();
-                map_ureq_error(e)
-            })?;
-
-        self.circuit_breaker.record_success();
-        Ok(())
-    }
-
     fn delete(&self, url: &str) -> ApiResult<()> {
         self.pre_request_check()?;
 
@@ -189,7 +173,7 @@ impl NextDnsClient {
     pub fn set_parental_category(&self, id: &str, active: bool) -> ApiResult<()> {
         if active {
             let body = serde_json::json!({ "id": id, "active": true });
-            self.patch_json(&self.endpoint("parentalControl/categories"), &body)
+            self.post_json(&self.endpoint("parentalControl/categories"), &body)
         } else {
             self.delete(&format!("{}/{id}", self.endpoint("parentalControl/categories")))
         }
@@ -203,7 +187,7 @@ impl NextDnsClient {
     pub fn set_parental_service(&self, id: &str, active: bool) -> ApiResult<()> {
         if active {
             let body = serde_json::json!({ "id": id, "active": true });
-            self.patch_json(&self.endpoint("parentalControl/services"), &body)
+            self.post_json(&self.endpoint("parentalControl/services"), &body)
         } else {
             self.delete(&format!("{}/{id}", self.endpoint("parentalControl/services")))
         }

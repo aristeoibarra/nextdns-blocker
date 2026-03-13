@@ -22,6 +22,10 @@ pub fn process_retries(db: &Database, client: &NextDnsClient) -> Result<RetryRes
             ("remove", "denylist") => client.remove_from_denylist(domain),
             ("add", "allowlist") => client.add_to_allowlist(domain),
             ("remove", "allowlist") => client.remove_from_allowlist(domain),
+            ("add", "category") => client.set_parental_category(domain, true),
+            ("remove", "category") => client.set_parental_category(domain, false),
+            ("add", "service") => client.set_parental_service(domain, true),
+            ("remove", "service") => client.set_parental_service(domain, false),
             (act, lt) => {
                 // Unknown combo — audit-log and remove to prevent infinite loop
                 let _ = db.with_conn(|conn| {
