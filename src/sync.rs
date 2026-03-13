@@ -156,21 +156,29 @@ pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[St
 }
 
 /// Immediately push a parental control category change. On failure, enqueues retry.
-pub fn eager_push_category(db: &Database, client: &NextDnsClient, id: &str, add: bool) {
+pub fn eager_push_category(db: &Database, client: &NextDnsClient, id: &str, add: bool) -> EagerPushResult {
+    let mut result = EagerPushResult::default();
     if client.set_parental_category(id, add).is_ok() {
         crate::common::platform::flush_dns_cache();
+        result.pushed = 1;
     } else {
         enqueue_retry(db, if add { "add" } else { "remove" }, Some(id), "category");
+        result.retrying = 1;
     }
+    result
 }
 
 /// Immediately push a parental control service change. On failure, enqueues retry.
-pub fn eager_push_service(db: &Database, client: &NextDnsClient, id: &str, add: bool) {
+pub fn eager_push_service(db: &Database, client: &NextDnsClient, id: &str, add: bool) -> EagerPushResult {
+    let mut result = EagerPushResult::default();
     if client.set_parental_service(id, add).is_ok() {
         crate::common::platform::flush_dns_cache();
+        result.pushed = 1;
     } else {
         enqueue_retry(db, if add { "add" } else { "remove" }, Some(id), "service");
+        result.retrying = 1;
     }
+    result
 }
 
 fn enqueue_retry(db: &Database, action: &str, target: Option<&str>, list_type: &str) {

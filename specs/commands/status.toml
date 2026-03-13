@@ -23,7 +23,9 @@ schema = """
     "allowed_domains": 3,
     "categories": 5,
     "pending_actions": 0,
-    "retry_queue": 0
+    "retry_queue": 0,
+    "hosts_blocked": 10,
+    "apps_blocked": 2
   },
   "timestamp": "..."
 }

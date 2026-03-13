@@ -6,6 +6,12 @@ requires_config = false
 requires_api = false
 requires_pin = false
 
+[[args]]
+name = "domains"
+type = "string[]"
+required = true
+description = "One or more domains to block"
+
 [[flags]]
 name = "--description"
 type = "string"

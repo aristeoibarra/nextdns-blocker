@@ -45,5 +45,10 @@ pub fn get_migrations() -> Vec<(i64, &'static str, &'static str)> {
             "missing_indexes",
             include_str!("../../migrations/008_missing_indexes.sql"),
         ),
+        (
+            9,
+            "audit_and_sync_indexes",
+            include_str!("../../migrations/009_audit_and_sync_indexes.sql"),
+        ),
     ]
 }

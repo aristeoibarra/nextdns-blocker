@@ -193,15 +193,23 @@ fn write_hosts_file(non_ndb_lines: &[String], ndb_entries: &[HostEntry]) -> Resu
         content.push('\n');
     }
 
-    // Write to temp file with exclusive creation to prevent TOCTOU attacks
+    // Write to temp file in a private directory to prevent symlink attacks.
+    // Using the ndb data dir (user-owned, mode 700) avoids the /tmp race window
+    // where an attacker could replace the temp file with a symlink before sudo cp.
     use std::os::unix::fs::OpenOptionsExt;
-    let tmp_path = format!(
-        "/tmp/ndb_hosts_{}_{}", std::process::id(),
+    let tmp_dir = crate::common::platform::data_dir();
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| AppError::General {
+        message: format!("Failed to create data dir: {e}"),
+        hint: Some("Check permissions on ndb data directory".to_string()),
+    })?;
+    let tmp_path = tmp_dir.join(format!(
+        "hosts_tmp_{}_{}", std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos()
-    );
+    ));
+    let tmp_path_str = tmp_path.to_string_lossy().to_string();
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -209,7 +217,7 @@ fn write_hosts_file(non_ndb_lines: &[String], ndb_entries: &[HostEntry]) -> Resu
         .open(&tmp_path)
         .map_err(|e| AppError::General {
             message: format!("Failed to create temp file: {e}"),
-            hint: Some("Check /tmp permissions and disk space".to_string()),
+            hint: Some("Check permissions on ndb data directory and disk space".to_string()),
         })?;
     file.write_all(content.as_bytes()).map_err(|e| AppError::General {
         message: format!("Failed to write temp file: {e}"),
@@ -219,7 +227,7 @@ fn write_hosts_file(non_ndb_lines: &[String], ndb_entries: &[HostEntry]) -> Resu
 
     // Copy to /etc/hosts via sudo -n (non-interactive)
     let output = std::process::Command::new("sudo")
-        .args(["-n", "cp", &tmp_path, HOSTS_PATH])
+        .args(["-n", "cp", &tmp_path_str, HOSTS_PATH])
         .output()
         .map_err(|e| AppError::General {
             message: format!("Failed to run sudo: {e}"),

@@ -103,7 +103,19 @@ pub fn block_app(
         )
     }) {
         // Rollback: restore .app from .app.blocked
-        let _ = std::fs::rename(&blocked_path, &path);
+        if let Err(rename_err) = std::fs::rename(&blocked_path, &path) {
+            // Rollback failed — filesystem and DB are now inconsistent.
+            // Log to audit so `ndb apps doctor` can detect and repair this orphan.
+            let _ = db.with_conn(|conn| {
+                crate::db::audit::log_action(
+                    conn, "block_rollback_failed", "app", bundle_id,
+                    Some(&format!(
+                        "DB write failed ({e}), rename rollback also failed ({rename_err}). \
+                         Orphaned .app.blocked at {blocked_path}"
+                    )),
+                )
+            });
+        }
         return Err(e);
     }
 
@@ -236,7 +248,14 @@ pub fn enforce_blocked_apps(db: &Database) -> Result<Vec<String>, AppError> {
     for app in &blocked {
         if Path::new(&app.original_path).exists() {
             kill_app(&app.app_name);
-            let _ = std::fs::rename(&app.original_path, &app.blocked_path);
+            if let Err(e) = std::fs::rename(&app.original_path, &app.blocked_path) {
+                let _ = db.with_conn(|conn| {
+                    crate::db::audit::log_action(
+                        conn, "enforce_rename_failed", "app", &app.bundle_id,
+                        Some(&format!("Failed to re-block {}: {e}", app.app_name)),
+                    )
+                });
+            }
         }
     }
 

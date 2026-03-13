@@ -32,7 +32,17 @@ pub fn process_pending(db: &Database, client: &NextDnsClient) -> Result<PendingR
             ("remove", "denylist") => client.remove_from_denylist(&domain),
             ("add", "allowlist") => client.add_to_allowlist(&domain),
             ("remove", "allowlist") => client.remove_from_allowlist(&domain),
-            _ => Ok(()),
+            (act, lt) => {
+                // Unknown combo — mark completed and audit-log so it doesn't loop
+                let _ = db.with_conn(|conn| {
+                    crate::db::audit::log_action(
+                        conn, "pending_unknown_combo", lt, &action.id,
+                        Some(&format!("Unknown action/list_type: {act}/{lt} for domain {domain}")),
+                    )
+                });
+                db.with_conn(|conn| crate::db::pending::update_pending_status(conn, &action.id, "completed"))?;
+                continue;
+            }
         };
 
         match result {

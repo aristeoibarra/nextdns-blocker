@@ -16,6 +16,21 @@ pub fn handle(cmd: AllowlistCommands) -> Result<ExitCode, AppError> {
 }
 
 fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppError> {
+    // Validate schedule upfront before any DB writes
+    if let Some(ref sched_str) = args.schedule {
+        let sched: crate::config::types::Schedule = serde_json::from_str(sched_str)
+            .map_err(|e| AppError::Validation {
+                message: format!("Invalid schedule JSON: {e}"),
+                details: vec![],
+                hint: Some("Schedule must be valid JSON with available_hours array".to_string()),
+            })?;
+        crate::scheduler::validate_config_schedule(&sched).map_err(|e| AppError::Validation {
+            message: format!("Invalid schedule: {e}"),
+            details: vec![],
+            hint: Some("Times must be HH:MM, days must be mon/tue/wed/thu/fri/sat/sun".to_string()),
+        })?;
+    }
+
     let (valid, errors) = parse_domains(&args.domains);
     if valid.is_empty() && !errors.is_empty() {
         return Err(AppError::Validation {
@@ -123,7 +138,13 @@ fn handle_import(db: &Database, args: AllowlistImportArgs) -> Result<ExitCode, A
                 .map_err(AppError::from)?;
             crate::db::domains::add_allowed(conn, domain.as_str(), args.description.as_deref(), None)
                 .map_err(AppError::from)?;
-            if existed { skipped += 1; } else { imported += 1; }
+            if existed {
+                skipped += 1;
+            } else {
+                imported += 1;
+                crate::db::audit::log_action(conn, "import", "allowlist", domain.as_str(), None)
+                    .map_err(AppError::from)?;
+            }
         }
         Ok(())
     })?;

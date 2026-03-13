@@ -5,6 +5,13 @@ use crate::error::{AppError, ExitCode, ValidationDetail};
 use crate::output::{self, Renderable};
 
 pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
+    // Validate duration upfront before any DB writes
+    let parsed_duration = if let Some(ref dur_str) = args.duration {
+        Some(crate::common::time::parse_duration(dur_str)?)
+    } else {
+        None
+    };
+
     let db = Database::open(&crate::common::platform::db_path())?;
 
     let (valid, errors) = parse_domains(&args.domains);
@@ -40,7 +47,7 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
 
     let mut watchdog_warning = None;
     if let Some(ref dur_str) = args.duration {
-        let duration = crate::common::time::parse_duration(dur_str)?;
+        let duration = parsed_duration.expect("validated above");
         let execute_at = crate::common::time::now_unix() + duration.as_secs() as i64;
         let id = uuid::Uuid::new_v4().to_string();
 

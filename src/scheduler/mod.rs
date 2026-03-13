@@ -101,7 +101,32 @@ fn parse_weekday(s: &str) -> Option<Weekday> {
     }
 }
 
+/// Validate a config Schedule, returning an error message if any fields are invalid.
+/// Use this at creation time (handlers) to reject bad schedules before they reach the DB.
+pub fn validate_config_schedule(
+    config_schedule: &crate::config::types::Schedule,
+) -> Result<(), String> {
+    for (i, block) in config_schedule.available_hours.iter().enumerate() {
+        for day in &block.days {
+            if parse_weekday(day).is_none() {
+                return Err(format!("Invalid day '{}' in block {}", day, i));
+            }
+        }
+        for range in &block.time_ranges {
+            if NaiveTime::parse_from_str(&range.start, "%H:%M").is_err() {
+                return Err(format!("Invalid start time '{}' in block {}", range.start, i));
+            }
+            if NaiveTime::parse_from_str(&range.end, "%H:%M").is_err() {
+                return Err(format!("Invalid end time '{}' in block {}", range.end, i));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Parse a config Schedule into the evaluator's Schedule type.
+/// Invalid days and time ranges are skipped (use `validate_config_schedule` first
+/// to catch errors at creation time).
 pub fn parse_config_schedule(
     config_schedule: &crate::config::types::Schedule,
 ) -> Option<Schedule> {
@@ -210,5 +235,47 @@ mod tests {
 
         let sched = make_schedule(vec![Weekday::Mon], "22:00", "02:00");
         assert!(eval.is_available(Some(&sched)));
+    }
+
+    #[test]
+    fn validate_rejects_invalid_time() {
+        let sched = crate::config::types::Schedule {
+            available_hours: vec![crate::config::types::AvailableHoursBlock {
+                days: vec!["mon".to_string()],
+                time_ranges: vec![crate::config::types::TimeRange {
+                    start: "25:00".to_string(),
+                    end: "18:00".to_string(),
+                }],
+            }],
+        };
+        assert!(validate_config_schedule(&sched).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_invalid_day() {
+        let sched = crate::config::types::Schedule {
+            available_hours: vec![crate::config::types::AvailableHoursBlock {
+                days: vec!["funday".to_string()],
+                time_ranges: vec![crate::config::types::TimeRange {
+                    start: "09:00".to_string(),
+                    end: "17:00".to_string(),
+                }],
+            }],
+        };
+        assert!(validate_config_schedule(&sched).is_err());
+    }
+
+    #[test]
+    fn validate_accepts_valid_schedule() {
+        let sched = crate::config::types::Schedule {
+            available_hours: vec![crate::config::types::AvailableHoursBlock {
+                days: vec!["mon".to_string(), "fri".to_string()],
+                time_ranges: vec![crate::config::types::TimeRange {
+                    start: "09:00".to_string(),
+                    end: "17:00".to_string(),
+                }],
+            }],
+        };
+        assert!(validate_config_schedule(&sched).is_ok());
     }
 }

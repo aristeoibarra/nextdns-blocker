@@ -22,7 +22,17 @@ pub fn process_retries(db: &Database, client: &NextDnsClient) -> Result<RetryRes
             ("remove", "denylist") => client.remove_from_denylist(domain),
             ("add", "allowlist") => client.add_to_allowlist(domain),
             ("remove", "allowlist") => client.remove_from_allowlist(domain),
-            _ => continue,
+            (act, lt) => {
+                // Unknown combo — audit-log and remove to prevent infinite loop
+                let _ = db.with_conn(|conn| {
+                    crate::db::audit::log_action(
+                        conn, "retry_unknown_combo", lt, &entry.id,
+                        Some(&format!("Unknown action/list_type: {act}/{lt} for domain {domain}")),
+                    )
+                });
+                let _ = db.with_conn(|conn| crate::db::retry::remove_retry(conn, &entry.id));
+                continue;
+            }
         };
 
         match result {
