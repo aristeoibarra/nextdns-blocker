@@ -47,6 +47,20 @@ pub fn process_pending(db: &Database, client: &NextDnsClient) -> Result<PendingR
 
         match result {
             Ok(()) => {
+                // Update local DB state to match API change
+                match (action.action.as_str(), action.list_type.as_str()) {
+                    ("remove", "allowlist") => {
+                        let _ = db.with_conn(|conn| crate::db::domains::remove_allowed(conn, &domain));
+                        let _ = db.with_conn(|conn| {
+                            crate::db::audit::log_action(conn, "temp_allow_expired", "allowlist", &domain,
+                                action.description.as_deref())
+                        });
+                    }
+                    ("remove", "denylist") => {
+                        let _ = db.with_conn(|conn| crate::db::domains::deactivate_blocked(conn, &domain));
+                    }
+                    _ => {}
+                }
                 db.with_conn(|conn| crate::db::pending::update_pending_status(conn, &action.id, "completed"))?;
                 executed += 1;
             }

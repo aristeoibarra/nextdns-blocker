@@ -27,6 +27,10 @@ pub struct AllowlistAddArgs {
     /// Schedule (JSON string or "none")
     #[arg(long)]
     pub schedule: Option<String>,
+
+    /// Temporary allow duration (e.g., "30m", "2h") — auto-removes after expiry
+    #[arg(long, conflicts_with = "schedule")]
+    pub duration: Option<String>,
 }
 
 #[derive(Args)]

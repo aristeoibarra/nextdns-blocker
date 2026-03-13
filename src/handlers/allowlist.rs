@@ -31,6 +31,13 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
         })?;
     }
 
+    // Validate duration upfront before any DB writes
+    let parsed_duration = if let Some(ref dur_str) = args.duration {
+        Some(crate::common::time::parse_duration(dur_str)?)
+    } else {
+        None
+    };
+
     let (valid, errors) = parse_domains(&args.domains);
     if valid.is_empty() && !errors.is_empty() {
         return Err(AppError::Validation {
@@ -57,6 +64,32 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
         Ok(())
     })?;
 
+    // Create pending removal actions for --duration
+    let mut pending_id = None;
+    let mut watchdog_warning = None;
+    if let Some(ref dur_str) = args.duration {
+        let duration = parsed_duration.expect("validated above");
+        let execute_at = crate::common::time::now_unix() + duration.as_secs() as i64;
+        let id = uuid::Uuid::new_v4().to_string();
+
+        db.with_transaction(|conn| {
+            for domain in &added {
+                crate::db::pending::create_pending(
+                    conn, &id, "remove", Some(domain), "allowlist", execute_at,
+                    Some(&format!("Auto remove from allowlist after {dur_str}")),
+                ).map_err(AppError::from)?;
+            }
+            Ok(())
+        })?;
+        pending_id = Some(id);
+
+        if let Ok(status) = crate::watchdog::status() {
+            if !status.healthy {
+                watchdog_warning = Some("Watchdog unhealthy — temp allow may not expire automatically. Run 'ndb fix' or 'ndb watchdog install --interval 5m'".to_string());
+            }
+        }
+    }
+
     if !added.is_empty() {
         if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
             if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id) {
@@ -79,7 +112,11 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
         }
     }
 
-    let result = ListModResult { command: "allowlist add", added, skipped, errors: errors.iter().map(|(d,r)| format!("{d}: {r}")).collect() };
+    let result = AllowlistAddResult {
+        added, skipped,
+        errors: errors.iter().map(|(d,r)| format!("{d}: {r}")).collect(),
+        duration: args.duration, pending_id, watchdog_warning,
+    };
     output::render(&result);
     Ok(ExitCode::Success)
 }
@@ -185,12 +222,23 @@ fn handle_export(db: &Database, args: AllowlistExportArgs) -> Result<ExitCode, A
     Ok(ExitCode::Success)
 }
 
-struct ListModResult { command: &'static str, added: Vec<String>, skipped: Vec<String>, errors: Vec<String> }
-impl Renderable for ListModResult {
-    fn command_name(&self) -> &str { self.command }
+struct AllowlistAddResult {
+    added: Vec<String>,
+    skipped: Vec<String>,
+    errors: Vec<String>,
+    duration: Option<String>,
+    pending_id: Option<String>,
+    watchdog_warning: Option<String>,
+}
+impl Renderable for AllowlistAddResult {
+    fn command_name(&self) -> &str { "allowlist add" }
     fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "data": { "added": self.added, "skipped": self.skipped, "errors": self.errors },
+            "data": {
+                "added": self.added, "skipped": self.skipped, "errors": self.errors,
+                "duration": self.duration, "pending_id": self.pending_id,
+                "watchdog_warning": self.watchdog_warning,
+            },
             "summary": { "added": self.added.len(), "skipped": self.skipped.len() }
         })
     }
