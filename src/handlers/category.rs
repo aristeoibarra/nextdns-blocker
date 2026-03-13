@@ -102,7 +102,19 @@ impl Renderable for CategoryShowResult {
 }
 
 fn handle_add_domain(db: &Database, args: CategoryAddDomainArgs) -> Result<ExitCode, AppError> {
-    let (valid, _errors) = parse_domains(&args.domains);
+    let (valid, errors) = parse_domains(&args.domains);
+
+    if valid.is_empty() && !errors.is_empty() {
+        return Err(AppError::Validation {
+            message: "No valid domains provided".to_string(),
+            details: errors
+                .iter()
+                .map(|(d, r)| crate::error::ValidationDetail { field: d.clone(), reason: r.clone() })
+                .collect(),
+            hint: Some("Domains must be valid RFC 1123 hostnames (e.g., example.com)".to_string()),
+        });
+    }
+
     let mut added = Vec::new();
     let mut skipped = Vec::new();
 
@@ -122,10 +134,11 @@ fn handle_add_domain(db: &Database, args: CategoryAddDomainArgs) -> Result<ExitC
         });
     }
 
+    let validation_errors: Vec<String> = errors.iter().map(|(d, r)| format!("{d}: {r}")).collect();
     let result = SimpleResult {
         command: "category add-domain",
-        data: serde_json::json!({ "added": added, "skipped": skipped }),
-        summary: serde_json::json!({ "added": added.len() }),
+        data: serde_json::json!({ "added": added, "skipped": skipped, "errors": validation_errors }),
+        summary: serde_json::json!({ "added": added.len(), "errors": validation_errors.len() }),
     };
     output::render(&result);
     Ok(ExitCode::Success)

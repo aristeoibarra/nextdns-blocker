@@ -83,7 +83,11 @@ fn write_env_file(path: &std::path::Path, entries: &HashMap<String, String>) -> 
 
     let mut lines: Vec<String> = entries
         .iter()
-        .map(|(k, v)| format!("{k}={v}"))
+        .map(|(k, v)| {
+            // Quote values to handle special chars (=, spaces, etc.)
+            let escaped = v.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("{k}=\"{escaped}\"")
+        })
         .collect();
     lines.sort();
     let content = lines.join("\n") + "\n";

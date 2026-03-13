@@ -96,12 +96,19 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         output::render(&result);
     } else {
         if is_domain {
-            db.with_conn(|conn| crate::db::domains::remove_blocked(conn, &args.target))?;
+            db.with_transaction(|conn| {
+                crate::db::domains::remove_blocked(conn, &args.target)
+                    .map_err(crate::error::AppError::from)?;
+                crate::db::audit::log_action(conn, "unblock", "domain", &args.target, None)
+                    .map_err(crate::error::AppError::from)?;
+                Ok(())
+            })?;
             if let Some((_, ref client)) = api_client {
                 crate::sync::eager_push_denylist(&db, client, &[args.target.clone()], false);
             }
+        } else {
+            db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "category", &args.target, None))?;
         }
-        db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", if is_domain { "domain" } else { "category" }, &args.target, None))?;
 
         let result = UnblockResult { target: args.target, duration: None, pending_id: None, watchdog_warning: None, apps_unblocked, hosts_unblocked };
         output::render(&result);

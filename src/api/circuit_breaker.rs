@@ -64,7 +64,8 @@ impl CircuitBreaker {
                         false
                     }
                 } else {
-                    true
+                    // Open without last_failure is an invalid state — stay closed (fail-safe)
+                    false
                 }
             }
             State::HalfOpen => true,

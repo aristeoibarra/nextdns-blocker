@@ -27,7 +27,7 @@ pub struct AppUnblockResult {
 /// Find the installed path of an app by bundle ID using Spotlight.
 pub fn find_app_path(bundle_id: &str) -> Option<String> {
     // Validate bundle_id to prevent mdfind query injection
-    if !bundle_id.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
+    if !bundle_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_') {
         return None;
     }
 
@@ -179,8 +179,18 @@ pub fn unblock_app(db: &Database, bundle_id: &str) -> Result<Option<AppUnblockRe
     // 2. Remove from DB AFTER filesystem is restored.
     // If DB write fails, rollback the filesystem change.
     if let Err(e) = db.with_conn(|conn| crate::db::apps::remove_blocked_app(conn, bundle_id)) {
-        if conflict_path.is_some() {
-            // Conflict case: can't easily rollback, just report the error
+        if let Some(ref conflict) = conflict_path {
+            // Conflict case: can't rollback — filesystem moved to .conflict but DB still thinks blocked.
+            // Audit-log so `ndb apps doctor` can detect and repair.
+            let _ = db.with_conn(|conn| {
+                crate::db::audit::log_action(
+                    conn, "unblock_rollback_failed", "app", bundle_id,
+                    Some(&format!(
+                        "DB write failed ({e}), blocked copy at {conflict}. \
+                         DB/filesystem inconsistent — run 'ndb apps doctor --repair'"
+                    )),
+                )
+            });
         } else if original.exists() && !blocked.exists() {
             let _ = std::fs::rename(original, blocked);
         }

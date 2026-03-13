@@ -158,9 +158,22 @@ fn read_hosts_file() -> Result<(Vec<String>, HashSet<String>), AppError> {
         }
     }
 
-    // If marker was never closed, the lines after the marker were absorbed
-    // as ndb-managed. This is the intended safe behavior: we'll rewrite
-    // only our own domains, effectively closing the marker on next write.
+    // If the marker was never closed (unbalanced), treat absorbed lines
+    // as non-ndb content to prevent data loss. The ndb domains will be
+    // empty in this case, and the next write will create a clean marker block.
+    if in_ndb_block {
+        // Unclosed marker: re-read and keep everything as non-ndb lines
+        non_ndb_lines.clear();
+        ndb_domains.clear();
+        for line in content.lines() {
+            let trimmed = line.trim();
+            // Skip the stale/orphaned start marker itself
+            if trimmed == MARKER_START || trimmed.starts_with(&format!("{MARKER_START} ")) {
+                continue;
+            }
+            non_ndb_lines.push(line.to_string());
+        }
+    }
 
     Ok((non_ndb_lines, ndb_domains))
 }

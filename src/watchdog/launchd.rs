@@ -32,29 +32,75 @@ fn ndb_binary() -> String {
 }
 
 /// Extract the binary path from the plist XML.
+/// Parses line-by-line to tolerate whitespace/formatting differences.
 fn binary_path_from_plist(path: &std::path::Path) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
-    // ProgramArguments array: first <string> after <key>ProgramArguments</key> <array>
-    let marker = "<key>ProgramArguments</key>";
-    let after = content.find(marker)?;
-    let rest = &content[after..];
-    // Find the first <string>...</string> inside the <array>
-    let open = rest.find("<array>")?;
-    let inner = &rest[open..];
-    let s_start = inner.find("<string>")? + "<string>".len();
-    let s_end = inner[s_start..].find("</string>")?;
-    Some(inner[s_start..s_start + s_end].to_string())
+    let lines: Vec<&str> = content.lines().map(|l| l.trim()).collect();
+
+    // Find the ProgramArguments key, then the <array>, then the first <string>
+    let mut found_key = false;
+    let mut in_array = false;
+
+    for line in &lines {
+        if !found_key {
+            if line.contains("<key>ProgramArguments</key>") {
+                found_key = true;
+            }
+            continue;
+        }
+        if !in_array {
+            if line.contains("<array>") {
+                in_array = true;
+            }
+            continue;
+        }
+        // We're inside ProgramArguments array — extract first <string>
+        if line.contains("</array>") {
+            return None; // Empty array
+        }
+        if let (Some(start), Some(end)) = (line.find("<string>"), line.find("</string>")) {
+            let value_start = start + "<string>".len();
+            if value_start <= end {
+                return Some(line[value_start..end].to_string());
+            }
+        }
+    }
+
+    None
 }
 
 /// Extract the interval from the plist XML.
+/// Parses line-by-line to tolerate whitespace/formatting differences.
 fn interval_from_plist(path: &std::path::Path) -> Option<u64> {
     let content = std::fs::read_to_string(path).ok()?;
-    let marker = "<key>StartInterval</key>";
-    let after = content.find(marker)?;
-    let rest = &content[after..];
-    let s_start = rest.find("<integer>")? + "<integer>".len();
-    let s_end = rest[s_start..].find("</integer>")?;
-    rest[s_start..s_start + s_end].trim().parse().ok()
+    let lines: Vec<&str> = content.lines().map(|l| l.trim()).collect();
+
+    let mut found_key = false;
+
+    for line in &lines {
+        if !found_key {
+            if line.contains("<key>StartInterval</key>") {
+                found_key = true;
+                // Check if integer is on the same line (compact plist)
+                if let (Some(start), Some(end)) = (line.find("<integer>"), line.find("</integer>")) {
+                    let value_start = start + "<integer>".len();
+                    return line[value_start..end].trim().parse().ok();
+                }
+            }
+            continue;
+        }
+        // Next line after the key should have the integer value
+        if let (Some(start), Some(end)) = (line.find("<integer>"), line.find("</integer>")) {
+            let value_start = start + "<integer>".len();
+            return line[value_start..end].trim().parse().ok();
+        }
+        // If we hit another key without finding integer, give up
+        if line.contains("<key>") {
+            return None;
+        }
+    }
+
+    None
 }
 
 pub fn install(interval_secs: u64) -> Result<String, AppError> {

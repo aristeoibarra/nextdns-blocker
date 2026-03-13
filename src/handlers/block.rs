@@ -51,12 +51,15 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         let execute_at = crate::common::time::now_unix() + duration.as_secs() as i64;
         let id = uuid::Uuid::new_v4().to_string();
 
-        for domain in &added {
-            db.with_conn(|conn| crate::db::pending::create_pending(
-                conn, &id, "remove", Some(domain), "denylist", execute_at,
-                Some(&format!("Auto unblock after {dur_str}")),
-            ))?;
-        }
+        db.with_transaction(|conn| {
+            for domain in &added {
+                crate::db::pending::create_pending(
+                    conn, &id, "remove", Some(domain), "denylist", execute_at,
+                    Some(&format!("Auto unblock after {dur_str}")),
+                ).map_err(crate::error::AppError::from)?;
+            }
+            Ok(())
+        })?;
         pending_id = Some(id);
 
         if let Ok(status) = crate::watchdog::status() {

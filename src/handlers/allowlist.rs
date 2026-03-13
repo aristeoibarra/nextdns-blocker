@@ -97,7 +97,7 @@ fn handle_remove(db: &Database, args: AllowlistRemoveArgs) -> Result<ExitCode, A
                     .map_err(AppError::from)?;
                 removed.push(d);
             } else {
-                not_found.push(domain.clone());
+                not_found.push(d);
             }
         }
         Ok(())
@@ -128,7 +128,7 @@ fn handle_list(db: &Database, args: AllowlistListArgs) -> Result<ExitCode, AppEr
 fn handle_import(db: &Database, args: AllowlistImportArgs) -> Result<ExitCode, AppError> {
     let content = std::fs::read_to_string(&args.file).map_err(|e| AppError::General { message: format!("Failed to read file '{}': {e}", args.file), hint: Some("Ensure the file exists and is readable".to_string()) })?;
     let lines: Vec<String> = content.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty() && !l.starts_with('#')).collect();
-    let (valid, _errors) = parse_domains(&lines);
+    let (valid, errors) = parse_domains(&lines);
 
     let mut imported = 0;
     let mut skipped = 0;
@@ -149,9 +149,20 @@ fn handle_import(db: &Database, args: AllowlistImportArgs) -> Result<ExitCode, A
         Ok(())
     })?;
 
-    let result = ImportExportResult { command: "allowlist import", count: imported, path: None };
+    let result = AllowlistImportResult { imported, skipped, errors: errors.len() };
     output::render(&result);
     Ok(ExitCode::Success)
+}
+
+struct AllowlistImportResult { imported: usize, skipped: usize, errors: usize }
+impl Renderable for AllowlistImportResult {
+    fn command_name(&self) -> &str { "allowlist import" }
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "data": { "imported": self.imported, "skipped": self.skipped, "errors": self.errors },
+            "summary": { "imported": self.imported, "skipped": self.skipped }
+        })
+    }
 }
 
 fn handle_export(db: &Database, args: AllowlistExportArgs) -> Result<ExitCode, AppError> {

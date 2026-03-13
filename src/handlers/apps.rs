@@ -60,6 +60,9 @@ fn handle_scan() -> Result<ExitCode, AppError> {
     let mut matches = Vec::new();
     let mut auto_added = 0usize;
 
+    // Collect new mappings to add, then batch-insert in a single transaction
+    let mut new_mappings: Vec<(&str, &str, &str)> = Vec::new();
+
     for (bundle_id, name, path) in &installed {
         let known = app_blocker::mappings::lookup_bundle(bundle_id);
         if known.is_empty() {
@@ -72,10 +75,7 @@ fn handle_scan() -> Result<ExitCode, AppError> {
                 .any(|m| m.domain == *domain && m.bundle_id == *bundle_id);
 
             if !already {
-                db.with_conn(|conn| {
-                    crate::db::apps::add_mapping(conn, domain, bundle_id, name, true)
-                })?;
-                auto_added += 1;
+                new_mappings.push((domain, bundle_id, name));
             }
 
             matches.push(serde_json::json!({
@@ -86,6 +86,17 @@ fn handle_scan() -> Result<ExitCode, AppError> {
                 "already_mapped": already,
             }));
         }
+    }
+
+    if !new_mappings.is_empty() {
+        db.with_transaction(|conn| {
+            for (domain, bundle_id, name) in &new_mappings {
+                crate::db::apps::add_mapping(conn, domain, bundle_id, name, true)
+                    .map_err(AppError::from)?;
+            }
+            Ok(())
+        })?;
+        auto_added = new_mappings.len();
     }
 
     let result = AppsResult {

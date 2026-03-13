@@ -107,7 +107,7 @@ fn handle_remove(db: &Database, args: DenylistRemoveArgs) -> Result<ExitCode, Ap
                     .map_err(AppError::from)?;
                 removed.push(domain_lower);
             } else {
-                not_found.push(domain.clone());
+                not_found.push(domain_lower);
             }
         }
         Ok(())

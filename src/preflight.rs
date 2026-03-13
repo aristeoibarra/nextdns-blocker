@@ -59,10 +59,24 @@ fn run_inner() -> Result<(), crate::error::AppError> {
     let client = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id)?;
 
     if has_pending {
-        let _ = crate::pending::process_pending(&db, &client);
+        if let Err(e) = crate::pending::process_pending(&db, &client) {
+            let _ = db.with_conn(|conn| {
+                crate::db::audit::log_action(
+                    conn, "process_failed", "pending", "preflight",
+                    Some(&e.to_string()),
+                )
+            });
+        }
     }
     if has_retries {
-        let _ = crate::retry::process_retries(&db, &client);
+        if let Err(e) = crate::retry::process_retries(&db, &client) {
+            let _ = db.with_conn(|conn| {
+                crate::db::audit::log_action(
+                    conn, "process_failed", "retry", "preflight",
+                    Some(&e.to_string()),
+                )
+            });
+        }
     }
 
     Ok(())
