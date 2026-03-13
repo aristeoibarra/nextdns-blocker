@@ -128,7 +128,7 @@ fn handle_map(args: AppsMapArgs) -> Result<ExitCode, AppError> {
     db.with_transaction(|conn| {
         crate::db::apps::add_mapping(conn, &args.domain, &args.bundle_id, &app_name, false)
             .map_err(AppError::from)?;
-        crate::db::audit::log_action(conn, "map_app", "app", &args.bundle_id, Some(&args.domain))
+        crate::db::audit::log_action(conn, "map_app", "app", &args.bundle_id, Some(&args.domain), "cli")
             .map_err(AppError::from)?;
         Ok(())
     })?;
@@ -152,7 +152,7 @@ fn handle_unmap(args: AppsUnmapArgs) -> Result<ExitCode, AppError> {
         let removed = crate::db::apps::remove_mapping(conn, &args.domain, &args.bundle_id)
             .map_err(AppError::from)?;
         if removed {
-            crate::db::audit::log_action(conn, "unmap_app", "app", &args.bundle_id, Some(&args.domain))
+            crate::db::audit::log_action(conn, "unmap_app", "app", &args.bundle_id, Some(&args.domain), "cli")
                 .map_err(AppError::from)?;
         }
         Ok(removed)

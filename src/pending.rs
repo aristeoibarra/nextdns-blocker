@@ -18,6 +18,7 @@ pub fn process_pending(db: &Database, client: &NextDnsClient) -> Result<PendingR
                     crate::db::audit::log_action(
                         conn, "pending_no_domain", &action.list_type, &action.id,
                         Some(&format!("Pending action '{}' has no domain, marking completed", action.action)),
+                        "pending",
                     )
                 });
                 db.with_conn(|conn| crate::db::pending::update_pending_status(conn, &action.id, "completed"))?;
@@ -42,6 +43,7 @@ pub fn process_pending(db: &Database, client: &NextDnsClient) -> Result<PendingR
                     crate::db::audit::log_action(
                         conn, "pending_unknown_combo", lt, &action.id,
                         Some(&format!("Unknown action/list_type: {act}/{lt} for domain {domain}")),
+                        "pending",
                     )
                 });
                 db.with_conn(|conn| crate::db::pending::update_pending_status(conn, &action.id, "completed"))?;
@@ -57,7 +59,7 @@ pub fn process_pending(db: &Database, client: &NextDnsClient) -> Result<PendingR
                         let _ = db.with_conn(|conn| crate::db::domains::remove_allowed(conn, &domain));
                         let _ = db.with_conn(|conn| {
                             crate::db::audit::log_action(conn, "temp_allow_expired", "allowlist", &domain,
-                                action.description.as_deref())
+                                action.description.as_deref(), "pending")
                         });
                     }
                     ("remove", "denylist") => {
@@ -67,14 +69,14 @@ pub fn process_pending(db: &Database, client: &NextDnsClient) -> Result<PendingR
                         let _ = db.with_conn(|conn| crate::db::nextdns::activate_nextdns_category(conn, &domain));
                         let _ = db.with_conn(|conn| {
                             crate::db::audit::log_action(conn, "temp_unblock_expired", "nextdns_category", &domain,
-                                action.description.as_deref())
+                                action.description.as_deref(), "pending")
                         });
                     }
                     ("add", "service") => {
                         let _ = db.with_conn(|conn| crate::db::nextdns::activate_nextdns_service(conn, &domain));
                         let _ = db.with_conn(|conn| {
                             crate::db::audit::log_action(conn, "temp_unblock_expired", "nextdns_service", &domain,
-                                action.description.as_deref())
+                                action.description.as_deref(), "pending")
                         });
                     }
                     _ => {}

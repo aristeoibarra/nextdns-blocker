@@ -112,7 +112,7 @@ fn handle_restore() -> Result<ExitCode, AppError> {
 
     for domain in &removed {
         let _ = db.with_conn(|conn| {
-            crate::db::audit::log_action(conn, "hosts_restore", "hosts", domain, None)
+            crate::db::audit::log_action(conn, "hosts_restore", "hosts", domain, None, "cli")
         });
     }
 

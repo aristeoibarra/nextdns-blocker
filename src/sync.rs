@@ -20,6 +20,7 @@ fn update_in_nextdns(db: &Database, domain: &str, list: &str, value: bool) {
             crate::db::audit::log_action(
                 conn, "in_nextdns_update_failed", list, domain,
                 Some(&format!("Failed to set in_nextdns={value}: {e}")),
+                "sync",
             )
         });
     }
@@ -217,6 +218,7 @@ pub fn execute_schedule_sync(
                         crate::db::audit::log_action(
                             conn, "schedule_parse_error", "domain", &domain.domain,
                             Some(&format!("Malformed schedule JSON: {e}")),
+                            "schedule",
                         )
                     });
                     None
@@ -241,6 +243,13 @@ pub fn execute_schedule_sync(
             match client.add_to_denylist(&domain.domain) {
                 Ok(()) => {
                     update_in_nextdns(db, &domain.domain, "denylist", true);
+                    let _ = db.with_conn(|conn| {
+                        crate::db::audit::log_action(
+                            conn, "schedule_block", "domain", &domain.domain,
+                            Some("Schedule rule activated — added to NextDNS denylist"),
+                            "schedule",
+                        )
+                    });
                     added.push(domain.domain.clone());
                 }
                 Err(e) => {
@@ -261,6 +270,13 @@ pub fn execute_schedule_sync(
             match client.remove_from_denylist(&domain.domain) {
                 Ok(()) => {
                     update_in_nextdns(db, &domain.domain, "denylist", false);
+                    let _ = db.with_conn(|conn| {
+                        crate::db::audit::log_action(
+                            conn, "schedule_unblock", "domain", &domain.domain,
+                            Some("Schedule rule deactivated — removed from NextDNS denylist"),
+                            "schedule",
+                        )
+                    });
                     removed.push(domain.domain.clone());
                 }
                 Err(e) => {
@@ -290,6 +306,7 @@ pub fn execute_schedule_sync(
                     crate::db::audit::log_action(
                         conn, "schedule_parse_error", "allowlist", &domain.domain,
                         Some(&format!("Malformed schedule JSON: {e}")),
+                        "schedule",
                     )
                 });
                 None
@@ -314,6 +331,13 @@ pub fn execute_schedule_sync(
             match client.add_to_allowlist(&domain.domain) {
                 Ok(()) => {
                     update_in_nextdns(db, &domain.domain, "allowlist", true);
+                    let _ = db.with_conn(|conn| {
+                        crate::db::audit::log_action(
+                            conn, "schedule_allow", "allowlist", &domain.domain,
+                            Some("Schedule rule activated — added to NextDNS allowlist"),
+                            "schedule",
+                        )
+                    });
                     added.push(domain.domain.clone());
                 }
                 Err(e) => {
@@ -334,6 +358,13 @@ pub fn execute_schedule_sync(
             match client.remove_from_allowlist(&domain.domain) {
                 Ok(()) => {
                     update_in_nextdns(db, &domain.domain, "allowlist", false);
+                    let _ = db.with_conn(|conn| {
+                        crate::db::audit::log_action(
+                            conn, "schedule_disallow", "allowlist", &domain.domain,
+                            Some("Schedule rule deactivated — removed from NextDNS allowlist"),
+                            "schedule",
+                        )
+                    });
                     removed.push(domain.domain.clone());
                 }
                 Err(e) => {

@@ -39,12 +39,17 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         });
     };
 
+    // Build structured details
+    let detail_str = args.duration.as_ref().map(|d| {
+        serde_json::json!({"duration": d, "temporary": true}).to_string()
+    });
+
     // Unblock mapped apps (only for domains)
     let apps_unblocked = if matches!(target_kind, UnblockTarget::Domain) {
         crate::app_blocker::unblock_apps_for_domain(&db, &args.target)
             .unwrap_or_else(|e| {
                 let _ = db.with_conn(|conn| {
-                    crate::db::audit::log_action(conn, "unblock_app_failed", "app", &e.to_string(), None)
+                    crate::db::audit::log_action(conn, "unblock_app_failed", "app", &e.to_string(), None, "cli")
                 });
                 Vec::new()
             })
@@ -53,7 +58,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
     };
     for app in &apps_unblocked {
         let _ = db.with_conn(|conn| {
-            crate::db::audit::log_action(conn, "unblock_app", "app", &app.bundle_id, Some(&app.app_name))
+            crate::db::audit::log_action(conn, "unblock_app", "app", &app.bundle_id, Some(&app.app_name), "cli")
         });
     }
 
@@ -62,7 +67,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         crate::hosts_blocker::unblock_hosts_for_domain(&db, &args.target)
             .unwrap_or_else(|e| {
                 let _ = db.with_conn(|conn| {
-                    crate::db::audit::log_action(conn, "unblock_hosts_failed", "hosts", &e.to_string(), None)
+                    crate::db::audit::log_action(conn, "unblock_hosts_failed", "hosts", &e.to_string(), None, "cli")
                 });
                 Vec::new()
             })
@@ -71,7 +76,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
     };
     for domain in &hosts_unblocked {
         let _ = db.with_conn(|conn| {
-            crate::db::audit::log_action(conn, "unblock_hosts", "hosts", domain, None)
+            crate::db::audit::log_action(conn, "unblock_hosts", "hosts", domain, None, "cli")
         });
     }
 
@@ -97,7 +102,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                         conn, &id, "add", Some(&args.target), "denylist", execute_at,
                         Some(&format!("Auto re-block after {dur_str}")),
                     ).map_err(crate::error::AppError::from)?;
-                    crate::db::audit::log_action(conn, "unblock", "domain", &args.target, Some(dur_str))
+                    crate::db::audit::log_action(conn, "unblock", "domain", &args.target, detail_str.as_deref(), "cli")
                         .map_err(crate::error::AppError::from)?;
                     Ok(())
                 })?;
@@ -106,7 +111,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                 }
             }
             UnblockTarget::LocalCategory => {
-                db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "category", &args.target, Some(dur_str)))?;
+                db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "category", &args.target, detail_str.as_deref(), "cli"))?;
             }
             UnblockTarget::NextdnsCategory => {
                 db.with_transaction(|conn| {
@@ -116,7 +121,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                         conn, &id, "add", Some(&args.target), "category", execute_at,
                         Some(&format!("Auto re-enable category after {dur_str}")),
                     ).map_err(crate::error::AppError::from)?;
-                    crate::db::audit::log_action(conn, "unblock", "nextdns_category", &args.target, Some(dur_str))
+                    crate::db::audit::log_action(conn, "unblock", "nextdns_category", &args.target, detail_str.as_deref(), "cli")
                         .map_err(crate::error::AppError::from)?;
                     Ok(())
                 })?;
@@ -132,7 +137,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                         conn, &id, "add", Some(&args.target), "service", execute_at,
                         Some(&format!("Auto re-enable service after {dur_str}")),
                     ).map_err(crate::error::AppError::from)?;
-                    crate::db::audit::log_action(conn, "unblock", "nextdns_service", &args.target, Some(dur_str))
+                    crate::db::audit::log_action(conn, "unblock", "nextdns_service", &args.target, detail_str.as_deref(), "cli")
                         .map_err(crate::error::AppError::from)?;
                     Ok(())
                 })?;
@@ -157,7 +162,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                 db.with_transaction(|conn| {
                     crate::db::domains::remove_blocked(conn, &args.target)
                         .map_err(crate::error::AppError::from)?;
-                    crate::db::audit::log_action(conn, "unblock", "domain", &args.target, None)
+                    crate::db::audit::log_action(conn, "unblock", "domain", &args.target, None, "cli")
                         .map_err(crate::error::AppError::from)?;
                     Ok(())
                 })?;
@@ -166,18 +171,18 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                 }
             }
             UnblockTarget::LocalCategory => {
-                db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "category", &args.target, None))?;
+                db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "category", &args.target, None, "cli"))?;
             }
             UnblockTarget::NextdnsCategory => {
                 db.with_conn(|conn| crate::db::nextdns::remove_nextdns_category(conn, &args.target))?;
-                db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "nextdns_category", &args.target, None))?;
+                db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "nextdns_category", &args.target, None, "cli"))?;
                 if let Some((_, ref client)) = api_client {
                     crate::sync::eager_push_category(&db, client, &args.target, false);
                 }
             }
             UnblockTarget::NextdnsService => {
                 db.with_conn(|conn| crate::db::nextdns::remove_nextdns_service(conn, &args.target))?;
-                db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "nextdns_service", &args.target, None))?;
+                db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "nextdns_service", &args.target, None, "cli"))?;
                 if let Some((_, ref client)) = api_client {
                     crate::sync::eager_push_service(&db, client, &args.target, false);
                 }

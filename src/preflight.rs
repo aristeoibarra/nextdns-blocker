@@ -33,7 +33,7 @@ fn run_inner() -> Result<(), crate::error::AppError> {
         let _ = db.with_conn(|conn| {
             crate::db::audit::log_action(
                 conn, "enforce_failed", "app_blocker", "preflight",
-                Some(&e.to_string()),
+                Some(&e.to_string()), "preflight",
             )
         });
     }
@@ -41,7 +41,7 @@ fn run_inner() -> Result<(), crate::error::AppError> {
         let _ = db.with_conn(|conn| {
             crate::db::audit::log_action(
                 conn, "enforce_failed", "hosts_blocker", "preflight",
-                Some(&e.to_string()),
+                Some(&e.to_string()), "preflight",
             )
         });
     }
@@ -63,7 +63,7 @@ fn run_inner() -> Result<(), crate::error::AppError> {
             let _ = db.with_conn(|conn| {
                 crate::db::audit::log_action(
                     conn, "process_failed", "pending", "preflight",
-                    Some(&e.to_string()),
+                    Some(&e.to_string()), "preflight",
                 )
             });
         }
@@ -73,7 +73,7 @@ fn run_inner() -> Result<(), crate::error::AppError> {
             let _ = db.with_conn(|conn| {
                 crate::db::audit::log_action(
                     conn, "process_failed", "retry", "preflight",
-                    Some(&e.to_string()),
+                    Some(&e.to_string()), "preflight",
                 )
             });
         }

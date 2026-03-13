@@ -54,7 +54,7 @@ fn handle_cancel(db: &Database, args: PendingCancelArgs) -> Result<ExitCode, App
         });
     }
 
-    db.with_conn(|conn| crate::db::audit::log_action(conn, "cancel", "pending", &args.id, None))?;
+    db.with_conn(|conn| crate::db::audit::log_action(conn, "cancel", "pending", &args.id, None, "cli"))?;
 
     let result = SimpleMsg { command: "pending cancel", data: serde_json::json!({ "id": args.id }) };
     output::render(&result);

@@ -32,6 +32,7 @@ pub fn process_retries(db: &Database, client: &NextDnsClient) -> Result<RetryRes
                     crate::db::audit::log_action(
                         conn, "retry_unknown_combo", lt, &entry.id,
                         Some(&format!("Unknown action/list_type: {act}/{lt} for domain {domain}")),
+                        "retry",
                     )
                 });
                 let _ = db.with_conn(|conn| crate::db::retry::remove_retry(conn, &entry.id));
@@ -55,7 +56,7 @@ pub fn process_retries(db: &Database, client: &NextDnsClient) -> Result<RetryRes
                     );
                     if db.with_transaction(|conn| {
                         crate::db::audit::log_action(
-                            conn, "retry_exhausted", "domain", domain, Some(&details),
+                            conn, "retry_exhausted", "domain", domain, Some(&details), "retry",
                         ).map_err(crate::error::AppError::from)?;
                         crate::db::retry::remove_retry(conn, &entry.id)
                             .map_err(crate::error::AppError::from)?;

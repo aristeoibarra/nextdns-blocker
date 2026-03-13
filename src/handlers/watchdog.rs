@@ -129,6 +129,24 @@ fn handle_run() -> Result<ExitCode, AppError> {
         let _ = crate::notifications::NotificationAdapter::send(&notifier, &notification);
     }
 
+    // Audit-log watchdog cycle summary
+    let summary_details = serde_json::json!({
+        "schedule_added": schedule_result.added,
+        "schedule_removed": schedule_result.removed,
+        "schedule_errors": schedule_errors,
+        "pending_executed": pending_result.executed,
+        "pending_failed": pending_result.failed,
+        "retries_succeeded": retry_result.succeeded,
+        "retries_failed": retry_result.failed,
+        "retries_exhausted": retry_result.exhausted,
+    }).to_string();
+    let _ = db.with_conn(|conn| {
+        crate::db::audit::log_action(
+            conn, "watchdog_cycle", "watchdog", "run",
+            Some(&summary_details), "watchdog",
+        )
+    });
+
     let result = WdResult {
         command: "watchdog run",
         data: serde_json::json!({

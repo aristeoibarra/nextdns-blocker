@@ -160,6 +160,7 @@ pub fn block_app(
                         "DB write failed ({e}), rename rollback also failed ({rename_err}). \
                          Orphaned .app.blocked at {blocked_path}"
                     )),
+                    "system",
                 )
             });
         }
@@ -209,6 +210,7 @@ pub fn unblock_app(db: &Database, bundle_id: &str) -> Result<Option<AppUnblockRe
                         "Reinstalled app at {}; blocked copy moved to {conflict}",
                         record.original_path
                     )),
+                    "system",
                 )
             });
             conflict_path = Some(conflict);
@@ -238,6 +240,7 @@ pub fn unblock_app(db: &Database, bundle_id: &str) -> Result<Option<AppUnblockRe
                         "DB write failed ({e}), blocked copy at {conflict}. \
                          DB/filesystem inconsistent — run 'ndb apps doctor --repair'"
                     )),
+                    "system",
                 )
             });
         } else if original.exists() && !blocked.exists() {
@@ -336,6 +339,7 @@ pub fn enforce_blocked_apps(db: &Database) -> Result<Vec<String>, AppError> {
                     crate::db::audit::log_action(
                         conn, "enforce_rename_failed", "app", &app.bundle_id,
                         Some(&format!("Failed to re-block {}: {e}", app.app_name)),
+                        "preflight",
                     )
                 });
             } else {

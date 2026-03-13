@@ -1,7 +1,7 @@
 use crate::types::Domain;
 
-/// Domains that must never be blocked (ndb needs API access to function).
-pub const PROTECTED_DOMAINS: &[&str] = &["api.nextdns.io"];
+/// Domains that must never be blocked (ndb needs API/DNS access to function).
+pub const PROTECTED_DOMAINS: &[&str] = &["api.nextdns.io", "dns.nextdns.io"];
 
 /// Check whether a domain is protected from blocking.
 pub fn is_protected(domain: &str) -> bool {

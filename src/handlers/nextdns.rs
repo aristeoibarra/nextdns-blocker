@@ -40,7 +40,7 @@ impl Renderable for NextdnsListResult {
 fn handle_add_category(db: &Database, args: NextdnsAddCategoryArgs) -> Result<ExitCode, AppError> {
     validate_category_id(&args.id)?;
     db.with_conn(|conn| crate::db::nextdns::add_nextdns_category(conn, &args.id))?;
-    db.with_conn(|conn| crate::db::audit::log_action(conn, "add", "nextdns_category", &args.id, None))?;
+    db.with_conn(|conn| crate::db::audit::log_action(conn, "add", "nextdns_category", &args.id, None, "cli"))?;
 
     if let Ok(env) = crate::config::types::EnvConfig::from_env() {
         if let Ok(client) = crate::api::NextDnsClient::new(&env.api_key, env.profile_id) {
@@ -58,7 +58,7 @@ fn handle_remove_category(db: &Database, args: NextdnsRemoveCategoryArgs) -> Res
     if !removed {
         return Err(AppError::NotFound { message: format!("NextDNS category '{}' not found", args.id), hint: None });
     }
-    db.with_conn(|conn| crate::db::audit::log_action(conn, "remove", "nextdns_category", &args.id, None))?;
+    db.with_conn(|conn| crate::db::audit::log_action(conn, "remove", "nextdns_category", &args.id, None, "cli"))?;
 
     if let Ok(env) = crate::config::types::EnvConfig::from_env() {
         if let Ok(client) = crate::api::NextDnsClient::new(&env.api_key, env.profile_id) {
@@ -74,7 +74,7 @@ fn handle_remove_category(db: &Database, args: NextdnsRemoveCategoryArgs) -> Res
 fn handle_add_service(db: &Database, args: NextdnsAddServiceArgs) -> Result<ExitCode, AppError> {
     validate_service_id(&args.id)?;
     db.with_conn(|conn| crate::db::nextdns::add_nextdns_service(conn, &args.id))?;
-    db.with_conn(|conn| crate::db::audit::log_action(conn, "add", "nextdns_service", &args.id, None))?;
+    db.with_conn(|conn| crate::db::audit::log_action(conn, "add", "nextdns_service", &args.id, None, "cli"))?;
 
     if let Ok(env) = crate::config::types::EnvConfig::from_env() {
         if let Ok(client) = crate::api::NextDnsClient::new(&env.api_key, env.profile_id) {
@@ -92,7 +92,7 @@ fn handle_remove_service(db: &Database, args: NextdnsRemoveServiceArgs) -> Resul
     if !removed {
         return Err(AppError::NotFound { message: format!("NextDNS service '{}' not found", args.id), hint: None });
     }
-    db.with_conn(|conn| crate::db::audit::log_action(conn, "remove", "nextdns_service", &args.id, None))?;
+    db.with_conn(|conn| crate::db::audit::log_action(conn, "remove", "nextdns_service", &args.id, None, "cli"))?;
 
     if let Ok(env) = crate::config::types::EnvConfig::from_env() {
         if let Ok(client) = crate::api::NextDnsClient::new(&env.api_key, env.profile_id) {

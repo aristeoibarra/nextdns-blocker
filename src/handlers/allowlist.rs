@@ -58,7 +58,7 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
                 .map_err(AppError::from)?;
             if existed { skipped.push(domain.to_string()); }
             else { added.push(domain.to_string()); }
-            crate::db::audit::log_action(conn, "add", "allowlist", domain.as_str(), None)
+            crate::db::audit::log_action(conn, "add", "allowlist", domain.as_str(), None, "cli")
                 .map_err(AppError::from)?;
         }
         Ok(())
@@ -130,7 +130,7 @@ fn handle_remove(db: &Database, args: AllowlistRemoveArgs) -> Result<ExitCode, A
             let d = domain.to_lowercase();
             if crate::db::domains::remove_allowed(conn, &d)
                 .map_err(AppError::from)? {
-                crate::db::audit::log_action(conn, "remove", "allowlist", &d, None)
+                crate::db::audit::log_action(conn, "remove", "allowlist", &d, None, "cli")
                     .map_err(AppError::from)?;
                 removed.push(d);
             } else {
@@ -179,7 +179,7 @@ fn handle_import(db: &Database, args: AllowlistImportArgs) -> Result<ExitCode, A
                 skipped += 1;
             } else {
                 imported += 1;
-                crate::db::audit::log_action(conn, "import", "allowlist", domain.as_str(), None)
+                crate::db::audit::log_action(conn, "import", "allowlist", domain.as_str(), None, "cli")
                     .map_err(AppError::from)?;
             }
         }

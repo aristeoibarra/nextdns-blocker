@@ -27,6 +27,15 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
+    // Build structured details once for all domains in this command
+    let detail_json = {
+        let mut m = serde_json::Map::new();
+        if let Some(ref d) = args.duration { m.insert("duration".into(), serde_json::json!(d)); }
+        if let Some(ref c) = args.category { m.insert("category".into(), serde_json::json!(c)); }
+        if let Some(ref d) = args.description { m.insert("description".into(), serde_json::json!(d)); }
+        if m.is_empty() { None } else { Some(serde_json::Value::Object(m).to_string()) }
+    };
+
     let mut added = Vec::new();
     let mut skipped = Vec::new();
     let mut pending_ids = Vec::new();
@@ -44,7 +53,7 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
             )?;
             if existed { skipped.push(domain.to_string()); }
             else { added.push(domain.to_string()); }
-            crate::db::audit::log_action(conn, "block", "domain", domain.as_str(), None)?;
+            crate::db::audit::log_action(conn, "block", "domain", domain.as_str(), detail_json.as_deref(), "cli")?;
         }
         Ok(())
     })?;
@@ -89,14 +98,14 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
     let apps_blocked = crate::app_blocker::block_apps_for_domains(&db, &added)
         .unwrap_or_else(|e| {
             let _ = db.with_conn(|conn| {
-                crate::db::audit::log_action(conn, "block_app_failed", "app", &e.to_string(), None)
+                crate::db::audit::log_action(conn, "block_app_failed", "app", &e.to_string(), None, "cli")
             });
             partial_failures.push(format!("App blocking failed: {e}"));
             Vec::new()
         });
     for app in &apps_blocked {
         let _ = db.with_conn(|conn| {
-            crate::db::audit::log_action(conn, "block_app", "app", &app.bundle_id, Some(&app.app_name))
+            crate::db::audit::log_action(conn, "block_app", "app", &app.bundle_id, Some(&app.app_name), "cli")
         });
     }
 
@@ -104,14 +113,14 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
     let hosts_blocked = crate::hosts_blocker::block_hosts_for_domains(&db, &added)
         .unwrap_or_else(|e| {
             let _ = db.with_conn(|conn| {
-                crate::db::audit::log_action(conn, "block_hosts_failed", "hosts", &e.to_string(), None)
+                crate::db::audit::log_action(conn, "block_hosts_failed", "hosts", &e.to_string(), None, "cli")
             });
             partial_failures.push(format!("Hosts blocking failed: {e}"));
             Vec::new()
         });
     for domain in &hosts_blocked {
         let _ = db.with_conn(|conn| {
-            crate::db::audit::log_action(conn, "block_hosts", "hosts", domain, None)
+            crate::db::audit::log_action(conn, "block_hosts", "hosts", domain, None, "cli")
         });
     }
 
@@ -121,7 +130,7 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         let _ = db.with_conn(|conn| {
             crate::db::audit::log_action(
                 conn, "close_tabs", "browser", &result.browser,
-                Some(&format!("{} tabs", result.tabs_closed)),
+                Some(&format!("{} tabs", result.tabs_closed)), "cli",
             )
         });
     }

@@ -307,42 +307,64 @@ fn test_audit_log() {
     let db = setup_db();
 
     db.with_conn(|conn| {
+        let no_filter = audit::AuditFilter { domain: None, action: None, source: None };
+
         // Initially empty
-        assert_eq!(audit::count_audit(conn)?, 0);
-        assert!(audit::list_audit(conn, 10, 0)?.is_empty());
+        assert_eq!(audit::count_audit(conn, &no_filter)?, 0);
+        assert!(audit::list_audit(conn, 10, 0, &no_filter)?.is_empty());
 
         // Log an action
-        let id = audit::log_action(conn, "block", "domain", "example.com", Some("blocked by user"))?;
+        let id = audit::log_action(conn, "block", "domain", "example.com", Some("blocked by user"), "cli")?;
         assert!(id > 0);
 
         // Count
-        assert_eq!(audit::count_audit(conn)?, 1);
+        assert_eq!(audit::count_audit(conn, &no_filter)?, 1);
 
         // List
-        let entries = audit::list_audit(conn, 10, 0)?;
+        let entries = audit::list_audit(conn, 10, 0, &no_filter)?;
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].action, "block");
         assert_eq!(entries[0].target_type, "domain");
         assert_eq!(entries[0].target_id, "example.com");
         assert_eq!(entries[0].details.as_deref(), Some("blocked by user"));
+        assert_eq!(entries[0].source, "cli");
         assert!(entries[0].timestamp > 0);
 
-        // Log multiple and verify ordering (DESC by timestamp)
-        audit::log_action(conn, "allow", "domain", "safe.com", None)?;
-        audit::log_action(conn, "delete", "category", "social", Some("removed"))?;
+        // Log multiple with different sources and verify ordering (DESC by timestamp)
+        audit::log_action(conn, "allow", "domain", "safe.com", None, "cli")?;
+        audit::log_action(conn, "schedule_block", "domain", "social.com", Some("Schedule activated"), "schedule")?;
 
-        assert_eq!(audit::count_audit(conn)?, 3);
+        assert_eq!(audit::count_audit(conn, &no_filter)?, 3);
 
-        let entries = audit::list_audit(conn, 10, 0)?;
+        let entries = audit::list_audit(conn, 10, 0, &no_filter)?;
         assert_eq!(entries.len(), 3);
 
         // Verify limit and offset
-        let page = audit::list_audit(conn, 1, 0)?;
+        let page = audit::list_audit(conn, 1, 0, &no_filter)?;
         assert_eq!(page.len(), 1);
 
-        let page2 = audit::list_audit(conn, 1, 1)?;
+        let page2 = audit::list_audit(conn, 1, 1, &no_filter)?;
         assert_eq!(page2.len(), 1);
         assert_ne!(page[0].id, page2[0].id);
+
+        // Verify source filter
+        let schedule_filter = audit::AuditFilter { domain: None, action: None, source: Some("schedule".to_string()) };
+        let schedule_entries = audit::list_audit(conn, 10, 0, &schedule_filter)?;
+        assert_eq!(schedule_entries.len(), 1);
+        assert_eq!(schedule_entries[0].source, "schedule");
+        assert_eq!(audit::count_audit(conn, &schedule_filter)?, 1);
+
+        // Verify domain filter
+        let domain_filter = audit::AuditFilter { domain: Some("example.com".to_string()), action: None, source: None };
+        let domain_entries = audit::list_audit(conn, 10, 0, &domain_filter)?;
+        assert_eq!(domain_entries.len(), 1);
+        assert_eq!(domain_entries[0].target_id, "example.com");
+
+        // Verify action filter
+        let action_filter = audit::AuditFilter { domain: None, action: Some("block".to_string()), source: None };
+        let action_entries = audit::list_audit(conn, 10, 0, &action_filter)?;
+        assert_eq!(action_entries.len(), 1);
+        assert_eq!(action_entries[0].action, "block");
 
         Ok(())
     })

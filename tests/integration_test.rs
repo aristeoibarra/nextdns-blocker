@@ -15,7 +15,7 @@ fn block_creates_domain_and_audit_entry() {
 
     db.with_transaction(|conn| {
         nextdns_blocker::db::domains::add_blocked(conn, "bad.com", Some("test"), None, None)?;
-        nextdns_blocker::db::audit::log_action(conn, "block", "domain", "bad.com", None)?;
+        nextdns_blocker::db::audit::log_action(conn, "block", "domain", "bad.com", None, "cli")?;
         Ok(())
     })
     .expect("transaction failed");
@@ -26,7 +26,7 @@ fn block_creates_domain_and_audit_entry() {
     assert!(is_blocked);
 
     let audit = db
-        .with_conn(|conn| nextdns_blocker::db::audit::list_audit(conn, 10, 0))
+        .with_conn(|conn| nextdns_blocker::db::audit::list_audit(conn, 10, 0, &nextdns_blocker::db::audit::AuditFilter { domain: None, action: None, source: None }))
         .unwrap();
     assert_eq!(audit.len(), 1);
     assert_eq!(audit[0].action, "block");
@@ -51,7 +51,7 @@ fn unblock_removes_domain_and_audits() {
     assert!(removed);
 
     db.with_conn(|conn| {
-        nextdns_blocker::db::audit::log_action(conn, "unblock", "domain", "remove-me.com", None)
+        nextdns_blocker::db::audit::log_action(conn, "unblock", "domain", "remove-me.com", None, "cli")
     })
     .unwrap();
 
@@ -60,7 +60,7 @@ fn unblock_removes_domain_and_audits() {
         .unwrap());
 
     let audit = db
-        .with_conn(|conn| nextdns_blocker::db::audit::list_audit(conn, 10, 0))
+        .with_conn(|conn| nextdns_blocker::db::audit::list_audit(conn, 10, 0, &nextdns_blocker::db::audit::AuditFilter { domain: None, action: None, source: None }))
         .unwrap();
     assert_eq!(audit[0].action, "unblock");
 }
@@ -143,7 +143,7 @@ fn multi_domain_block_atomic() {
     db.with_transaction(|conn| {
         for domain in &["a.com", "b.com", "c.com"] {
             nextdns_blocker::db::domains::add_blocked(conn, domain, Some("batch"), None, None)?;
-            nextdns_blocker::db::audit::log_action(conn, "block", "domain", domain, None)?;
+            nextdns_blocker::db::audit::log_action(conn, "block", "domain", domain, None, "cli")?;
         }
         Ok(())
     })
@@ -154,7 +154,7 @@ fn multi_domain_block_atomic() {
         3
     );
     assert_eq!(
-        db.with_conn(nextdns_blocker::db::audit::count_audit).unwrap(),
+        db.with_conn(|conn| nextdns_blocker::db::audit::count_audit(conn, &nextdns_blocker::db::audit::AuditFilter { domain: None, action: None, source: None })).unwrap(),
         3
     );
 }

@@ -28,7 +28,7 @@ fn handle_create(db: &Database, args: CategoryCreateArgs) -> Result<ExitCode, Ap
     let id = db.with_transaction(|conn| {
         let id = crate::db::categories::create_category(conn, &args.name, args.description.as_deref(), args.schedule.as_deref())
             .map_err(AppError::from)?;
-        crate::db::audit::log_action(conn, "create", "category", &args.name, None)
+        crate::db::audit::log_action(conn, "create", "category", &args.name, None, "cli")
             .map_err(AppError::from)?;
         Ok(id)
     })?;
@@ -47,7 +47,7 @@ fn handle_delete(db: &Database, args: CategoryDeleteArgs) -> Result<ExitCode, Ap
         });
     }
 
-    db.with_conn(|conn| crate::db::audit::log_action(conn, "delete", "category", &args.name, None))?;
+    db.with_conn(|conn| crate::db::audit::log_action(conn, "delete", "category", &args.name, None, "cli"))?;
 
     let result = SimpleResult { command: "category delete", data: serde_json::json!({ "name": args.name }), summary: serde_json::json!({ "deleted": 1 }) };
     output::render(&result);

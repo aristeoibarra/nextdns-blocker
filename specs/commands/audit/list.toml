@@ -19,6 +19,27 @@ type = "string"
 required = false
 description = "Number of entries to skip"
 
+[[flags]]
+name = "--domain"
+type = "string"
+required = false
+description = "Filter by domain (searches target_id and details)"
+short = "-d"
+
+[[flags]]
+name = "--action"
+type = "string"
+required = false
+description = "Filter by action (e.g., block, unblock, enforce_failed)"
+short = "-a"
+
+[[flags]]
+name = "--source"
+type = "string"
+required = false
+description = "Filter by source (cli, schedule, watchdog, preflight, pending, retry, system)"
+short = "-s"
+
 [output.success]
 schema = """
 {
@@ -44,4 +65,19 @@ exit_code = 0
 [[examples]]
 description = "List last 10 entries"
 input = "ndb audit list --limit 10"
+exit_code = 0
+
+[[examples]]
+description = "Filter by domain"
+input = "ndb audit list --domain whatsapp.com"
+exit_code = 0
+
+[[examples]]
+description = "Filter by source"
+input = "ndb audit list --source schedule"
+exit_code = 0
+
+[[examples]]
+description = "Filter by action"
+input = "ndb audit list --action enforce_failed"
 exit_code = 0

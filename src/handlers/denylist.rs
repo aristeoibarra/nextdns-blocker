@@ -65,7 +65,7 @@ fn handle_add(db: &Database, args: DenylistAddArgs) -> Result<ExitCode, AppError
             ).map_err(AppError::from)?;
             if existed { skipped.push(domain.to_string()); }
             else { added.push(domain.to_string()); }
-            crate::db::audit::log_action(conn, "add", "denylist", domain.as_str(), None)
+            crate::db::audit::log_action(conn, "add", "denylist", domain.as_str(), None, "cli")
                 .map_err(AppError::from)?;
         }
         Ok(())
@@ -107,7 +107,7 @@ fn handle_remove(db: &Database, args: DenylistRemoveArgs) -> Result<ExitCode, Ap
             let domain_lower = domain.to_lowercase();
             if crate::db::domains::remove_blocked(conn, &domain_lower)
                 .map_err(AppError::from)? {
-                crate::db::audit::log_action(conn, "remove", "denylist", &domain_lower, None)
+                crate::db::audit::log_action(conn, "remove", "denylist", &domain_lower, None, "cli")
                     .map_err(AppError::from)?;
                 removed.push(domain_lower);
             } else {
@@ -194,7 +194,7 @@ fn handle_import(db: &Database, args: DenylistImportArgs) -> Result<ExitCode, Ap
                 skipped += 1;
             } else {
                 imported += 1;
-                crate::db::audit::log_action(conn, "import", "denylist", domain.as_str(), None)
+                crate::db::audit::log_action(conn, "import", "denylist", domain.as_str(), None, "cli")
                     .map_err(AppError::from)?;
             }
         }

@@ -160,6 +160,7 @@ pub struct AuditEntry {
     pub target_id: String,
     pub details: Option<String>,
     pub timestamp: i64,
+    pub source: String,
 }
 
 /// Domain-to-app mapping entry.
