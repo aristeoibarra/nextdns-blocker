@@ -14,11 +14,17 @@ pub trait Renderable {
 /// Render output as JSON envelope to stdout.
 pub fn render(output: &dyn Renderable) {
     let envelope = json::wrap_success(output);
-    println!("{}", serde_json::to_string_pretty(&envelope).expect("JSON serialization failed"));
+    match serde_json::to_string_pretty(&envelope) {
+        Ok(json) => println!("{json}"),
+        Err(e) => eprintln!("{{\"ok\":false,\"error\":\"JSON serialization failed: {e}\"}}"),
+    }
 }
 
 /// Render an error as JSON envelope to stderr.
 pub fn render_error(err: &AppError, command: &str) {
     let envelope = err.to_json(command);
-    eprintln!("{}", serde_json::to_string_pretty(&envelope).expect("JSON serialization failed"));
+    match serde_json::to_string_pretty(&envelope) {
+        Ok(json) => eprintln!("{json}"),
+        Err(e) => eprintln!("{{\"ok\":false,\"error\":\"JSON serialization failed: {e}\"}}"),
+    }
 }

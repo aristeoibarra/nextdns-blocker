@@ -39,7 +39,7 @@ fn handle_list() -> Result<ExitCode, AppError> {
 }
 
 fn handle_setup() -> Result<ExitCode, AppError> {
-    let sudoers_content = "%admin ALL=(root) NOPASSWD: /bin/cp /tmp/ndb_hosts_* /etc/hosts\n%admin ALL=(root) NOPASSWD: /usr/bin/dscacheutil -flushcache\n%admin ALL=(root) NOPASSWD: /usr/bin/killall -HUP mDNSResponder\n";
+    let sudoers_content = "%admin ALL=(root) NOPASSWD: /bin/cp /tmp/ndb_hosts_[0-9]* /etc/hosts\n%admin ALL=(root) NOPASSWD: /usr/bin/dscacheutil -flushcache\n%admin ALL=(root) NOPASSWD: /usr/bin/killall -HUP mDNSResponder\n";
     let sudoers_path = "/etc/sudoers.d/ndb-hosts";
 
     // Write via sudo tee (interactive — will prompt for password once)

@@ -1,0 +1,37 @@
+[command]
+name = "apps list"
+binary_path = ["apps", "list"]
+description = "List app mappings and their block status"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "apps list",
+  "data": {
+    "mappings": [
+      {
+        "domain": "whatsapp.com",
+        "bundle_id": "net.whatsapp.WhatsApp",
+        "app_name": "WhatsApp",
+        "auto": true,
+        "installed": true,
+        "blocked": false
+      }
+    ]
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "List all app mappings"
+input = "ndb apps list"
+exit_code = 0

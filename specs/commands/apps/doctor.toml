@@ -1,0 +1,42 @@
+[command]
+name = "apps doctor"
+binary_path = ["apps", "doctor"]
+description = "Reconcile blocked apps between filesystem and database"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[[flags]]
+name = "--repair"
+type = "bool"
+required = false
+description = "Automatically repair found issues"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "apps doctor",
+  "data": {
+    "orphans": [],
+    "phantoms": [],
+    "repaired_orphans": [],
+    "repaired_phantoms": []
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Check for inconsistencies"
+input = "ndb apps doctor"
+exit_code = 0
+
+[[examples]]
+description = "Check and repair inconsistencies"
+input = "ndb apps doctor --repair"
+exit_code = 0

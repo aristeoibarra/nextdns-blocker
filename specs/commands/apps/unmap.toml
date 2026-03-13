@@ -1,0 +1,46 @@
+[command]
+name = "apps unmap"
+binary_path = ["apps", "unmap"]
+description = "Remove a domain-to-app mapping"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "domain"
+type = "string"
+required = true
+description = "Domain to unmap"
+
+[[args]]
+name = "bundle_id"
+type = "string"
+required = true
+description = "Bundle ID to unmap"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "apps unmap",
+  "data": {
+    "domain": "whatsapp.com",
+    "bundle_id": "net.whatsapp.WhatsApp",
+    "removed": true
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 7
+name = "not_found"
+
+[[examples]]
+description = "Remove an app mapping"
+input = "ndb apps unmap whatsapp.com net.whatsapp.WhatsApp"
+exit_code = 0

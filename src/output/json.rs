@@ -10,9 +10,10 @@ pub fn wrap_success(output: &dyn Renderable) -> serde_json::Value {
 
     // Merge data fields into envelope
     if let serde_json::Value::Object(map) = data {
-        let obj = envelope.as_object_mut().expect("envelope is object");
-        for (k, v) in map {
-            obj.insert(k, v);
+        if let Some(obj) = envelope.as_object_mut() {
+            for (k, v) in map {
+                obj.insert(k, v);
+            }
         }
     } else {
         envelope["data"] = data;
@@ -35,5 +36,7 @@ pub fn write_progress(command: &str, message: &str, progress: Option<f64>) {
         val["progress"] = serde_json::json!(pct);
     }
     // Progress goes to stderr so stdout stays clean for the result
-    eprintln!("{}", serde_json::to_string(&val).expect("JSON serialization failed"));
+    if let Ok(json) = serde_json::to_string(&val) {
+        eprintln!("{json}");
+    }
 }

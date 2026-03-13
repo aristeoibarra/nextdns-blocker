@@ -26,6 +26,11 @@ pub struct AppUnblockResult {
 
 /// Find the installed path of an app by bundle ID using Spotlight.
 pub fn find_app_path(bundle_id: &str) -> Option<String> {
+    // Validate bundle_id to prevent mdfind query injection
+    if !bundle_id.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
+        return None;
+    }
+
     let output = Command::new("mdfind")
         .arg(format!("kMDItemCFBundleIdentifier == '{bundle_id}'"))
         .output()

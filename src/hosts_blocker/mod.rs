@@ -193,12 +193,24 @@ fn write_hosts_file(non_ndb_lines: &[String], ndb_entries: &[HostEntry]) -> Resu
         content.push('\n');
     }
 
-    // Write to temp file
-    let tmp_path = format!("/tmp/ndb_hosts_{}", std::process::id());
-    let mut file = std::fs::File::create(&tmp_path).map_err(|e| AppError::General {
-        message: format!("Failed to create temp file: {e}"),
-        hint: None,
-    })?;
+    // Write to temp file with exclusive creation to prevent TOCTOU attacks
+    use std::os::unix::fs::OpenOptionsExt;
+    let tmp_path = format!(
+        "/tmp/ndb_hosts_{}_{}", std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&tmp_path)
+        .map_err(|e| AppError::General {
+            message: format!("Failed to create temp file: {e}"),
+            hint: None,
+        })?;
     file.write_all(content.as_bytes()).map_err(|e| AppError::General {
         message: format!("Failed to write temp file: {e}"),
         hint: None,

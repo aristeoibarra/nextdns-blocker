@@ -1,0 +1,33 @@
+[command]
+name = "apps restore"
+binary_path = ["apps", "restore"]
+description = "Restore all blocked apps (emergency recovery)"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "apps restore",
+  "data": {
+    "restored": [
+      {
+        "bundle_id": "net.whatsapp.WhatsApp",
+        "app_name": "WhatsApp"
+      }
+    ]
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Restore all blocked apps"
+input = "ndb apps restore"
+exit_code = 0

@@ -33,19 +33,23 @@ pub fn process_retries(db: &Database, client: &NextDnsClient) -> Result<RetryRes
             Err(e) => {
                 let next_attempt = entry.attempts + 1;
                 if next_attempt >= entry.max_attempts {
-                    // Atomic: audit log + remove in one transaction
+                    // Atomic: audit log + remove in one transaction.
+                    // If the transaction fails, force-remove the retry to prevent infinite loops.
                     let details = format!(
                         "Exhausted after {} attempts. Last error: {}",
                         entry.max_attempts, e
                     );
-                    let _ = db.with_transaction(|conn| {
+                    if db.with_transaction(|conn| {
                         crate::db::audit::log_action(
                             conn, "retry_exhausted", "domain", domain, Some(&details),
                         ).map_err(crate::error::AppError::from)?;
                         crate::db::retry::remove_retry(conn, &entry.id)
                             .map_err(crate::error::AppError::from)?;
                         Ok(())
-                    });
+                    }).is_err() {
+                        // Fallback: at least remove the retry so it doesn't loop forever
+                        let _ = db.with_conn(|conn| crate::db::retry::remove_retry(conn, &entry.id));
+                    }
                     exhausted += 1;
                 } else {
                     let delay = calculate_backoff(next_attempt as u32);
@@ -69,7 +73,8 @@ fn calculate_backoff(attempt: u32) -> u64 {
     let max = RETRY_MAX_DELAY_SECS;
     let exp_delay = base.saturating_mul(2u64.saturating_pow(attempt));
     let capped = exp_delay.min(max);
-    cheap_random_u64() % (capped + 1)
+    // Ensure minimum delay of 1s to prevent immediate retries from jitter
+    (cheap_random_u64() % capped).saturating_add(1)
 }
 
 /// Quick non-crypto random u64 using std only (sufficient for jitter).

@@ -45,11 +45,11 @@ impl RateLimiter {
         let now = Instant::now();
         let cutoff = now - inner.window;
 
-        // Remove expired timestamps
+        // Remove expired timestamps (inclusive boundary to prevent off-by-one)
         while inner
             .timestamps
             .front()
-            .is_some_and(|&ts| ts < cutoff)
+            .is_some_and(|&ts| ts <= cutoff)
         {
             inner.timestamps.pop_front();
         }

@@ -1,0 +1,38 @@
+[command]
+name = "apps scan"
+binary_path = ["apps", "scan"]
+description = "Scan installed apps and show which have known mappings"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "apps scan",
+  "data": {
+    "installed_apps": 150,
+    "known_matches": [
+      {
+        "domain": "whatsapp.com",
+        "bundle_id": "net.whatsapp.WhatsApp",
+        "app_name": "WhatsApp",
+        "path": "/Applications/WhatsApp.app",
+        "already_mapped": false
+      }
+    ],
+    "auto_added": 1
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Scan for installed apps with known mappings"
+input = "ndb apps scan"
+exit_code = 0

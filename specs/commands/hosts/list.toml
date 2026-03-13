@@ -1,0 +1,36 @@
+[command]
+name = "hosts list"
+binary_path = ["hosts", "list"]
+description = "List /etc/hosts entries managed by ndb"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "hosts list",
+  "data": {
+    "entries": [
+      {
+        "domain": "whatsapp.com",
+        "ip": "0.0.0.0",
+        "source_domain": "whatsapp.com",
+        "added_at": 1710000000
+      }
+    ],
+    "count": 1
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "List all managed hosts entries"
+input = "ndb hosts list"
+exit_code = 0

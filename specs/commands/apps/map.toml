@@ -1,0 +1,53 @@
+[command]
+name = "apps map"
+binary_path = ["apps", "map"]
+description = "Create a domain-to-app mapping"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[[args]]
+name = "domain"
+type = "string"
+required = true
+description = "Domain to map (e.g., whatsapp.com)"
+
+[[args]]
+name = "bundle_id"
+type = "string"
+required = true
+description = "macOS bundle ID (e.g., net.whatsapp.WhatsApp)"
+
+[[flags]]
+name = "--name"
+type = "string"
+required = false
+description = "App display name (optional, auto-detected if omitted)"
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "apps map",
+  "data": {
+    "domain": "whatsapp.com",
+    "bundle_id": "net.whatsapp.WhatsApp",
+    "app_name": "WhatsApp"
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Map a domain to an app"
+input = "ndb apps map whatsapp.com net.whatsapp.WhatsApp"
+exit_code = 0
+
+[[examples]]
+description = "Map with explicit app name"
+input = "ndb apps map whatsapp.com net.whatsapp.WhatsApp --name WhatsApp"
+exit_code = 0

@@ -1,0 +1,29 @@
+[command]
+name = "hosts restore"
+binary_path = ["hosts", "restore"]
+description = "Remove all ndb entries from /etc/hosts"
+requires_config = true
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "hosts restore",
+  "data": {
+    "removed": ["whatsapp.com"],
+    "count": 1
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[examples]]
+description = "Restore /etc/hosts to clean state"
+input = "ndb hosts restore"
+exit_code = 0

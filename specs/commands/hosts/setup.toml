@@ -1,0 +1,33 @@
+[command]
+name = "hosts setup"
+binary_path = ["hosts", "setup"]
+description = "Configure sudoers for passwordless /etc/hosts access"
+requires_config = false
+requires_api = false
+requires_pin = false
+
+[output.success]
+schema = """
+{
+  "ok": true,
+  "command": "hosts setup",
+  "data": {
+    "sudoers_path": "/etc/sudoers.d/ndb-hosts",
+    "configured": true
+  },
+  "timestamp": "..."
+}
+"""
+
+[[exit_codes]]
+code = 0
+name = "success"
+
+[[exit_codes]]
+code = 1
+name = "general_error"
+
+[[examples]]
+description = "Set up sudoers for hosts blocking"
+input = "ndb hosts setup"
+exit_code = 0

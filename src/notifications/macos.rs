@@ -46,6 +46,20 @@ impl Default for MacosAdapter {
     }
 }
 
+/// Escape a string for safe inclusion in AppleScript double-quoted strings.
 fn escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            // Strip control chars to prevent AppleScript injection
+            c if c.is_control() => {}
+            _ => out.push(c),
+        }
+    }
+    out
 }

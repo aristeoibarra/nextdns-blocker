@@ -8,6 +8,23 @@ use crate::scheduler::ScheduleEvaluator;
 
 const RETRY_MAX_ATTEMPTS: i32 = 5;
 
+/// Update in_nextdns state and audit-log if the DB write fails.
+fn update_in_nextdns(db: &Database, domain: &str, list: &str, value: bool) {
+    let result = match list {
+        "denylist" => db.with_conn(|conn| crate::db::domains::set_in_nextdns_blocked(conn, domain, value)),
+        "allowlist" => db.with_conn(|conn| crate::db::domains::set_in_nextdns_allowed(conn, domain, value)),
+        _ => return,
+    };
+    if let Err(e) = result {
+        let _ = db.with_conn(|conn| {
+            crate::db::audit::log_action(
+                conn, "in_nextdns_update_failed", list, domain,
+                Some(&format!("Failed to set in_nextdns={value}: {e}")),
+            )
+        });
+    }
+}
+
 // === Result types ===
 
 /// Result of a full drift-detection sync (GET + diff).
@@ -94,9 +111,7 @@ pub fn eager_push_denylist(db: &Database, client: &NextDnsClient, domains: &[Str
             Ok(()) => {
                 changed = true;
                 result.pushed += 1;
-                let _ = db.with_conn(|conn| {
-                    crate::db::domains::set_in_nextdns_blocked(conn, domain, add)
-                });
+                update_in_nextdns(db, domain, "denylist", add);
             }
             Err(_) => {
                 enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "denylist");
@@ -126,9 +141,7 @@ pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[St
             Ok(()) => {
                 changed = true;
                 result.pushed += 1;
-                let _ = db.with_conn(|conn| {
-                    crate::db::domains::set_in_nextdns_allowed(conn, domain, add)
-                });
+                update_in_nextdns(db, domain, "allowlist", add);
             }
             Err(_) => {
                 enqueue_retry(db, if add { "add" } else { "remove" }, Some(domain), "allowlist");
@@ -207,9 +220,7 @@ pub fn execute_schedule_sync(
         if should_be_in_nextdns && !domain.in_nextdns {
             match client.add_to_denylist(&domain.domain) {
                 Ok(()) => {
-                    let _ = db.with_conn(|conn| {
-                        crate::db::domains::set_in_nextdns_blocked(conn, &domain.domain, true)
-                    });
+                    update_in_nextdns(db, &domain.domain, "denylist", true);
                     added.push(domain.domain.clone());
                 }
                 Err(e) => {
@@ -224,9 +235,7 @@ pub fn execute_schedule_sync(
         } else if !should_be_in_nextdns && domain.in_nextdns {
             match client.remove_from_denylist(&domain.domain) {
                 Ok(()) => {
-                    let _ = db.with_conn(|conn| {
-                        crate::db::domains::set_in_nextdns_blocked(conn, &domain.domain, false)
-                    });
+                    update_in_nextdns(db, &domain.domain, "denylist", false);
                     removed.push(domain.domain.clone());
                 }
                 Err(e) => {
@@ -268,9 +277,7 @@ pub fn execute_schedule_sync(
         if should_be_in_nextdns && !domain.in_nextdns {
             match client.add_to_allowlist(&domain.domain) {
                 Ok(()) => {
-                    let _ = db.with_conn(|conn| {
-                        crate::db::domains::set_in_nextdns_allowed(conn, &domain.domain, true)
-                    });
+                    update_in_nextdns(db, &domain.domain, "allowlist", true);
                     added.push(domain.domain.clone());
                 }
                 Err(e) => {
@@ -285,9 +292,7 @@ pub fn execute_schedule_sync(
         } else if !should_be_in_nextdns && domain.in_nextdns {
             match client.remove_from_allowlist(&domain.domain) {
                 Ok(()) => {
-                    let _ = db.with_conn(|conn| {
-                        crate::db::domains::set_in_nextdns_allowed(conn, &domain.domain, false)
-                    });
+                    update_in_nextdns(db, &domain.domain, "allowlist", false);
                     removed.push(domain.domain.clone());
                 }
                 Err(e) => {
@@ -346,8 +351,8 @@ pub fn execute_drift_sync(
     let remote_denylist = client.get_denylist()?;
     let remote_allowlist = client.get_allowlist()?;
 
-    let remote_blocked_set: HashSet<String> = remote_denylist.iter().map(|e| e.id.clone()).collect();
-    let remote_allowed_set: HashSet<String> = remote_allowlist.iter().map(|e| e.id.clone()).collect();
+    let remote_blocked_set: HashSet<String> = remote_denylist.iter().filter(|e| e.active).map(|e| e.id.clone()).collect();
+    let remote_allowed_set: HashSet<String> = remote_allowlist.iter().filter(|e| e.active).map(|e| e.id.clone()).collect();
 
     let should_block: HashSet<String> = local_blocked
         .iter()
@@ -425,7 +430,7 @@ pub fn execute_drift_sync(
     for domain in &to_add_blocked {
         match client.add_to_denylist(domain) {
             Ok(()) => {
-                let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_blocked(conn, domain, true));
+                update_in_nextdns(db, domain, "denylist", true);
                 denylist_added.push(domain.clone());
             }
             Err(e) => {
@@ -438,7 +443,7 @@ pub fn execute_drift_sync(
     for domain in &to_remove_blocked {
         match client.remove_from_denylist(domain) {
             Ok(()) => {
-                let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_blocked(conn, domain, false));
+                update_in_nextdns(db, domain, "denylist", false);
                 denylist_removed.push(domain.clone());
             }
             Err(e) => {
@@ -454,7 +459,7 @@ pub fn execute_drift_sync(
     for domain in &to_add_allowed {
         match client.add_to_allowlist(domain) {
             Ok(()) => {
-                let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_allowed(conn, domain, true));
+                update_in_nextdns(db, domain, "allowlist", true);
                 allowlist_added.push(domain.clone());
             }
             Err(e) => {
@@ -467,7 +472,7 @@ pub fn execute_drift_sync(
     for domain in &to_remove_allowed {
         match client.remove_from_allowlist(domain) {
             Ok(()) => {
-                let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_allowed(conn, domain, false));
+                update_in_nextdns(db, domain, "allowlist", false);
                 allowlist_removed.push(domain.clone());
             }
             Err(e) => {
@@ -479,10 +484,10 @@ pub fn execute_drift_sync(
 
     // Confirm unchanged domains are marked as in_nextdns
     for domain in should_block.intersection(&remote_blocked_set) {
-        let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_blocked(conn, domain, true));
+        update_in_nextdns(db, domain, "denylist", true);
     }
     for domain in should_allow.intersection(&remote_allowed_set) {
-        let _ = db.with_conn(|conn| crate::db::domains::set_in_nextdns_allowed(conn, domain, true));
+        update_in_nextdns(db, domain, "allowlist", true);
     }
 
     // === Execute categories sync ===

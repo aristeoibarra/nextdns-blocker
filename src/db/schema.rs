@@ -40,5 +40,10 @@ pub fn get_migrations() -> Vec<(i64, &'static str, &'static str)> {
             "allowlist_schedule",
             include_str!("../../migrations/007_allowlist_schedule.sql"),
         ),
+        (
+            8,
+            "missing_indexes",
+            include_str!("../../migrations/008_missing_indexes.sql"),
+        ),
     ]
 }
