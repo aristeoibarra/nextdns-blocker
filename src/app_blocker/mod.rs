@@ -19,7 +19,7 @@ pub struct AppBlockResult {
 pub struct AppUnblockResult {
     pub bundle_id: String,
     pub app_name: String,
-    /// Set when a reinstalled .app was found alongside .app.blocked during unblock.
+    /// Set when a reinstalled .app was found alongside .blocked during unblock.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conflict_path: Option<String>,
 }
@@ -53,6 +53,46 @@ pub fn kill_app(app_name: &str) {
     let _ = Command::new("killall").args(["-e", app_name]).output();
 }
 
+/// Compute the blocked path by stripping `.app` to prevent macOS from
+/// recognizing the directory as an application bundle.
+/// e.g. `/Applications/WhatsApp.app` → `/Applications/WhatsApp.blocked`
+fn blocked_path_for(app_path: &str) -> String {
+    if let Some(stem) = app_path.strip_suffix(".app") {
+        format!("{stem}.blocked")
+    } else {
+        format!("{app_path}.blocked")
+    }
+}
+
+/// Unregister an app path from macOS LaunchServices so it no longer appears
+/// in Spotlight, Launchpad, or other app launchers.
+fn unregister_app(path: &str) {
+    let _ = Command::new("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister")
+        .args(["-u", path])
+        .output();
+}
+
+/// Remove execute permission from all binaries inside the bundle's MacOS directory.
+/// This prevents macOS from launching the app even if the bundle structure is intact.
+fn disable_binary(blocked_path: &str) {
+    let macos_dir = format!("{blocked_path}/Contents/MacOS");
+    if let Ok(entries) = std::fs::read_dir(&macos_dir) {
+        for entry in entries.flatten() {
+            let _ = Command::new("chmod").args(["-x", &entry.path().to_string_lossy().to_string()]).output();
+        }
+    }
+}
+
+/// Restore execute permission on all binaries inside the bundle's MacOS directory.
+fn enable_binary(app_path: &str) {
+    let macos_dir = format!("{app_path}/Contents/MacOS");
+    if let Ok(entries) = std::fs::read_dir(&macos_dir) {
+        for entry in entries.flatten() {
+            let _ = Command::new("chmod").args(["+x", &entry.path().to_string_lossy().to_string()]).output();
+        }
+    }
+}
+
 /// Block an app: kill process + rename .app to .app.blocked.
 /// Records the state in the database.
 pub fn block_app(
@@ -72,7 +112,7 @@ pub fn block_app(
         None => return Ok(None),
     };
 
-    let blocked_path = format!("{path}.blocked");
+    let blocked_path = blocked_path_for(&path);
 
     // Skip if .app doesn't exist (might already be renamed externally)
     if !Path::new(&path).exists() {
@@ -87,16 +127,23 @@ pub fn block_app(
         return Ok(None);
     }
 
-    // 1. Rename .app -> .app.blocked (before kill to avoid orphaned dead process)
+    // 1. Rename .app -> .blocked (strip .app to prevent macOS recognizing it as app bundle)
     std::fs::rename(&path, &blocked_path).map_err(|e| AppError::General {
         message: format!("Failed to block app {app_name}: {e}"),
         hint: Some("Ensure ndb has Full Disk Access in System Settings > Privacy & Security".to_string()),
     })?;
 
-    // 2. Kill running instances after rename succeeded
+    // 2. Remove execute permission from binaries to prevent launching
+    disable_binary(&blocked_path);
+
+    // 3. Unregister from LaunchServices so Launchpad/Spotlight stop showing it
+    unregister_app(&path);
+    unregister_app(&blocked_path);
+
+    // 4. Kill running instances after rename succeeded
     kill_app(app_name);
 
-    // 3. Record in DB — rollback rename if DB write fails
+    // 5. Record in DB — rollback rename if DB write fails
     if let Err(e) = db.with_conn(|conn| {
         crate::db::apps::add_blocked_app(
             conn, bundle_id, app_name, &path, &blocked_path, source_domain,
@@ -166,6 +213,8 @@ pub fn unblock_app(db: &Database, bundle_id: &str) -> Result<Option<AppUnblockRe
             });
             conflict_path = Some(conflict);
         } else {
+            // Restore execute permission before renaming back
+            enable_binary(&record.blocked_path);
             std::fs::rename(blocked, original).map_err(|e| AppError::General {
                 message: format!("Failed to restore app {}: {e}", record.app_name),
                 hint: Some(
@@ -254,7 +303,31 @@ pub fn enforce_blocked_apps(db: &Database) -> Result<Vec<String>, AppError> {
         return Ok(Vec::new());
     }
 
-    // Re-rename: if someone manually restored .app from .app.blocked, put it back.
+    // Migrate old .app.blocked convention → .blocked (removes .app so macOS won't recognize it)
+    for app in &blocked {
+        if app.blocked_path.ends_with(".app.blocked") {
+            let new_blocked = blocked_path_for(&app.original_path);
+            let old_exists = Path::new(&app.blocked_path).exists();
+            let new_exists = Path::new(&new_blocked).exists();
+
+            if old_exists && !new_exists {
+                if std::fs::rename(&app.blocked_path, &new_blocked).is_ok() {
+                    disable_binary(&new_blocked);
+                    unregister_app(&app.blocked_path);
+                    unregister_app(&new_blocked);
+                    kill_app(&app.app_name);
+                    let _ = db.with_conn(|conn| {
+                        crate::db::apps::update_blocked_path(conn, &app.bundle_id, &new_blocked)
+                    });
+                }
+            }
+        }
+    }
+
+    // Reload after potential migration
+    let blocked = db.with_conn(crate::db::apps::list_blocked_apps)?;
+
+    // Re-rename: if someone manually restored .app, put it back.
     for app in &blocked {
         if Path::new(&app.original_path).exists() {
             kill_app(&app.app_name);
@@ -265,7 +338,18 @@ pub fn enforce_blocked_apps(db: &Database) -> Result<Vec<String>, AppError> {
                         Some(&format!("Failed to re-block {}: {e}", app.app_name)),
                     )
                 });
+            } else {
+                disable_binary(&app.blocked_path);
+                unregister_app(&app.original_path);
+                unregister_app(&app.blocked_path);
             }
+        }
+    }
+
+    // Ensure execute permission is removed on all blocked app binaries
+    for app in &blocked {
+        if Path::new(&app.blocked_path).exists() {
+            disable_binary(&app.blocked_path);
         }
     }
 
@@ -310,9 +394,9 @@ pub fn restore_all(db: &Database) -> Result<Vec<AppUnblockResult>, AppError> {
 /// Result of the doctor reconciliation check.
 #[derive(Debug, serde::Serialize)]
 pub struct DoctorReport {
-    /// `.app.blocked` files on disk not tracked in the database.
+    /// `.blocked` files on disk not tracked in the database.
     pub orphans: Vec<String>,
-    /// DB records whose `.app.blocked` AND `.app` no longer exist on disk.
+    /// DB records whose `.blocked` AND `.app` no longer exist on disk.
     pub phantoms: Vec<PhantomApp>,
 }
 
@@ -331,7 +415,7 @@ pub fn doctor(db: &Database) -> Result<DoctorReport, AppError> {
     let blocked_paths: std::collections::HashSet<&str> =
         blocked.iter().map(|b| b.blocked_path.as_str()).collect();
 
-    // Scan filesystem for .app.blocked entries
+    // Scan filesystem for .blocked entries (and legacy .app.blocked)
     let home = std::env::var("HOME").unwrap_or_default();
     let dirs = ["/Applications", &format!("{home}/Applications")];
 
@@ -340,7 +424,7 @@ pub fn doctor(db: &Database) -> Result<DoctorReport, AppError> {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 if let Some(name) = entry.file_name().to_str() {
-                    if name.ends_with(".app.blocked") {
+                    if name.ends_with(".blocked") {
                         if let Some(path) = entry.path().to_str() {
                             on_disk.push(path.to_string());
                         }

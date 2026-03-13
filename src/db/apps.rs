@@ -144,6 +144,18 @@ pub fn get_blocked_apps_for_domain(
     rows.collect()
 }
 
+pub fn update_blocked_path(
+    conn: &Connection,
+    bundle_id: &str,
+    new_blocked_path: &str,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE blocked_apps SET blocked_path = ?1 WHERE bundle_id = ?2",
+        params![new_blocked_path, bundle_id],
+    )?;
+    Ok(())
+}
+
 fn map_blocked_app(row: &rusqlite::Row) -> Result<BlockedApp, rusqlite::Error> {
     Ok(BlockedApp {
         bundle_id: row.get(0)?,

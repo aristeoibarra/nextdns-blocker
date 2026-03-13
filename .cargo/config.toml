@@ -3,3 +3,6 @@ rustflags = ["-C", "target-cpu=native"]
 
 [target.x86_64-apple-darwin]
 rustflags = ["-C", "target-cpu=native"]
+
+[alias]
+deploy = ["install", "--path", ".", "--root", "/Users/aristeoibarra/.local", "--force"]
