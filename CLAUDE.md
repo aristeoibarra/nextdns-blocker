@@ -64,7 +64,7 @@ The `Renderable` trait has only two methods: `command_name()` and `to_json()`. N
 
 ### Database Layer
 
-`db::Database` wraps `rusqlite::Connection` in `Mutex`. Access via `db.with_conn(|conn| { ... })` or `db.with_transaction(|conn| { ... })` for atomic multi-write operations. All tables use SQLite STRICT mode. Migrations in `src/db/schema.rs` via `include_str!()` from `migrations/` (6 migration files). WAL mode enabled.
+`db::Database` wraps `rusqlite::Connection` in `Mutex`. Access via `db.with_conn(|conn| { ... })` or `db.with_transaction(|conn| { ... })` for atomic multi-write operations. All tables use SQLite STRICT mode. Migrations in `src/db/schema.rs` via `include_str!()` from `migrations/` (9 migration files). WAL mode enabled.
 
 ### Config System
 
@@ -87,6 +87,10 @@ The `Renderable` trait has only two methods: `command_name()` and `to_json()`. N
 ### Hosts Blocker
 
 `hosts_blocker` module is the 3rd blocking layer (DNS + apps + hosts). Writes domains to `/etc/hosts` as `0.0.0.0 domain.com` inside `# ndb-start` / `# ndb-end` markers. Uses `sudo -n cp` for atomic writes and auto-flushes DNS cache (`dscacheutil` + `mDNSResponder`). Requires `ndb hosts setup` first for passwordless sudo. DB table: `hosts_entries`. `enforce_hosts_entries()` runs in pre-flight on every command. `api.nextdns.io` is a protected domain that is never blocked in hosts.
+
+### Browser Blocker
+
+`browser_blocker` module closes browser tabs matching blocked domains via AppleScript. Supports Chromium-based browsers (Chrome, Brave) only — Firefox/Zen don't support tab-level scripting. `close_tabs_for_domains(domains)` checks if browser is running before executing, iterates tabs in reverse to avoid index shifting during close, and escapes strings for AppleScript safety.
 
 ### Notifications
 
