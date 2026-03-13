@@ -29,10 +29,14 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
 
     let mut added = Vec::new();
     let mut skipped = Vec::new();
-    let mut pending_id = None;
+    let mut pending_ids = Vec::new();
 
     db.with_transaction(|conn| {
         for domain in &valid {
+            if crate::common::domain::is_protected(domain.as_str()) {
+                skipped.push(domain.to_string());
+                continue;
+            }
             let existed = crate::db::domains::is_blocked(conn, domain.as_str())?;
             crate::db::domains::add_blocked(
                 conn, domain.as_str(), args.description.as_deref(),
@@ -49,18 +53,18 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
     if let Some(ref dur_str) = args.duration {
         let duration = parsed_duration.expect("validated above");
         let execute_at = crate::common::time::now_unix() + duration.as_secs() as i64;
-        let id = uuid::Uuid::new_v4().to_string();
 
         db.with_transaction(|conn| {
             for domain in &added {
+                let id = uuid::Uuid::new_v4().to_string();
                 crate::db::pending::create_pending(
                     conn, &id, "remove", Some(domain), "denylist", execute_at,
                     Some(&format!("Auto unblock after {dur_str}")),
                 ).map_err(crate::error::AppError::from)?;
+                pending_ids.push(id);
             }
             Ok(())
         })?;
-        pending_id = Some(id);
 
         if let Ok(status) = crate::watchdog::status() {
             if !status.healthy {
@@ -81,11 +85,13 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
     }
 
     // Block mapped apps for newly added domains
+    let mut partial_failures = Vec::new();
     let apps_blocked = crate::app_blocker::block_apps_for_domains(&db, &added)
         .unwrap_or_else(|e| {
             let _ = db.with_conn(|conn| {
                 crate::db::audit::log_action(conn, "block_app_failed", "app", &e.to_string(), None)
             });
+            partial_failures.push(format!("App blocking failed: {e}"));
             Vec::new()
         });
     for app in &apps_blocked {
@@ -100,6 +106,7 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
             let _ = db.with_conn(|conn| {
                 crate::db::audit::log_action(conn, "block_hosts_failed", "hosts", &e.to_string(), None)
             });
+            partial_failures.push(format!("Hosts blocking failed: {e}"));
             Vec::new()
         });
     for domain in &hosts_blocked {
@@ -119,8 +126,9 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         added, skipped,
         errors: errors.iter().map(|(d, r)| format!("{d}: {r}")).collect(),
         duration: args.duration,
-        pending_id, watchdog_warning,
+        pending_ids, watchdog_warning,
         apps_blocked, hosts_blocked,
+        partial_failures,
     };
     output::render(&result);
     Ok(ExitCode::Success)
@@ -131,10 +139,11 @@ struct BlockResult {
     skipped: Vec<String>,
     errors: Vec<String>,
     duration: Option<String>,
-    pending_id: Option<String>,
+    pending_ids: Vec<String>,
     watchdog_warning: Option<String>,
     apps_blocked: Vec<crate::app_blocker::AppBlockResult>,
     hosts_blocked: Vec<String>,
+    partial_failures: Vec<String>,
 }
 
 impl Renderable for BlockResult {
@@ -143,10 +152,11 @@ impl Renderable for BlockResult {
         serde_json::json!({
             "data": {
                 "added": self.added, "skipped": self.skipped, "errors": self.errors,
-                "duration": self.duration, "pending_id": self.pending_id,
+                "duration": self.duration, "pending_ids": self.pending_ids,
                 "watchdog_warning": self.watchdog_warning,
                 "apps_blocked": self.apps_blocked,
                 "hosts_blocked": self.hosts_blocked,
+                "partial_failures": self.partial_failures,
             },
             "summary": {
                 "added": self.added.len(), "skipped": self.skipped.len(),

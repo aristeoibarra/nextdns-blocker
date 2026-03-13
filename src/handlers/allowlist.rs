@@ -65,23 +65,23 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
     })?;
 
     // Create pending removal actions for --duration
-    let mut pending_id = None;
+    let mut pending_ids = Vec::new();
     let mut watchdog_warning = None;
     if let Some(ref dur_str) = args.duration {
         let duration = parsed_duration.expect("validated above");
         let execute_at = crate::common::time::now_unix() + duration.as_secs() as i64;
-        let id = uuid::Uuid::new_v4().to_string();
 
         db.with_transaction(|conn| {
             for domain in &added {
+                let id = uuid::Uuid::new_v4().to_string();
                 crate::db::pending::create_pending(
                     conn, &id, "remove", Some(domain), "allowlist", execute_at,
                     Some(&format!("Auto remove from allowlist after {dur_str}")),
                 ).map_err(AppError::from)?;
+                pending_ids.push(id);
             }
             Ok(())
         })?;
-        pending_id = Some(id);
 
         if let Ok(status) = crate::watchdog::status() {
             if !status.healthy {
@@ -115,7 +115,7 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
     let result = AllowlistAddResult {
         added, skipped,
         errors: errors.iter().map(|(d,r)| format!("{d}: {r}")).collect(),
-        duration: args.duration, pending_id, watchdog_warning,
+        duration: args.duration, pending_ids, watchdog_warning,
     };
     output::render(&result);
     Ok(ExitCode::Success)
@@ -227,7 +227,7 @@ struct AllowlistAddResult {
     skipped: Vec<String>,
     errors: Vec<String>,
     duration: Option<String>,
-    pending_id: Option<String>,
+    pending_ids: Vec<String>,
     watchdog_warning: Option<String>,
 }
 impl Renderable for AllowlistAddResult {
@@ -236,7 +236,7 @@ impl Renderable for AllowlistAddResult {
         serde_json::json!({
             "data": {
                 "added": self.added, "skipped": self.skipped, "errors": self.errors,
-                "duration": self.duration, "pending_id": self.pending_id,
+                "duration": self.duration, "pending_ids": self.pending_ids,
                 "watchdog_warning": self.watchdog_warning,
             },
             "summary": { "added": self.added.len(), "skipped": self.skipped.len() }

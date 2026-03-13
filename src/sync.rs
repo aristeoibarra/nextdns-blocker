@@ -223,6 +223,13 @@ pub fn execute_schedule_sync(
                 }
             }
         });
+
+        // If schedule JSON exists but failed to parse, preserve current state
+        // to avoid accidentally unblocking domains with corrupted schedules.
+        if domain.schedule.is_some() && schedule.is_none() {
+            continue;
+        }
+
         let parsed = schedule.as_ref().and_then(crate::scheduler::parse_config_schedule);
         let should_be_in_nextdns = evaluator.should_block(parsed.as_ref());
 
@@ -288,6 +295,12 @@ pub fn execute_schedule_sync(
                 None
             }
         };
+
+        // If schedule JSON failed to parse, preserve current state
+        if schedule.is_none() {
+            continue;
+        }
+
         let parsed = schedule.as_ref().and_then(crate::scheduler::parse_config_schedule);
 
         // Inverted semantics: is_available = should be in NextDNS allowlist

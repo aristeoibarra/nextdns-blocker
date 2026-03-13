@@ -23,6 +23,11 @@ name = "--schedule"
 type = "string"
 required = false
 
+[[flags]]
+name = "--duration"
+type = "string"
+required = false
+
 [output.success]
 schema = """
 {
@@ -30,7 +35,11 @@ schema = """
   "command": "allowlist add",
   "data": {
     "added": ["example.com"],
-    "skipped": []
+    "skipped": [],
+    "errors": [],
+    "duration": null,
+    "pending_ids": [],
+    "watchdog_warning": null
   },
   "summary": { "added": 1, "skipped": 0 },
   "timestamp": "..."

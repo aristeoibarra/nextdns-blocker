@@ -105,5 +105,13 @@ fn write_env_file(path: &std::path::Path, entries: &HashMap<String, String>) -> 
         .map_err(|e| AppError::General {
             message: format!("Failed to write .env file: {e}"),
             hint: Some(format!("Path: {}", path.display())),
-        })
+        })?;
+
+    // Verify permissions are owner-only after write
+    use std::os::unix::fs::PermissionsExt;
+    let perms = std::fs::Permissions::from_mode(0o600);
+    std::fs::set_permissions(path, perms).map_err(|e| AppError::General {
+        message: format!("Failed to set .env file permissions: {e}"),
+        hint: Some(format!("Path: {}", path.display())),
+    })
 }

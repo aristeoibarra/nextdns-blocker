@@ -48,9 +48,9 @@ pub fn find_app_path(bundle_id: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-/// Kill all running instances of an app by name.
+/// Kill all running instances of an app by exact name.
 pub fn kill_app(app_name: &str) {
-    let _ = Command::new("killall").arg(app_name).output();
+    let _ = Command::new("killall").args(["-e", app_name]).output();
 }
 
 /// Block an app: kill process + rename .app to .app.blocked.
@@ -87,14 +87,14 @@ pub fn block_app(
         return Ok(None);
     }
 
-    // 1. Kill the process
-    kill_app(app_name);
-
-    // 2. Rename .app -> .app.blocked
+    // 1. Rename .app -> .app.blocked (before kill to avoid orphaned dead process)
     std::fs::rename(&path, &blocked_path).map_err(|e| AppError::General {
         message: format!("Failed to block app {app_name}: {e}"),
         hint: Some("Ensure ndb has Full Disk Access in System Settings > Privacy & Security".to_string()),
     })?;
+
+    // 2. Kill running instances after rename succeeded
+    kill_app(app_name);
 
     // 3. Record in DB — rollback rename if DB write fails
     if let Err(e) = db.with_conn(|conn| {

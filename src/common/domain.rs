@@ -1,5 +1,13 @@
 use crate::types::Domain;
 
+/// Domains that must never be blocked (ndb needs API access to function).
+pub const PROTECTED_DOMAINS: &[&str] = &["api.nextdns.io"];
+
+/// Check whether a domain is protected from blocking.
+pub fn is_protected(domain: &str) -> bool {
+    PROTECTED_DOMAINS.contains(&domain)
+}
+
 /// Validate and parse a list of domain strings, returning valid domains and errors.
 pub fn parse_domains(inputs: &[String]) -> (Vec<Domain>, Vec<(String, String)>) {
     let mut valid = Vec::new();

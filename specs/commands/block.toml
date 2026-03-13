@@ -42,10 +42,11 @@ schema = """
     "skipped": [],
     "errors": [],
     "duration": null,
-    "pending_id": null,
+    "pending_ids": [],
     "watchdog_warning": null,
     "apps_blocked": [],
-    "hosts_blocked": []
+    "hosts_blocked": [],
+    "partial_failures": []
   },
   "summary": {
     "added": 1,

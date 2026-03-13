@@ -53,6 +53,10 @@ fn handle_add(db: &Database, args: DenylistAddArgs) -> Result<ExitCode, AppError
 
     db.with_transaction(|conn| {
         for domain in &valid {
+            if crate::common::domain::is_protected(domain.as_str()) {
+                skipped.push(domain.to_string());
+                continue;
+            }
             let existed = crate::db::domains::is_blocked(conn, domain.as_str())
                 .map_err(AppError::from)?;
             crate::db::domains::add_blocked(

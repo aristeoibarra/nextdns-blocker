@@ -39,7 +39,13 @@ fn handle_list() -> Result<ExitCode, AppError> {
 }
 
 fn handle_setup() -> Result<ExitCode, AppError> {
-    let sudoers_content = "%admin ALL=(root) NOPASSWD: /bin/cp /tmp/ndb_hosts_[0-9]* /etc/hosts\n%admin ALL=(root) NOPASSWD: /usr/bin/dscacheutil -flushcache\n%admin ALL=(root) NOPASSWD: /usr/bin/killall -HUP mDNSResponder\n";
+    let data_dir = crate::common::platform::data_dir();
+    let data_dir_str = data_dir.to_string_lossy();
+    let sudoers_content = format!(
+        "%admin ALL=(root) NOPASSWD: /bin/cp {data_dir_str}/hosts_tmp_* /etc/hosts\n\
+         %admin ALL=(root) NOPASSWD: /usr/bin/dscacheutil -flushcache\n\
+         %admin ALL=(root) NOPASSWD: /usr/bin/killall -HUP mDNSResponder\n"
+    );
     let sudoers_path = "/etc/sudoers.d/ndb-hosts";
 
     // Write via sudo tee (interactive — will prompt for password once)

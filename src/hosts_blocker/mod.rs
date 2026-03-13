@@ -10,8 +10,7 @@ const MARKER_START: &str = "# ndb-start";
 const MARKER_END: &str = "# ndb-end";
 const DEFAULT_IP: &str = "0.0.0.0";
 
-/// Domains that must never be blocked in /etc/hosts (ndb needs API access).
-const PROTECTED_DOMAINS: &[&str] = &["api.nextdns.io"];
+use crate::common::domain::PROTECTED_DOMAINS;
 
 /// Add domains to /etc/hosts and track in DB. Returns list of domains actually added.
 pub fn block_hosts_for_domains(
