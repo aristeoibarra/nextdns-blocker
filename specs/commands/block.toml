@@ -46,6 +46,7 @@ schema = """
     "watchdog_warning": null,
     "apps_blocked": [],
     "hosts_blocked": [],
+    "tabs_closed": [],
     "partial_failures": []
   },
   "summary": {
@@ -53,7 +54,8 @@ schema = """
     "skipped": 0,
     "errors": 0,
     "apps_blocked": 0,
-    "hosts_blocked": 0
+    "hosts_blocked": 0,
+    "tabs_closed": 0
   },
   "timestamp": "..."
 }

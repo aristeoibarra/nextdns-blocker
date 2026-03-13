@@ -1,5 +1,6 @@
 pub mod api;
 pub mod app_blocker;
+pub mod browser_blocker;
 pub mod cli;
 pub mod common;
 pub mod config;

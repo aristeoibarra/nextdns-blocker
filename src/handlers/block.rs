@@ -115,6 +115,17 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
+    // Close browser tabs for newly blocked domains
+    let tabs_closed = crate::browser_blocker::close_tabs_for_domains(&added);
+    for result in &tabs_closed {
+        let _ = db.with_conn(|conn| {
+            crate::db::audit::log_action(
+                conn, "close_tabs", "browser", &result.browser,
+                Some(&format!("{} tabs", result.tabs_closed)),
+            )
+        });
+    }
+
     // Surface API retry warning so caller knows push is deferred
     if api_retrying > 0 && watchdog_warning.is_none() {
         watchdog_warning = Some(format!(
@@ -128,6 +139,7 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         duration: args.duration,
         pending_ids, watchdog_warning,
         apps_blocked, hosts_blocked,
+        tabs_closed,
         partial_failures,
     };
     output::render(&result);
@@ -143,6 +155,7 @@ struct BlockResult {
     watchdog_warning: Option<String>,
     apps_blocked: Vec<crate::app_blocker::AppBlockResult>,
     hosts_blocked: Vec<String>,
+    tabs_closed: Vec<crate::browser_blocker::BrowserCloseResult>,
     partial_failures: Vec<String>,
 }
 
@@ -156,12 +169,14 @@ impl Renderable for BlockResult {
                 "watchdog_warning": self.watchdog_warning,
                 "apps_blocked": self.apps_blocked,
                 "hosts_blocked": self.hosts_blocked,
+                "tabs_closed": self.tabs_closed,
                 "partial_failures": self.partial_failures,
             },
             "summary": {
                 "added": self.added.len(), "skipped": self.skipped.len(),
                 "errors": self.errors.len(), "apps_blocked": self.apps_blocked.len(),
                 "hosts_blocked": self.hosts_blocked.len(),
+                "tabs_closed": self.tabs_closed.iter().map(|r| r.tabs_closed).sum::<u32>(),
             }
         })
     }
