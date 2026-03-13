@@ -499,6 +499,9 @@ fn test_blocked_app_crud() {
         // Initially empty
         assert!(apps::list_blocked_apps(conn)?.is_empty());
 
+        // Add mapping (required for domain-based lookup via JOIN)
+        apps::add_mapping(conn, "whatsapp.com", "net.whatsapp.WhatsApp", "WhatsApp", false)?;
+
         // Add blocked app
         apps::add_blocked_app(
             conn,
@@ -521,13 +524,19 @@ fn test_blocked_app_crud() {
         let app = apps::get_blocked_app(conn, "net.whatsapp.WhatsApp")?;
         assert!(app.is_some());
 
-        // Get by domain
+        // Get by domain (now uses JOIN with app_mappings)
         let by_domain = apps::get_blocked_apps_for_domain(conn, "whatsapp.com")?;
         assert_eq!(by_domain.len(), 1);
 
         // Get non-existent domain
         let empty = apps::get_blocked_apps_for_domain(conn, "other.com")?;
         assert!(empty.is_empty());
+
+        // Verify multi-domain mapping: web.whatsapp.com should also find the blocked app
+        apps::add_mapping(conn, "web.whatsapp.com", "net.whatsapp.WhatsApp", "WhatsApp", false)?;
+        let by_alt_domain = apps::get_blocked_apps_for_domain(conn, "web.whatsapp.com")?;
+        assert_eq!(by_alt_domain.len(), 1);
+        assert_eq!(by_alt_domain[0].bundle_id, "net.whatsapp.WhatsApp");
 
         // Remove
         let removed = apps::remove_blocked_app(conn, "net.whatsapp.WhatsApp")?;

@@ -11,6 +11,7 @@ pub fn handle(cmd: AppsCommands) -> Result<ExitCode, AppError> {
         AppsCommands::Map(args) => handle_map(args),
         AppsCommands::Unmap(args) => handle_unmap(args),
         AppsCommands::Restore(_) => handle_restore(),
+        AppsCommands::Doctor(args) => handle_doctor(args),
     }
 }
 
@@ -20,11 +21,18 @@ fn handle_list() -> Result<ExitCode, AppError> {
     let mappings = db.with_conn(crate::db::apps::list_mappings)?;
     let blocked = db.with_conn(crate::db::apps::list_blocked_apps)?;
 
+    // One system_profiler call instead of N mdfind calls
+    let installed_bundles: std::collections::HashSet<String> = app_blocker::scan_installed_apps()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(bundle_id, _, _)| bundle_id)
+        .collect();
+
     let entries: Vec<serde_json::Value> = mappings
         .iter()
         .map(|m| {
             let is_blocked = blocked.iter().any(|b| b.bundle_id == m.bundle_id);
-            let installed = app_blocker::find_app_path(&m.bundle_id).is_some() || is_blocked;
+            let installed = installed_bundles.contains(&m.bundle_id) || is_blocked;
             serde_json::json!({
                 "domain": m.domain,
                 "bundle_id": m.bundle_id,
@@ -180,6 +188,45 @@ fn handle_restore() -> Result<ExitCode, AppError> {
     let result = AppsResult {
         command: "apps restore",
         data: serde_json::json!({ "restored": entries }),
+    };
+    output::render(&result);
+    Ok(ExitCode::Success)
+}
+
+fn handle_doctor(args: AppsDoctorArgs) -> Result<ExitCode, AppError> {
+    let db = Database::open(&crate::common::platform::db_path())?;
+    let report = app_blocker::doctor(&db)?;
+
+    let mut repaired_orphans = Vec::new();
+    let mut repaired_phantoms = Vec::new();
+
+    if args.repair {
+        for orphan_path in &report.orphans {
+            // Orphan: .app.blocked on disk, not in DB → restore to .app
+            let original = orphan_path.trim_end_matches(".blocked");
+            if !std::path::Path::new(original).exists() {
+                if std::fs::rename(orphan_path, original).is_ok() {
+                    repaired_orphans.push(orphan_path.clone());
+                }
+            }
+        }
+        for phantom in &report.phantoms {
+            // Phantom: in DB but gone from disk → remove from DB
+            let _ = db.with_conn(|conn| {
+                crate::db::apps::remove_blocked_app(conn, &phantom.bundle_id)
+            });
+            repaired_phantoms.push(phantom.bundle_id.clone());
+        }
+    }
+
+    let result = AppsResult {
+        command: "apps doctor",
+        data: serde_json::json!({
+            "orphans": report.orphans,
+            "phantoms": report.phantoms,
+            "repaired_orphans": repaired_orphans,
+            "repaired_phantoms": repaired_phantoms,
+        }),
     };
     output::render(&result);
     Ok(ExitCode::Success)

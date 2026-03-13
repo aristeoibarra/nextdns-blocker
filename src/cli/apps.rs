@@ -12,6 +12,8 @@ pub enum AppsCommands {
     Unmap(AppsUnmapArgs),
     /// Restore all blocked apps (emergency recovery)
     Restore(AppsRestoreArgs),
+    /// Reconcile blocked apps between filesystem and database
+    Doctor(AppsDoctorArgs),
 }
 
 #[derive(Args)]
@@ -41,3 +43,10 @@ pub struct AppsUnmapArgs {
 
 #[derive(Args)]
 pub struct AppsRestoreArgs {}
+
+#[derive(Args)]
+pub struct AppsDoctorArgs {
+    /// Automatically repair found issues
+    #[arg(long)]
+    pub repair: bool,
+}

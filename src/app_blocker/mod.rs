@@ -19,6 +19,9 @@ pub struct AppBlockResult {
 pub struct AppUnblockResult {
     pub bundle_id: String,
     pub app_name: String,
+    /// Set when a reinstalled .app was found alongside .app.blocked during unblock.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_path: Option<String>,
 }
 
 /// Find the installed path of an app by bundle ID using Spotlight.
@@ -120,30 +123,37 @@ pub fn unblock_app(db: &Database, bundle_id: &str) -> Result<Option<AppUnblockRe
     // If rename fails, re-add to DB so state stays consistent.
     db.with_conn(|conn| crate::db::apps::remove_blocked_app(conn, bundle_id))?;
 
-    if blocked.exists() {
-        // Remove original if somehow recreated
-        if original.exists() {
-            std::fs::remove_dir_all(original).map_err(|e| {
-                // Re-add to DB since we couldn't complete the unblock
-                let _ = db.with_conn(|conn| {
-                    crate::db::apps::add_blocked_app(
-                        conn, bundle_id, &record.app_name, &record.original_path,
-                        &record.blocked_path, record.source_domain.as_deref(),
-                    )
-                });
-                AppError::General {
-                    message: format!("Failed to clean up {}: {e}", record.original_path),
-                    hint: None,
-                }
-            })?;
-        }
+    let mut conflict_path = None;
 
-        if let Err(e) = std::fs::rename(blocked, original) {
+    if blocked.exists() {
+        if original.exists() {
+            // App was reinstalled while blocked. Don't delete the new install.
+            // Move the old blocked copy aside so nothing is lost.
+            let conflict = format!("{}.conflict", record.original_path);
+            let _ = std::fs::rename(blocked, &conflict);
+            let _ = db.with_conn(|conn| {
+                crate::db::audit::log_action(
+                    conn,
+                    "unblock_conflict",
+                    "app",
+                    bundle_id,
+                    Some(&format!(
+                        "Reinstalled app at {}; blocked copy moved to {conflict}",
+                        record.original_path
+                    )),
+                )
+            });
+            conflict_path = Some(conflict);
+        } else if let Err(e) = std::fs::rename(blocked, original) {
             // Re-add to DB since we couldn't complete the unblock
             let _ = db.with_conn(|conn| {
                 crate::db::apps::add_blocked_app(
-                    conn, bundle_id, &record.app_name, &record.original_path,
-                    &record.blocked_path, record.source_domain.as_deref(),
+                    conn,
+                    bundle_id,
+                    &record.app_name,
+                    &record.original_path,
+                    &record.blocked_path,
+                    record.source_domain.as_deref(),
                 )
             });
             return Err(AppError::General {
@@ -159,6 +169,7 @@ pub fn unblock_app(db: &Database, bundle_id: &str) -> Result<Option<AppUnblockRe
     Ok(Some(AppUnblockResult {
         bundle_id: bundle_id.to_string(),
         app_name: record.app_name,
+        conflict_path,
     }))
 }
 
@@ -203,13 +214,21 @@ pub fn unblock_apps_for_domain(
     Ok(results)
 }
 
-/// Enforce blocked apps: kill any that are somehow running.
-/// Uses a single `ps` call instead of N `pgrep` calls.
-/// Returns names of apps that were killed.
+/// Enforce blocked apps: re-rename any manually restored .app bundles and kill
+/// running processes. Uses a single `ps` call instead of N `pgrep` calls.
+/// Returns names of apps that were killed or re-blocked.
 pub fn enforce_blocked_apps(db: &Database) -> Result<Vec<String>, AppError> {
     let blocked = db.with_conn(crate::db::apps::list_blocked_apps)?;
     if blocked.is_empty() {
         return Ok(Vec::new());
+    }
+
+    // Re-rename: if someone manually restored .app from .app.blocked, put it back.
+    for app in &blocked {
+        if Path::new(&app.original_path).exists() {
+            kill_app(&app.app_name);
+            let _ = std::fs::rename(&app.original_path, &app.blocked_path);
+        }
     }
 
     // Single ps call to get all running process names (= suppresses header)
@@ -226,10 +245,10 @@ pub fn enforce_blocked_apps(db: &Database) -> Result<Vec<String>, AppError> {
     };
 
     let mut killed = Vec::new();
-    for app in blocked {
+    for app in &blocked {
         if running_procs.contains(&app.app_name.to_lowercase()) {
             kill_app(&app.app_name);
-            killed.push(app.app_name);
+            killed.push(app.app_name.clone());
         }
     }
 
@@ -248,6 +267,67 @@ pub fn restore_all(db: &Database) -> Result<Vec<AppUnblockResult>, AppError> {
     }
 
     Ok(results)
+}
+
+/// Result of the doctor reconciliation check.
+#[derive(Debug, serde::Serialize)]
+pub struct DoctorReport {
+    /// `.app.blocked` files on disk not tracked in the database.
+    pub orphans: Vec<String>,
+    /// DB records whose `.app.blocked` AND `.app` no longer exist on disk.
+    pub phantoms: Vec<PhantomApp>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct PhantomApp {
+    pub bundle_id: String,
+    pub app_name: String,
+    pub blocked_path: String,
+}
+
+/// Reconcile blocked apps between filesystem and database.
+/// Scans `/Applications` and `~/Applications` for `.app.blocked` files and
+/// compares against the `blocked_apps` table.
+pub fn doctor(db: &Database) -> Result<DoctorReport, AppError> {
+    let blocked = db.with_conn(crate::db::apps::list_blocked_apps)?;
+    let blocked_paths: std::collections::HashSet<&str> =
+        blocked.iter().map(|b| b.blocked_path.as_str()).collect();
+
+    // Scan filesystem for .app.blocked entries
+    let home = std::env::var("HOME").unwrap_or_default();
+    let dirs = ["/Applications", &format!("{home}/Applications")];
+
+    let mut on_disk = Vec::new();
+    for dir in &dirs {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.ends_with(".app.blocked") {
+                        if let Some(path) = entry.path().to_str() {
+                            on_disk.push(path.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let orphans: Vec<String> = on_disk
+        .into_iter()
+        .filter(|p| !blocked_paths.contains(p.as_str()))
+        .collect();
+
+    let phantoms: Vec<PhantomApp> = blocked
+        .into_iter()
+        .filter(|b| !Path::new(&b.blocked_path).exists() && !Path::new(&b.original_path).exists())
+        .map(|b| PhantomApp {
+            bundle_id: b.bundle_id,
+            app_name: b.app_name,
+            blocked_path: b.blocked_path,
+        })
+        .collect();
+
+    Ok(DoctorReport { orphans, phantoms })
 }
 
 /// Scan installed apps and return (bundle_id, app_name, path) for all .app bundles.

@@ -135,8 +135,10 @@ pub fn get_blocked_apps_for_domain(
     domain: &str,
 ) -> Result<Vec<BlockedApp>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT bundle_id, app_name, original_path, blocked_path, source_domain, blocked_at
-         FROM blocked_apps WHERE source_domain = ?1",
+        "SELECT DISTINCT b.bundle_id, b.app_name, b.original_path, b.blocked_path, b.source_domain, b.blocked_at
+         FROM blocked_apps b
+         INNER JOIN app_mappings m ON b.bundle_id = m.bundle_id
+         WHERE m.domain = ?1",
     )?;
     let rows = stmt.query_map(params![domain], map_blocked_app)?;
     rows.collect()
