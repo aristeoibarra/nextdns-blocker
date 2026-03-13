@@ -97,10 +97,10 @@ impl NextDnsClient {
         Ok(())
     }
 
-    fn put_json(&self, url: &str, body: &serde_json::Value) -> ApiResult<()> {
+    fn patch_json(&self, url: &str, body: &serde_json::Value) -> ApiResult<()> {
         self.pre_request_check()?;
 
-        self.agent.put(url)
+        self.agent.patch(url)
             .header("Content-Type", "application/json")
             .header("X-Api-Key", &self.api_key)
             .send_json(body)
@@ -187,23 +187,12 @@ impl NextDnsClient {
     }
 
     pub fn set_parental_category(&self, id: &str, active: bool) -> ApiResult<()> {
-        let mut cats = self.get_parental_categories()?;
         if active {
-            if !cats.iter().any(|c| c.id == id) {
-                cats.push(ParentalCategory { id: id.to_string(), active: true, recreation: false });
-            } else {
-                for c in &mut cats {
-                    if c.id == id { c.active = true; }
-                }
-            }
+            let body = serde_json::json!({ "id": id, "active": true });
+            self.patch_json(&self.endpoint("parentalControl/categories"), &body)
         } else {
-            cats.retain(|c| c.id != id);
+            self.delete(&format!("{}/{id}", self.endpoint("parentalControl/categories")))
         }
-        let body = serde_json::to_value(&cats).map_err(|e| AppError::General {
-            message: format!("Failed to serialize categories: {e}"),
-            hint: None,
-        })?;
-        self.put_json(&self.endpoint("parentalControl/categories"), &body)
     }
 
     pub fn get_parental_services(&self) -> ApiResult<Vec<ParentalService>> {
@@ -212,23 +201,12 @@ impl NextDnsClient {
     }
 
     pub fn set_parental_service(&self, id: &str, active: bool) -> ApiResult<()> {
-        let mut svcs = self.get_parental_services()?;
         if active {
-            if !svcs.iter().any(|s| s.id == id) {
-                svcs.push(ParentalService { id: id.to_string(), active: true });
-            } else {
-                for s in &mut svcs {
-                    if s.id == id { s.active = true; }
-                }
-            }
+            let body = serde_json::json!({ "id": id, "active": true });
+            self.patch_json(&self.endpoint("parentalControl/services"), &body)
         } else {
-            svcs.retain(|s| s.id != id);
+            self.delete(&format!("{}/{id}", self.endpoint("parentalControl/services")))
         }
-        let body = serde_json::to_value(&svcs).map_err(|e| AppError::General {
-            message: format!("Failed to serialize services: {e}"),
-            hint: None,
-        })?;
-        self.put_json(&self.endpoint("parentalControl/services"), &body)
     }
 }
 

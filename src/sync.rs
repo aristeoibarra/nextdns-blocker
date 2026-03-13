@@ -435,9 +435,9 @@ pub fn execute_drift_sync(
     let remote_categories = client.get_parental_categories()?;
     let remote_services = client.get_parental_services()?;
 
-    let local_cat_set: HashSet<String> = local_categories.iter().map(|c| c.id.clone()).collect();
+    let local_cat_set: HashSet<String> = local_categories.iter().filter(|c| c.active).map(|c| c.id.clone()).collect();
     let remote_cat_set: HashSet<String> = remote_categories.iter().filter(|c| c.active).map(|c| c.id.clone()).collect();
-    let local_svc_set: HashSet<String> = local_services.iter().map(|s| s.id.clone()).collect();
+    let local_svc_set: HashSet<String> = local_services.iter().filter(|s| s.active).map(|s| s.id.clone()).collect();
     let remote_svc_set: HashSet<String> = remote_services.iter().filter(|s| s.active).map(|s| s.id.clone()).collect();
 
     let to_add_cats: Vec<String> = local_cat_set.difference(&remote_cat_set).cloned().collect();

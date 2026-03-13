@@ -32,6 +32,10 @@ pub fn process_pending(db: &Database, client: &NextDnsClient) -> Result<PendingR
             ("remove", "denylist") => client.remove_from_denylist(&domain),
             ("add", "allowlist") => client.add_to_allowlist(&domain),
             ("remove", "allowlist") => client.remove_from_allowlist(&domain),
+            ("add", "category") => client.set_parental_category(&domain, true),
+            ("remove", "category") => client.set_parental_category(&domain, false),
+            ("add", "service") => client.set_parental_service(&domain, true),
+            ("remove", "service") => client.set_parental_service(&domain, false),
             (act, lt) => {
                 // Unknown combo — mark completed and audit-log so it doesn't loop
                 let _ = db.with_conn(|conn| {
@@ -58,6 +62,20 @@ pub fn process_pending(db: &Database, client: &NextDnsClient) -> Result<PendingR
                     }
                     ("remove", "denylist") => {
                         let _ = db.with_conn(|conn| crate::db::domains::deactivate_blocked(conn, &domain));
+                    }
+                    ("add", "category") => {
+                        let _ = db.with_conn(|conn| crate::db::nextdns::activate_nextdns_category(conn, &domain));
+                        let _ = db.with_conn(|conn| {
+                            crate::db::audit::log_action(conn, "temp_unblock_expired", "nextdns_category", &domain,
+                                action.description.as_deref())
+                        });
+                    }
+                    ("add", "service") => {
+                        let _ = db.with_conn(|conn| crate::db::nextdns::activate_nextdns_service(conn, &domain));
+                        let _ = db.with_conn(|conn| {
+                            crate::db::audit::log_action(conn, "temp_unblock_expired", "nextdns_service", &domain,
+                                action.description.as_deref())
+                        });
                     }
                     _ => {}
                 }
