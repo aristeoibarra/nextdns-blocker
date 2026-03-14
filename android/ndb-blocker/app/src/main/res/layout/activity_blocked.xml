@@ -5,7 +5,7 @@
     android:orientation="vertical"
     android:gravity="center"
     android:padding="40dp"
-    android:background="#0D0D0D">
+    android:background="@color/bg_dark">
 
     <!-- Blocked Icon -->
     <FrameLayout

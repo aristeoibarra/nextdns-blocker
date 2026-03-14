@@ -53,13 +53,13 @@ class DrawerActivity : AppCompatActivity() {
             startActivity(Intent(this, HiddenAppsActivity::class.java))
         }
 
-        // Swipe right to go back
+        // Swipe from right to left → go back to home
         gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, vX: Float, vY: Float): Boolean {
                 if (e1 == null) return false
                 val dx = e2.x - e1.x
                 val dy = e2.y - e1.y
-                if (dx > 150 && abs(dx) > abs(dy)) {
+                if (dx < -80 && abs(dx) > abs(dy)) {
                     goBack()
                     return true
                 }
@@ -67,16 +67,12 @@ class DrawerActivity : AppCompatActivity() {
             }
         })
 
-        rv.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
-            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
-                gestureDetector.onTouchEvent(e)
-                return false
-            }
-            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {}
-            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
-        })
-
         loadApps()
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        gestureDetector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun onResume() {
@@ -91,7 +87,7 @@ class DrawerActivity : AppCompatActivity() {
 
     private fun goBack() {
         finish()
-        overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right)
+        overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
     }
 
     private fun loadApps() {

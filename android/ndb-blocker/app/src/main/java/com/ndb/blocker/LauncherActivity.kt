@@ -23,7 +23,6 @@ class LauncherActivity : AppCompatActivity() {
     private lateinit var prefs: LauncherPrefs
     private lateinit var adapter: HomeAdapter
     private lateinit var rvFavorites: RecyclerView
-    private lateinit var tvEmpty: TextView
     private lateinit var gestureDetector: GestureDetector
 
     private val blockedPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -47,8 +46,6 @@ class LauncherActivity : AppCompatActivity() {
 
         prefs = LauncherPrefs(this)
         rvFavorites = findViewById(R.id.rvFavorites)
-        tvEmpty = findViewById(R.id.tvEmpty)
-
         adapter = HomeAdapter(
             onTap = { pkg -> launchApp(pkg) },
             onLongPress = { pkg, label -> confirmRemoveFavorite(pkg, label) }
@@ -63,38 +60,22 @@ class LauncherActivity : AppCompatActivity() {
                 if (e1 == null) return false
                 val dx = e2.x - e1.x
                 val dy = e2.y - e1.y
-                if (dx < -150 && abs(dx) > abs(dy)) {
+                if (dx > 80 && abs(dx) > abs(dy)) {
                     openDrawer()
                     return true
                 }
                 return false
             }
 
-            override fun onLongPress(e: MotionEvent) {
-                // Only trigger if not on a RecyclerView item
-                val view = rvFavorites.findChildViewUnder(e.x, e.y)
-                if (view == null) {
-                    openStockLauncher()
-                }
-            }
+            // Long press disabled — no action on home
         })
 
-        // Attach gesture detector to the root view
-        val root = findViewById<View>(android.R.id.content)
-        root.setOnTouchListener { _, event ->
-            gestureDetector.onTouchEvent(event)
-            false
-        }
+        // Touch handling done via dispatchTouchEvent override
+    }
 
-        // Also let RecyclerView forward touch events for swipe detection
-        rvFavorites.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
-            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
-                gestureDetector.onTouchEvent(e)
-                return false
-            }
-            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {}
-            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
-        })
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        gestureDetector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun onResume() {
@@ -132,7 +113,6 @@ class LauncherActivity : AppCompatActivity() {
         val resolved = favoritePackages.mapNotNull { appMap[it] }
         adapter.submit(resolved)
 
-        tvEmpty.visibility = if (resolved.isEmpty()) View.VISIBLE else View.GONE
         rvFavorites.visibility = if (resolved.isEmpty()) View.GONE else View.VISIBLE
     }
 
@@ -154,7 +134,7 @@ class LauncherActivity : AppCompatActivity() {
 
     private fun openDrawer() {
         startActivity(Intent(this, DrawerActivity::class.java))
-        overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+        overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right)
     }
 
     private fun openStockLauncher() {

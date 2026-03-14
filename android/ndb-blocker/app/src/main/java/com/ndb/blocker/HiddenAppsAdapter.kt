@@ -3,7 +3,6 @@ package com.ndb.blocker
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
@@ -27,7 +26,10 @@ class HiddenAppsAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val app = items[position]
         holder.name.text = app.label
-        holder.icon.setImageDrawable(app.icon)
+        holder.name.setOnClickListener {
+            val intent = holder.itemView.context.packageManager.getLaunchIntentForPackage(app.packageName)
+            if (intent != null) holder.itemView.context.startActivity(intent)
+        }
         holder.itemView.setOnLongClickListener {
             onLongPress(app)
             true
@@ -37,7 +39,6 @@ class HiddenAppsAdapter(
     override fun getItemCount() = items.size
 
     class VH(view: View) : RecyclerView.ViewHolder(view) {
-        val icon: ImageView = view.findViewById(R.id.ivAppIcon)
         val name: TextView = view.findViewById(R.id.tvAppName)
     }
 }

@@ -4,17 +4,11 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:paddingStart="20dp"
-    android:paddingEnd="20dp"
-    android:paddingTop="12dp"
-    android:paddingBottom="12dp"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="14dp"
     android:background="?attr/selectableItemBackground">
-
-    <ImageView
-        android:id="@+id/ivAppIcon"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:layout_marginEnd="16dp" />
 
     <TextView
         android:id="@+id/tvAppName"

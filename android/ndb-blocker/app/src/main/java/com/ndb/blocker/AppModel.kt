@@ -2,12 +2,10 @@ package com.ndb.blocker
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.drawable.Drawable
 
 data class AppModel(
     val packageName: String,
-    val label: String,
-    val icon: Drawable?
+    val label: String
 )
 
 fun queryLaunchableApps(context: Context): List<AppModel> {
@@ -15,13 +13,14 @@ fun queryLaunchableApps(context: Context): List<AppModel> {
     val intent = Intent(Intent.ACTION_MAIN).apply {
         addCategory(Intent.CATEGORY_LAUNCHER)
     }
+    val seen = mutableSetOf<String>()
     return pm.queryIntentActivities(intent, 0)
         .mapNotNull { ri ->
             val pkg = ri.activityInfo.packageName
             if (pkg == context.packageName) return@mapNotNull null
+            if (!seen.add(pkg)) return@mapNotNull null
             val label = ri.loadLabel(pm).toString()
-            val icon = try { ri.loadIcon(pm) } catch (_: Exception) { null }
-            AppModel(pkg, label, icon)
+            AppModel(pkg, label)
         }
         .sortedBy { it.label.lowercase() }
 }

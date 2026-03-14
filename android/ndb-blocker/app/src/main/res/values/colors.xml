@@ -7,7 +7,7 @@
     <color name="category_gambling">#FFD740</color>
     <color name="accent_purple">#BB86FC</color>
     <color name="accent_green">#4CAF50</color>
-    <color name="bg_dark">#0D0D0D</color>
+    <color name="bg_dark">#000000</color>
     <color name="bg_card">#1A1A1A</color>
     <color name="text_primary">#E0E0E0</color>
     <color name="text_secondary">#666666</color>

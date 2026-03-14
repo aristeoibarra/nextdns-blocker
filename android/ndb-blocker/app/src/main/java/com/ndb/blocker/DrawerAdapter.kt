@@ -5,7 +5,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Filter
 import android.widget.Filterable
-import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
@@ -32,7 +31,6 @@ class DrawerAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val app = filtered[position]
         holder.name.text = app.label
-        holder.icon.setImageDrawable(app.icon)
         holder.itemView.setOnClickListener { onTap(app.packageName) }
         holder.itemView.setOnLongClickListener {
             onLongPress(app, it)
@@ -58,7 +56,6 @@ class DrawerAdapter(
     }
 
     class VH(view: View) : RecyclerView.ViewHolder(view) {
-        val icon: ImageView = view.findViewById(R.id.ivAppIcon)
         val name: TextView = view.findViewById(R.id.tvAppName)
     }
 }
