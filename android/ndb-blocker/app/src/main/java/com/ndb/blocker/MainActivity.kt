@@ -67,6 +67,11 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
+        // Hidden apps row → open hidden apps
+        findViewById<LinearLayout>(R.id.rowHiddenApps).setOnClickListener {
+            startActivity(Intent(this, HiddenAppsActivity::class.java))
+        }
+
         // Sync button
         findViewById<Button>(R.id.btnSync).setOnClickListener {
             val btn = it as Button
@@ -106,6 +111,9 @@ class MainActivity : AppCompatActivity() {
         refreshConfig()
         refreshDashboard()
         refreshLastSync()
+
+        val hiddenCount = LauncherPrefs(this).getHiddenPackages().size
+        findViewById<TextView>(R.id.tvHiddenCount).text = if (hiddenCount > 0) hiddenCount.toString() else ""
     }
 
     private fun refreshProtection() {

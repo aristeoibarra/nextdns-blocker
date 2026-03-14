@@ -8,7 +8,6 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.widget.EditText
-import android.widget.ImageView
 import android.widget.TextView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -46,9 +45,6 @@ class DrawerActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) {}
         })
 
-        findViewById<ImageView>(R.id.btnHidden).setOnClickListener {
-            startActivity(Intent(this, HiddenAppsActivity::class.java))
-        }
 
         // Swipe from right to left → go back to home
         gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {

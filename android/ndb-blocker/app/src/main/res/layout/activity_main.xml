@@ -252,6 +252,34 @@
 
         </LinearLayout>
 
+        <!-- Hidden Apps -->
+        <LinearLayout
+            android:id="@+id/rowHiddenApps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="24dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/launcher_hidden_apps"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_secondary" />
+
+            <TextView
+                android:id="@+id/tvHiddenCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_secondary" />
+
+        </LinearLayout>
+
         <!-- Divider -->
         <View
             android:layout_width="match_parent"

@@ -34,23 +34,5 @@
         android:layout_weight="1"
         android:clipToPadding="false" />
 
-    <!-- Bottom bar: hidden apps only -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:paddingTop="12dp"
-        android:paddingBottom="16dp">
-
-        <ImageView
-            android:id="@+id/btnHidden"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_nav_blocked"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/launcher_hidden_apps" />
-
-    </LinearLayout>
 
 </LinearLayout>
