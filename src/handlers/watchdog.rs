@@ -82,6 +82,11 @@ fn handle_run() -> Result<ExitCode, AppError> {
     // Schedule sync — the primary job of the watchdog (time-based transitions)
     let schedule_result = crate::sync::execute_schedule_sync(&db, &client, &evaluator)?;
 
+    // Sync Android state after schedule transitions
+    if !schedule_result.added.is_empty() || !schedule_result.removed.is_empty() {
+        let _ = crate::android_blocker::compute_and_sync(&db);
+    }
+
     // Safety net: process pending/retries in case Claude Code hasn't run recently
     let pending_result = crate::pending::process_pending(&db, &client)?;
     let retry_result = crate::retry::process_retries(&db, &client)?;
