@@ -4,6 +4,10 @@
     <string name="label_service">Protection Status</string>
     <string name="label_last_sync">Last Sync</string>
     <string name="label_blocked_count">Blocked</string>
+    <string name="label_apps_blocked">Apps</string>
+    <string name="label_dns_blocked">DNS</string>
+    <string name="label_pending">Pending</string>
+    <string name="label_upcoming_changes">Upcoming Changes</string>
     <string name="btn_enable">Enable Protection</string>
     <string name="btn_settings">Accessibility Settings</string>
     <string name="btn_sync">Sync Now</string>
@@ -29,7 +33,7 @@
     <string name="tab_allowed">Allowed</string>
     <string name="label_categories">Active Categories</string>
     <string name="empty_blocked">No blocked apps. Run ndb android sync from the CLI.</string>
-    <string name="empty_allowed">No allowed apps.</string>
+    <string name="empty_allowed">No allowed apps or domains.</string>
     <string name="tab_dns">DNS</string>
     <string name="empty_dns">No DNS data. Run ndb android sync from the CLI.</string>
 </resources>

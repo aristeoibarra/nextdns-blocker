@@ -41,7 +41,6 @@ fn run(command: Commands) -> Result<ExitCode, nextdns_blocker::error::AppError> 
         Commands::Pending(cmd) => handlers::pending::handle(cmd),
         Commands::Audit(cmd) => handlers::audit::handle(cmd),
         Commands::Watchdog(cmd) => handlers::watchdog::handle(cmd),
-        Commands::Hosts(cmd) => handlers::hosts::handle(cmd),
         Commands::Android(cmd) => handlers::android::handle(cmd),
         Commands::Doctor(args) => handlers::doctor::handle(args),
         Commands::Schema(cmd) => handlers::schema::handle(cmd),

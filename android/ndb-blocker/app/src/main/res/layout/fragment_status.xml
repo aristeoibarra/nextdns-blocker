@@ -73,69 +73,189 @@
 
         </LinearLayout>
 
-        <!-- Stats Cards Row -->
+        <!-- Stats Row: Apps / DNS / Pending -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:layout_marginBottom="16dp">
 
-            <!-- Blocked Count -->
+            <!-- Apps Blocked -->
             <LinearLayout
                 style="@style/Widget.NdbBlocker.Card"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:layout_marginEnd="8dp">
+                android:layout_marginEnd="6dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/label_blocked_count"
-                    android:textSize="12sp"
+                    android:text="@string/label_apps_blocked"
+                    android:textSize="11sp"
                     android:textColor="@color/text_secondary"
                     android:textAllCaps="true"
                     android:letterSpacing="0.1"
                     android:layout_marginBottom="8dp" />
 
                 <TextView
-                    android:id="@+id/tvBlockedCount"
+                    android:id="@+id/tvAppsBlocked"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="36sp"
+                    android:text="0"
+                    android:textSize="28sp"
                     android:textStyle="bold"
                     android:textColor="#F44336" />
 
             </LinearLayout>
 
-            <!-- Last Sync -->
+            <!-- DNS Blocked -->
             <LinearLayout
                 style="@style/Widget.NdbBlocker.Card"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:layout_marginStart="8dp">
+                android:layout_marginStart="6dp"
+                android:layout_marginEnd="6dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/label_last_sync"
-                    android:textSize="12sp"
+                    android:text="@string/label_dns_blocked"
+                    android:textSize="11sp"
                     android:textColor="@color/text_secondary"
                     android:textAllCaps="true"
                     android:letterSpacing="0.1"
                     android:layout_marginBottom="8dp" />
 
                 <TextView
-                    android:id="@+id/tvLastSync"
+                    android:id="@+id/tvDnsBlocked"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="14sp"
-                    android:textColor="@color/text_primary" />
+                    android:text="0"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:textColor="#F44336" />
 
             </LinearLayout>
+
+            <!-- Pending -->
+            <LinearLayout
+                style="@style/Widget.NdbBlocker.Card"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="6dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_pending"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:textAllCaps="true"
+                    android:letterSpacing="0.1"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/tvPendingCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:textColor="#4CAF50" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Category Chips -->
+        <TextView
+            android:id="@+id/tvCategoriesLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/label_categories"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary"
+            android:textAllCaps="true"
+            android:letterSpacing="0.1"
+            android:layout_marginBottom="10dp"
+            android:visibility="gone" />
+
+        <HorizontalScrollView
+            android:id="@+id/chipScrollView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/chipContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+
+        </HorizontalScrollView>
+
+        <!-- Last Sync -->
+        <LinearLayout
+            style="@style/Widget.NdbBlocker.Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/label_last_sync"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:textAllCaps="true"
+                android:letterSpacing="0.1" />
+
+            <TextView
+                android:id="@+id/tvLastSync"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:textColor="@color/text_primary" />
+
+        </LinearLayout>
+
+        <!-- Pending Actions Card (conditional) -->
+        <LinearLayout
+            android:id="@+id/pendingCard"
+            style="@style/Widget.NdbBlocker.Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_upcoming_changes"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="#FFD740"
+                android:textAllCaps="true"
+                android:letterSpacing="0.1"
+                android:layout_marginBottom="12dp" />
+
+            <LinearLayout
+                android:id="@+id/pendingList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
 
         </LinearLayout>
 

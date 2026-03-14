@@ -1,6 +1,6 @@
 package com.ndb.blocker
 
-import android.graphics.drawable.GradientDrawable
+import android.graphics.Typeface
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -24,12 +24,15 @@ class AllowedFragment : Fragment() {
     }
 
     fun loadData() {
-        engine.getSyncState { state ->
-            activity?.runOnUiThread { render(state) }
+        // Load both sync state (apps) and dns state (domains)
+        engine.getSyncState { syncState ->
+            engine.getDnsState { dnsState ->
+                activity?.runOnUiThread { render(syncState, dnsState) }
+            }
         }
     }
 
-    private fun render(state: SyncState?) {
+    private fun render(syncState: SyncState?, dnsState: DnsState?) {
         val view = view ?: return
 
         val listContainer = view.findViewById<LinearLayout>(R.id.allowedListContainer)
@@ -38,28 +41,93 @@ class AllowedFragment : Fragment() {
 
         listContainer.removeAllViews()
 
-        val allowed = state?.allowed ?: emptyList()
+        val allowedApps = syncState?.allowed ?: emptyList()
+        val allowedDomains = dnsState?.allowedDomains ?: emptyList()
 
-        if (allowed.isEmpty()) {
+        if (allowedApps.isEmpty() && allowedDomains.isEmpty()) {
             tvSummary.text = ""
             tvEmpty.visibility = View.VISIBLE
             return
         }
         tvEmpty.visibility = View.GONE
 
-        tvSummary.text = "${allowed.size} apps allowed"
+        val parts = mutableListOf<String>()
+        if (allowedApps.isNotEmpty()) parts.add("${allowedApps.size} apps")
+        if (allowedDomains.isNotEmpty()) parts.add("${allowedDomains.size} domains")
+        tvSummary.text = "${parts.joinToString(" + ")} allowed"
 
-        for (entry in allowed.sortedBy { it.name }) {
-            val item = LayoutInflater.from(requireContext())
-                .inflate(R.layout.item_allowed_app, listContainer, false)
+        // Apps Allowed section
+        if (allowedApps.isNotEmpty()) {
+            val section = CollapsibleSection(requireContext())
+            section.setTitle("APPS ALLOWED")
+            section.setCount(allowedApps.size)
+            section.setBarColor(0xFF4CAF50.toInt())
 
-            item.findViewById<TextView>(R.id.tvAppName).text = entry.name
-            item.findViewById<TextView>(R.id.tvPackageName).text = entry.packageName
+            val body = section.getContentContainer()
+            for (entry in allowedApps.sortedBy { it.name }) {
+                val item = LayoutInflater.from(requireContext())
+                    .inflate(R.layout.item_allowed_app, body, false)
 
-            val reasonText = entry.reason.substringAfter(":")
-            item.findViewById<TextView>(R.id.tvReason).text = reasonText
+                item.findViewById<TextView>(R.id.tvAppName).text = entry.name
+                item.findViewById<TextView>(R.id.tvPackageName).text = entry.packageName
 
-            listContainer.addView(item)
+                val reasonText = entry.reason.substringAfter(":")
+                item.findViewById<TextView>(R.id.tvReason).text = reasonText
+
+                body.addView(item)
+            }
+
+            listContainer.addView(section)
+        }
+
+        // Domains Allowed section
+        if (allowedDomains.isNotEmpty()) {
+            val section = CollapsibleSection(requireContext())
+            section.setTitle("DOMAINS ALLOWED")
+            section.setCount(allowedDomains.size)
+            section.setBarColor(0xFF4CAF50.toInt())
+
+            val body = section.getContentContainer()
+            for (d in allowedDomains.sortedBy { it.domain }) {
+                val row = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(4, 8, 4, 8)
+                }
+
+                val bar = View(requireContext()).apply {
+                    layoutParams = LinearLayout.LayoutParams(3, 28).apply { marginEnd = 12 }
+                    setBackgroundColor(0xFF4CAF50.toInt())
+                }
+                row.addView(bar)
+
+                val textCol = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+
+                val domainTv = TextView(requireContext()).apply {
+                    text = d.domain
+                    textSize = 13f
+                    setTextColor(0xFFE0E0E0.toInt())
+                    typeface = Typeface.MONOSPACE
+                }
+                textCol.addView(domainTv)
+
+                if (!d.description.isNullOrEmpty()) {
+                    val descTv = TextView(requireContext()).apply {
+                        text = d.description
+                        textSize = 11f
+                        setTextColor(0xFF666666.toInt())
+                    }
+                    textCol.addView(descTv)
+                }
+
+                row.addView(textCol)
+                body.addView(row)
+            }
+
+            listContainer.addView(section)
         }
     }
 }

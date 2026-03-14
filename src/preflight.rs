@@ -37,15 +37,6 @@ fn run_inner() -> Result<(), crate::error::AppError> {
             )
         });
     }
-    if let Err(e) = crate::hosts_blocker::enforce_hosts_entries(&db) {
-        let _ = db.with_conn(|conn| {
-            crate::db::audit::log_action(
-                conn, "enforce_failed", "hosts_blocker", "preflight",
-                Some(&e.to_string()), "preflight",
-            )
-        });
-    }
-
     // Retry failed Android Firebase pushes (only if there are pending items)
     if let Ok(pending) = db.with_conn(crate::db::android::get_pending_push) {
         if !pending.is_empty() {

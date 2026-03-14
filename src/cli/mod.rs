@@ -8,7 +8,6 @@ pub mod category;
 pub mod config;
 pub mod denylist;
 pub mod fix;
-pub mod hosts;
 pub mod init;
 pub mod nextdns;
 pub mod pending;
@@ -88,10 +87,6 @@ pub enum Commands {
     /// Manage the watchdog scheduler service
     #[command(subcommand)]
     Watchdog(watchdog::WatchdogCommands),
-
-    /// Manage /etc/hosts blocking entries
-    #[command(subcommand)]
-    Hosts(hosts::HostsCommands),
 
     /// Manage Android remote app blocking
     #[command(subcommand)]

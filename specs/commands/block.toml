@@ -45,7 +45,6 @@ schema = """
     "pending_ids": [],
     "watchdog_warning": null,
     "apps_blocked": [],
-    "hosts_blocked": [],
     "tabs_closed": [],
     "android_blocked": [],
     "partial_failures": []
@@ -55,7 +54,6 @@ schema = """
     "skipped": 0,
     "errors": 0,
     "apps_blocked": 0,
-    "hosts_blocked": 0,
     "tabs_closed": 0,
     "android_blocked": 0
   },

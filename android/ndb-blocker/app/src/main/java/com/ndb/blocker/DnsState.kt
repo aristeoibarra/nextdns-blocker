@@ -12,8 +12,14 @@ data class DnsState(
 data class DnsCategory(
     val name: String,
     val description: String?,
-    val domains: List<String>,
-    val count: Int
+    val domains: List<DnsCategoryDomain>,
+    val count: Int,
+    val schedule: String?
+)
+
+data class DnsCategoryDomain(
+    val domain: String,
+    val description: String?
 )
 
 data class DnsDomain(

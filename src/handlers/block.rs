@@ -109,26 +109,6 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
-    // Block domains in /etc/hosts (only if --hosts flag is set)
-    let hosts_blocked = if args.hosts {
-        let blocked = crate::hosts_blocker::block_hosts_for_domains(&db, &added)
-            .unwrap_or_else(|e| {
-                let _ = db.with_conn(|conn| {
-                    crate::db::audit::log_action(conn, "block_hosts_failed", "hosts", &e.to_string(), None, "cli")
-                });
-                partial_failures.push(format!("Hosts blocking failed: {e}"));
-                Vec::new()
-            });
-        for domain in &blocked {
-            let _ = db.with_conn(|conn| {
-                crate::db::audit::log_action(conn, "block_hosts", "hosts", domain, None, "cli")
-            });
-        }
-        blocked
-    } else {
-        Vec::new()
-    };
-
     // Close browser tabs for newly blocked domains
     let tabs_closed = crate::browser_blocker::close_tabs_for_domains(&added);
     for result in &tabs_closed {
@@ -167,7 +147,7 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         errors: errors.iter().map(|(d, r)| format!("{d}: {r}")).collect(),
         duration: args.duration,
         pending_ids, watchdog_warning,
-        apps_blocked, hosts_blocked,
+        apps_blocked,
         tabs_closed, android_blocked,
         partial_failures,
     };
@@ -183,7 +163,6 @@ struct BlockResult {
     pending_ids: Vec<String>,
     watchdog_warning: Option<String>,
     apps_blocked: Vec<crate::app_blocker::AppBlockResult>,
-    hosts_blocked: Vec<String>,
     tabs_closed: Vec<crate::browser_blocker::BrowserCloseResult>,
     android_blocked: Vec<crate::android_blocker::AndroidBlockResult>,
     partial_failures: Vec<String>,
@@ -198,7 +177,6 @@ impl Renderable for BlockResult {
                 "duration": self.duration, "pending_ids": self.pending_ids,
                 "watchdog_warning": self.watchdog_warning,
                 "apps_blocked": self.apps_blocked,
-                "hosts_blocked": self.hosts_blocked,
                 "tabs_closed": self.tabs_closed,
                 "android_blocked": self.android_blocked,
                 "partial_failures": self.partial_failures,
@@ -206,7 +184,6 @@ impl Renderable for BlockResult {
             "summary": {
                 "added": self.added.len(), "skipped": self.skipped.len(),
                 "errors": self.errors.len(), "apps_blocked": self.apps_blocked.len(),
-                "hosts_blocked": self.hosts_blocked.len(),
                 "tabs_closed": self.tabs_closed.iter().map(|r| r.tabs_closed).sum::<u32>(),
                 "android_blocked": self.android_blocked.len(),
             }

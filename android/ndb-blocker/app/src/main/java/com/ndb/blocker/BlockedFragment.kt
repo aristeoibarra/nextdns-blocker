@@ -32,36 +32,22 @@ class BlockedFragment : Fragment() {
     private fun render(state: SyncState?) {
         val view = view ?: return
 
-        val chipContainer = view.findViewById<LinearLayout>(R.id.chipContainer)
         val listContainer = view.findViewById<LinearLayout>(R.id.blockedListContainer)
         val tvSummary = view.findViewById<TextView>(R.id.tvBlockedSummary)
         val tvEmpty = view.findViewById<TextView>(R.id.tvEmptyBlocked)
+        val summaryCard = view.findViewById<LinearLayout>(R.id.summaryCard)
+        val summaryBreakdown = view.findViewById<LinearLayout>(R.id.summaryBreakdown)
 
-        chipContainer.removeAllViews()
         listContainer.removeAllViews()
+        summaryBreakdown.removeAllViews()
 
         if (state == null || (state.blocked.isEmpty() && state.categories.isEmpty())) {
             tvSummary.text = ""
             tvEmpty.visibility = View.VISIBLE
+            summaryCard.visibility = View.GONE
             return
         }
         tvEmpty.visibility = View.GONE
-
-        tvSummary.text = "${state.totalBlocked} apps blocked"
-
-        // Render category chips
-        for (catId in state.categories) {
-            val info = Categories.get(catId)
-            val chip = LayoutInflater.from(requireContext())
-                .inflate(R.layout.item_category_chip, chipContainer, false)
-
-            chip.findViewById<TextView>(R.id.chipLabel).text = info.displayName
-            val dot = chip.findViewById<View>(R.id.chipDot)
-            val dotDrawable = dot.background as? GradientDrawable
-            dotDrawable?.setColor(info.color)
-
-            chipContainer.addView(chip)
-        }
 
         // Group blocked apps by reason category
         val grouped = state.blocked.groupBy { entry ->
@@ -73,30 +59,62 @@ class BlockedFragment : Fragment() {
             }
         }.toSortedMap()
 
+        // Summary card
+        tvSummary.text = "${state.totalBlocked} apps blocked across ${grouped.size} groups"
+        summaryCard.visibility = View.VISIBLE
+
         for ((group, entries) in grouped) {
-            // Section header
-            val header = TextView(requireContext()).apply {
-                text = formatGroupHeader(group)
+            val label = formatGroupHeader(group)
+            val color = if (group.startsWith("category:")) {
+                Categories.colorForReason(group)
+            } else {
+                0xFFBB86FC.toInt()
+            }
+
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, 4, 0, 4)
+            }
+
+            val dot = View(requireContext()).apply {
+                layoutParams = LinearLayout.LayoutParams(8, 8).apply { marginEnd = 10 }
+                val drawable = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(color)
+                }
+                background = drawable
+            }
+            row.addView(dot)
+
+            val tv = TextView(requireContext()).apply {
+                text = "$label — ${entries.size}"
                 textSize = 12f
-                setTextColor(0xFF888888.toInt())
-                letterSpacing = 0.08f
-                setPadding(4, 24, 0, 8)
+                setTextColor(0xFFAAAAAA.toInt())
             }
-            listContainer.addView(header)
+            row.addView(tv)
 
-            // Divider
-            val divider = View(requireContext()).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, 1
-                ).apply { bottomMargin = 4 }
-                setBackgroundColor(0xFF2A2A2A.toInt())
+            summaryBreakdown.addView(row)
+        }
+
+        // Collapsible sections per group
+        for ((group, entries) in grouped) {
+            val section = CollapsibleSection(requireContext())
+            section.setTitle(formatGroupHeader(group))
+            section.setCount(entries.size)
+
+            val color = if (group.startsWith("category:")) {
+                Categories.colorForReason(group)
+            } else {
+                0xFFBB86FC.toInt()
             }
-            listContainer.addView(divider)
+            section.setBarColor(color)
 
-            // App entries
+            val body = section.getContentContainer()
+
             for (entry in entries.sortedBy { it.name }) {
                 val item = LayoutInflater.from(requireContext())
-                    .inflate(R.layout.item_blocked_app, listContainer, false)
+                    .inflate(R.layout.item_blocked_app, body, false)
 
                 item.findViewById<TextView>(R.id.tvAppName).text = entry.name
                 item.findViewById<TextView>(R.id.tvPackageName).text = entry.packageName
@@ -108,12 +126,14 @@ class BlockedFragment : Fragment() {
                 val barDrawable = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
                     cornerRadius = 2f
-                    setColor(Categories.colorForReason(entry.reason))
+                    setColor(color)
                 }
                 colorBar.background = barDrawable
 
-                listContainer.addView(item)
+                body.addView(item)
             }
+
+            listContainer.addView(section)
         }
     }
 

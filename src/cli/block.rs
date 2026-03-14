@@ -17,8 +17,4 @@ pub struct BlockArgs {
     /// Duration to block for (e.g., "30m", "2h", "1d") — auto-unblocks after
     #[arg(long)]
     pub duration: Option<String>,
-
-    /// Also block in /etc/hosts (not applied by default)
-    #[arg(long)]
-    pub hosts: bool,
 }

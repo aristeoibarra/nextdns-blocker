@@ -45,93 +45,80 @@ class DnsFragment : Fragment() {
         }
         tvEmpty.visibility = View.GONE
 
-        tvSummary.text = "${state.totalBlockedDomains} domains blocked · ${state.totalAllowedDomains} allowed"
+        tvSummary.text = "${state.totalBlockedDomains} domains blocked \u00B7 ${state.totalAllowedDomains} allowed"
 
-        // Render custom categories
+        // Render custom categories as collapsible sections
         for (cat in state.customCategories.sortedByDescending { it.count }) {
-            addCategoryCard(container, cat)
+            addCategorySection(container, cat)
         }
 
         // Uncategorized denylist
         if (state.uncategorized.isNotEmpty()) {
-            addSectionHeader(container, "UNCATEGORIZED", state.uncategorized.size)
+            val section = CollapsibleSection(requireContext())
+            section.setTitle("UNCATEGORIZED")
+            section.setCount(state.uncategorized.size)
+            section.setBarColor(0xFFF44336.toInt())
+
+            val body = section.getContentContainer()
             for (domain in state.uncategorized.sortedBy { it.domain }) {
-                addDomainRow(container, domain.domain, domain.description, 0xFFF44336.toInt())
+                addDomainRow(body, domain.domain, domain.description, 0xFFF44336.toInt())
             }
+
+            container.addView(section)
         }
 
         // Allowed domains
         if (state.allowedDomains.isNotEmpty()) {
-            addSectionHeader(container, "ALLOWED", state.allowedDomains.size)
+            val section = CollapsibleSection(requireContext())
+            section.setTitle("ALLOWED")
+            section.setCount(state.allowedDomains.size)
+            section.setBarColor(0xFF4CAF50.toInt())
+
+            val body = section.getContentContainer()
             for (domain in state.allowedDomains.sortedBy { it.domain }) {
-                addDomainRow(container, domain.domain, domain.description, 0xFF4CAF50.toInt())
+                addDomainRow(body, domain.domain, domain.description, 0xFF4CAF50.toInt())
             }
+
+            container.addView(section)
         }
     }
 
-    private fun addCategoryCard(container: LinearLayout, cat: DnsCategory) {
-        // Section header with count
-        addSectionHeader(container, cat.name.uppercase().replace('-', ' '), cat.count)
+    private fun addCategorySection(container: LinearLayout, cat: DnsCategory) {
+        val section = CollapsibleSection(requireContext())
+        section.setTitle(cat.name.uppercase().replace('-', ' '))
+        section.setCount(cat.count)
+        section.setBarColor(0xFFF44336.toInt())
 
-        // Description
+        val body = section.getContentContainer()
+
+        // Description inside the body
         if (!cat.description.isNullOrEmpty()) {
             val desc = TextView(requireContext()).apply {
                 text = cat.description
                 textSize = 12f
                 setTextColor(0xFF888888.toInt())
-                setPadding(4, 0, 0, 12)
+                setPadding(4, 8, 0, 12)
             }
-            container.addView(desc)
+            body.addView(desc)
         }
 
-        // Domain list
-        for (domain in cat.domains.sorted()) {
-            addDomainRow(container, domain, null, 0xFFF44336.toInt())
+        // Schedule hint
+        if (!cat.schedule.isNullOrEmpty()) {
+            val sched = TextView(requireContext()).apply {
+                text = "\u23F0 Scheduled"
+                textSize = 11f
+                setTextColor(0xFFFFD740.toInt())
+                setPadding(4, 0, 0, 8)
+            }
+            body.addView(sched)
         }
 
-        // Spacer
-        val spacer = View(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 16
-            )
-        }
-        container.addView(spacer)
-    }
-
-    private fun addSectionHeader(container: LinearLayout, title: String, count: Int) {
-        val header = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(4, 24, 4, 8)
-            gravity = android.view.Gravity.CENTER_VERTICAL
+        // Domain list with descriptions
+        for (d in cat.domains.sortedBy { it.domain }) {
+            addDomainRow(body, d.domain, d.description, 0xFFF44336.toInt())
         }
 
-        val titleTv = TextView(requireContext()).apply {
-            text = title
-            textSize = 12f
-            setTextColor(0xFF888888.toInt())
-            letterSpacing = 0.08f
-            typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        header.addView(titleTv)
-
-        val countTv = TextView(requireContext()).apply {
-            text = count.toString()
-            textSize = 12f
-            setTextColor(0xFF555555.toInt())
-        }
-        header.addView(countTv)
-
-        container.addView(header)
-
-        // Divider
-        val divider = View(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 1
-            ).apply { bottomMargin = 4 }
-            setBackgroundColor(0xFF2A2A2A.toInt())
-        }
-        container.addView(divider)
+        container.addView(section)
     }
 
     private fun addDomainRow(container: LinearLayout, domain: String, description: String?, accentColor: Int) {
@@ -148,16 +135,30 @@ class DnsFragment : Fragment() {
         }
         row.addView(bar)
 
-        // Domain text
+        // Text column
+        val textCol = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
         val domainTv = TextView(requireContext()).apply {
             text = domain
             textSize = 13f
             setTextColor(0xFFE0E0E0.toInt())
             typeface = Typeface.MONOSPACE
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        row.addView(domainTv)
+        textCol.addView(domainTv)
 
+        if (!description.isNullOrEmpty()) {
+            val descTv = TextView(requireContext()).apply {
+                text = description
+                textSize = 11f
+                setTextColor(0xFF666666.toInt())
+            }
+            textCol.addView(descTv)
+        }
+
+        row.addView(textCol)
         container.addView(row)
     }
 }

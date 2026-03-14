@@ -53,7 +53,6 @@ impl Renderable for CommandsOut {
             "nextdns list", "nextdns add-category", "nextdns remove-category", "nextdns add-service", "nextdns remove-service", "nextdns categories", "nextdns services",
             "config show", "config set", "config set-secret", "config remove-secret", "config validate",
             "apps list", "apps scan", "apps map", "apps unmap", "apps restore", "apps doctor",
-            "hosts list", "hosts setup", "hosts restore",
             "audit list",
             "pending list", "pending show", "pending cancel",
             "watchdog install", "watchdog uninstall", "watchdog status", "watchdog run",

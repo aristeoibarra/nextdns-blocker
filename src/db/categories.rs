@@ -93,6 +93,24 @@ pub fn list_category_domains(
     rows.collect()
 }
 
+/// List category domains with their descriptions from blocked_domains (LEFT JOIN).
+pub fn list_category_domains_with_desc(
+    conn: &Connection,
+    category_name: &str,
+) -> Result<Vec<(String, Option<String>)>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT cd.domain, bd.description
+         FROM category_domains cd
+         JOIN categories c ON cd.category_id = c.id
+         LEFT JOIN blocked_domains bd ON cd.domain = bd.domain
+         WHERE c.name = ?1 ORDER BY cd.domain",
+    )?;
+    let rows = stmt.query_map(params![category_name], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
+    rows.collect()
+}
+
 fn map_category(row: &rusqlite::Row) -> Result<Category, rusqlite::Error> {
     Ok(Category {
         id: row.get(0)?,

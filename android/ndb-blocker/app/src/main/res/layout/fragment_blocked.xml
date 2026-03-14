@@ -29,34 +29,27 @@
             android:layout_height="wrap_content"
             android:textSize="14sp"
             android:textColor="@color/text_secondary"
-            android:layout_marginBottom="20dp" />
+            android:layout_marginBottom="16dp" />
 
-        <!-- Active Categories -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/label_categories"
-            android:textSize="12sp"
-            android:textColor="@color/text_secondary"
-            android:textAllCaps="true"
-            android:letterSpacing="0.1"
-            android:layout_marginBottom="10dp" />
-
-        <HorizontalScrollView
+        <!-- Summary card with breakdown -->
+        <LinearLayout
+            android:id="@+id/summaryCard"
+            style="@style/Widget.NdbBlocker.Card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:scrollbars="none"
-            android:layout_marginBottom="24dp">
+            android:orientation="vertical"
+            android:layout_marginBottom="20dp"
+            android:visibility="gone">
 
             <LinearLayout
-                android:id="@+id/chipContainer"
-                android:layout_width="wrap_content"
+                android:id="@+id/summaryBreakdown"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal" />
+                android:orientation="vertical" />
 
-        </HorizontalScrollView>
+        </LinearLayout>
 
-        <!-- Blocked Apps List -->
+        <!-- Blocked Apps List (collapsible sections) -->
         <LinearLayout
             android:id="@+id/blockedListContainer"
             android:layout_width="match_parent"

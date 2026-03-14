@@ -305,6 +305,9 @@ pub fn compute_and_sync(db: &Database) -> Result<AndroidSyncResult, AppError> {
     // 6. Build and push dns_state for Android DNS tab (custom categories + denylist)
     let _ = build_and_push_dns_state(db, &client);
 
+    // 7. Build and push dashboard_state for Android Status tab
+    let _ = build_and_push_dashboard_state(db, &client, total, &active_categories);
+
     // Send FCM push to wake the Android app
     if !firebase_data.is_empty() {
         let _ = fcm::send_sync_push(&client);
@@ -355,37 +358,56 @@ fn get_display_name(db: &Database, package_name: &str, domain: &str) -> String {
 }
 
 /// Build dns_state (custom categories + denylist) and push to Firebase.
+/// Enriched: domains include descriptions, categories include schedule.
 /// Best-effort: errors are silently ignored.
 fn build_and_push_dns_state(db: &Database, client: &firebase::FirebaseClient) -> Result<(), AppError> {
     let now = crate::common::time::now_unix();
 
-    // Custom categories with their domains
+    // Build categories from blocked_domains.category field (not category_domains table)
+    // because ndb sync populates blocked_domains.category but not category_domains.
     let categories = db.with_conn(crate::db::categories::list_categories)?;
-    let mut cats_json = serde_json::Map::new();
+    let denylist = db.with_conn(|conn| crate::db::domains::list_blocked(conn, true))?;
+
+    // Group denylist domains by category
+    let mut cat_domains: std::collections::HashMap<String, Vec<&crate::types::BlockedDomain>> = std::collections::HashMap::new();
+    let mut uncategorized: Vec<serde_json::Value> = Vec::new();
     let mut total_domains: usize = 0;
 
-    for cat in &categories {
-        let domains = db.with_conn(|conn| crate::db::categories::list_category_domains(conn, &cat.name))?;
-        total_domains += domains.len();
-        cats_json.insert(cat.name.clone(), serde_json::json!({
-            "description": cat.description,
-            "domains": domains,
-            "count": domains.len(),
-        }));
+    for entry in &denylist {
+        match &entry.category {
+            Some(cat_name) => {
+                cat_domains.entry(cat_name.clone()).or_default().push(entry);
+            }
+            None => {
+                uncategorized.push(serde_json::json!({
+                    "domain": entry.domain,
+                    "description": entry.description,
+                }));
+                total_domains += 1;
+            }
+        }
     }
 
-    // Denylist domains not in any custom category
-    let denylist = db.with_conn(|conn| crate::db::domains::list_blocked(conn, true))?;
-    let mut uncategorized: Vec<serde_json::Value> = Vec::new();
+    // Build category JSON using categories table (for description/schedule) + grouped domains
+    let mut cats_json = serde_json::Map::new();
 
-    for entry in &denylist {
-        if entry.category.is_none() {
-            uncategorized.push(serde_json::json!({
-                "domain": entry.domain,
-                "description": entry.description,
-            }));
-            total_domains += 1;
-        }
+    for cat in &categories {
+        let domains = cat_domains.get(&cat.name).map(|v| v.as_slice()).unwrap_or(&[]);
+        total_domains += domains.len();
+
+        let enriched_domains: Vec<serde_json::Value> = domains.iter()
+            .map(|d| serde_json::json!({
+                "domain": d.domain,
+                "description": d.description,
+            }))
+            .collect();
+
+        cats_json.insert(cat.name.clone(), serde_json::json!({
+            "description": cat.description,
+            "domains": enriched_domains,
+            "count": enriched_domains.len(),
+            "schedule": cat.schedule,
+        }));
     }
 
     // Allowlist domains (for context)
@@ -407,4 +429,48 @@ fn build_and_push_dns_state(db: &Database, client: &firebase::FirebaseClient) ->
     });
 
     client.set_dns_state(&dns_state)
+}
+
+/// Build dashboard_state and push to Firebase for the Android Status tab.
+/// Includes stats grid data, categories, and pending actions.
+/// Best-effort: errors are silently ignored.
+fn build_and_push_dashboard_state(
+    db: &Database,
+    client: &firebase::FirebaseClient,
+    apps_blocked: usize,
+    active_categories: &[crate::types::NextDnsCategory],
+) -> Result<(), AppError> {
+    let now = crate::common::time::now_unix();
+
+    let dns_blocked = db.with_conn(crate::db::domains::count_blocked).unwrap_or(0);
+    let hosts_blocked: i64 = 0; // hosts_blocker removed
+
+    let category_ids: Vec<serde_json::Value> = active_categories.iter()
+        .map(|c| serde_json::json!(c.id))
+        .collect();
+
+    // Pending actions (only status="pending", max 10)
+    let pending = db.with_conn(|conn| crate::db::pending::list_pending(conn, Some("pending")))
+        .unwrap_or_default();
+
+    let pending_json: Vec<serde_json::Value> = pending.iter()
+        .take(10)
+        .map(|p| serde_json::json!({
+            "domain": p.domain,
+            "action": p.action,
+            "execute_at": p.execute_at,
+            "description": p.description,
+        }))
+        .collect();
+
+    let dashboard_state = serde_json::json!({
+        "apps_blocked": apps_blocked,
+        "dns_blocked": dns_blocked,
+        "hosts_blocked": hosts_blocked,
+        "categories": category_ids,
+        "pending_actions": pending_json,
+        "synced_at": now,
+    });
+
+    client.set_dashboard_state(&dashboard_state)
 }

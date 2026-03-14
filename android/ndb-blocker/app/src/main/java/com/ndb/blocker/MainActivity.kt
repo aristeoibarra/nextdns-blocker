@@ -50,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun onSyncComplete() {
+        statusFragment.refreshStatus()
         blockedFragment.loadData()
         allowedFragment.loadData()
         dnsFragment.loadData()

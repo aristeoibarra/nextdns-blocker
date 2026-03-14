@@ -173,15 +173,6 @@ pub struct AppMapping {
     pub created_at: i64,
 }
 
-/// Hosts file entry managed by ndb.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostEntry {
-    pub domain: String,
-    pub ip: String,
-    pub source_domain: Option<String>,
-    pub added_at: i64,
-}
-
 /// Currently blocked app entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockedApp {

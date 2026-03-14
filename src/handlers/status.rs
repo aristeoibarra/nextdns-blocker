@@ -14,10 +14,6 @@ pub fn handle(_args: StatusArgs) -> Result<ExitCode, AppError> {
     })?;
     let retry_count = db.with_conn(crate::db::retry::count_retries)?;
     let categories = db.with_conn(crate::db::categories::list_categories)?;
-    let hosts_count = db.with_conn(|conn| {
-        let entries = crate::db::hosts::list_host_entries(conn)?;
-        Ok::<_, rusqlite::Error>(entries.len() as i64)
-    })?;
     let blocked_apps_count = db.with_conn(|conn| {
         let apps = crate::db::apps::list_blocked_apps(conn)?;
         Ok::<_, rusqlite::Error>(apps.len() as i64)
@@ -25,7 +21,7 @@ pub fn handle(_args: StatusArgs) -> Result<ExitCode, AppError> {
 
     let result = StatusResult {
         blocked_count, allowed_count, category_count: categories.len() as i64,
-        pending_count, retry_count, hosts_count, blocked_apps_count,
+        pending_count, retry_count, blocked_apps_count,
     };
     output::render(&result);
     Ok(ExitCode::Success)
@@ -33,7 +29,7 @@ pub fn handle(_args: StatusArgs) -> Result<ExitCode, AppError> {
 
 struct StatusResult {
     blocked_count: i64, allowed_count: i64, category_count: i64,
-    pending_count: i64, retry_count: i64, hosts_count: i64,
+    pending_count: i64, retry_count: i64,
     blocked_apps_count: i64,
 }
 
@@ -43,7 +39,7 @@ impl Renderable for StatusResult {
         serde_json::json!({ "data": {
             "blocked_domains": self.blocked_count, "allowed_domains": self.allowed_count,
             "categories": self.category_count, "pending_actions": self.pending_count,
-            "retry_queue": self.retry_count, "hosts_blocked": self.hosts_count,
+            "retry_queue": self.retry_count,
             "apps_blocked": self.blocked_apps_count,
         }})
     }
