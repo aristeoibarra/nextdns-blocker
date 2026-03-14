@@ -111,4 +111,28 @@ mod tests {
         let rl = RateLimiter::with_config(3, Duration::from_secs(60));
         assert!(rl.wait_duration().is_none());
     }
+
+    #[test]
+    fn wait_duration_some_when_exhausted() {
+        let rl = RateLimiter::with_config(2, Duration::from_secs(60));
+        assert!(rl.try_acquire());
+        assert!(rl.try_acquire());
+        assert!(!rl.try_acquire());
+        // Should report a positive wait duration
+        let wait = rl.wait_duration();
+        assert!(wait.is_some());
+        assert!(wait.unwrap() > Duration::ZERO);
+    }
+
+    #[test]
+    fn window_expiry_resets_capacity() {
+        let rl = RateLimiter::with_config(2, Duration::from_millis(10));
+        assert!(rl.try_acquire());
+        assert!(rl.try_acquire());
+        assert!(!rl.try_acquire()); // Full
+
+        std::thread::sleep(Duration::from_millis(15));
+        // Window expired — should allow again
+        assert!(rl.try_acquire());
+    }
 }

@@ -110,3 +110,59 @@ pub struct RetryResult {
     pub failed: usize,
     pub exhausted: usize,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backoff_is_at_least_one_second() {
+        // Jitter can produce 0, but we add 1 to ensure minimum 1s delay
+        for attempt in 0..20 {
+            let delay = calculate_backoff(attempt);
+            assert!(delay >= 1, "attempt {attempt} produced delay {delay} < 1");
+        }
+    }
+
+    #[test]
+    fn backoff_never_exceeds_max() {
+        let max = RETRY_MAX_DELAY_SECS;
+        for attempt in 0..20 {
+            let delay = calculate_backoff(attempt);
+            assert!(
+                delay <= max,
+                "attempt {attempt} produced delay {delay} > max {max}"
+            );
+        }
+    }
+
+    #[test]
+    fn backoff_increases_with_attempts() {
+        // Run many samples: average delay at attempt 4 should be higher than attempt 1
+        // (exponential backoff means the cap grows: 2s, 4s, 8s, 16s, 30s)
+        // At attempt 1, cap=2 → range [1,2]. At attempt 4, cap=16 → range [1,16].
+        let samples = 100;
+        let sum_early: u64 = (0..samples).map(|_| calculate_backoff(1)).sum();
+        let sum_late: u64 = (0..samples).map(|_| calculate_backoff(4)).sum();
+        // Average of late attempts should be >= early (with high probability)
+        assert!(
+            sum_late >= sum_early,
+            "expected late backoff average ({}) >= early ({})",
+            sum_late / samples,
+            sum_early / samples,
+        );
+    }
+
+    #[test]
+    fn different_attempts_produce_different_jitter() {
+        // Same-millisecond calls with different attempt numbers should differ
+        let j1 = cheap_jitter(0);
+        let j2 = cheap_jitter(1);
+        let j3 = cheap_jitter(2);
+        // Not guaranteed but extremely unlikely all three are equal
+        assert!(
+            !(j1 == j2 && j2 == j3),
+            "all jitter values identical: {j1}"
+        );
+    }
+}

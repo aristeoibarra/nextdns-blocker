@@ -4,6 +4,8 @@ use clap::{Args, Subcommand};
 pub enum AuditCommands {
     /// List recent audit log entries
     List(AuditListArgs),
+    /// Delete audit entries older than N days
+    Clean(AuditCleanArgs),
 }
 
 #[derive(Args)]
@@ -27,4 +29,11 @@ pub struct AuditListArgs {
     /// Filter by source (cli, schedule, watchdog, preflight, pending, retry, system)
     #[arg(long, short)]
     pub source: Option<String>,
+}
+
+#[derive(Args)]
+pub struct AuditCleanArgs {
+    /// Delete entries older than this many days (default: 90)
+    #[arg(long, default_value = "90")]
+    pub older_than: u64,
 }

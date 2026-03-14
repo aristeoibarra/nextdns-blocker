@@ -85,6 +85,15 @@ pub fn list_audit(
     rows.collect()
 }
 
+/// Delete audit entries older than `before_timestamp` (Unix epoch).
+/// Returns the number of deleted rows.
+pub fn clean_old_entries(conn: &Connection, before_timestamp: i64) -> Result<usize, rusqlite::Error> {
+    conn.execute(
+        "DELETE FROM audit_log WHERE timestamp < ?1",
+        params![before_timestamp],
+    )
+}
+
 pub fn count_audit(conn: &Connection, filter: &AuditFilter) -> Result<i64, rusqlite::Error> {
     let mut sql = String::from("SELECT COUNT(*) FROM audit_log");
     let mut conditions = Vec::new();

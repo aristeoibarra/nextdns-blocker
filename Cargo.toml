@@ -48,6 +48,9 @@ uuid = { version = "1", features = ["v4"] }
 jsonwebtoken = "9"
 
 [dev-dependencies]
+# Database (for direct SQL in integration tests)
+rusqlite = { version = "0.31", features = ["bundled"] }
+
 # CLI testing
 assert_cmd = "2"
 predicates = "3"

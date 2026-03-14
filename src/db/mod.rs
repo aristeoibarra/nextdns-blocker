@@ -38,6 +38,14 @@ impl Database {
         };
         db.configure()?;
         db.migrate()?;
+
+        // Restrict DB file permissions to owner-only (0o600)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
+
         Ok(db)
     }
 
@@ -96,11 +104,22 @@ impl Database {
 
         for (version, name, sql) in &migrations {
             if *version > current_version {
-                conn.execute_batch(sql)?;
-                conn.execute(
+                // Wrap each migration in a transaction for atomicity:
+                // if the SQL fails, neither schema changes nor the version
+                // marker are committed.
+                conn.execute_batch("BEGIN;")?;
+                if let Err(e) = conn.execute_batch(sql) {
+                    let _ = conn.execute_batch("ROLLBACK;");
+                    return Err(e.into());
+                }
+                if let Err(e) = conn.execute(
                     "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?1, ?2, ?3)",
                     rusqlite::params![version, name, crate::common::time::now_unix()],
-                )?;
+                ) {
+                    let _ = conn.execute_batch("ROLLBACK;");
+                    return Err(e.into());
+                }
+                conn.execute_batch("COMMIT;")?;
             }
         }
 

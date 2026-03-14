@@ -373,6 +373,56 @@ fn test_audit_log() {
 }
 
 // ---------------------------------------------------------------------------
+// 9. Audit log cleanup
+// ---------------------------------------------------------------------------
+#[test]
+fn test_audit_clean_old_entries() {
+    let db = setup_db();
+
+    db.with_conn(|conn| {
+        let no_filter = audit::AuditFilter { domain: None, action: None, source: None };
+
+        // Insert entries with timestamps at different ages
+        let now = now_unix();
+        let old_ts = now - (100 * 86_400); // 100 days ago
+        let recent_ts = now - (30 * 86_400); // 30 days ago
+
+        // Insert old entry manually
+        conn.execute(
+            "INSERT INTO audit_log (action, target_type, target_id, details, timestamp, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["old_action", "domain", "old.com", None::<String>, old_ts, "cli"],
+        )?;
+        // Insert recent entry manually
+        conn.execute(
+            "INSERT INTO audit_log (action, target_type, target_id, details, timestamp, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["recent_action", "domain", "new.com", None::<String>, recent_ts, "cli"],
+        )?;
+        // Insert current entry via normal API
+        audit::log_action(conn, "current_action", "domain", "today.com", None, "cli")?;
+
+        assert_eq!(audit::count_audit(conn, &no_filter)?, 3);
+
+        // Clean entries older than 90 days
+        let cutoff = now - (90 * 86_400);
+        let deleted = audit::clean_old_entries(conn, cutoff)?;
+        assert_eq!(deleted, 1, "should delete only the 100-day-old entry");
+
+        assert_eq!(audit::count_audit(conn, &no_filter)?, 2);
+
+        // Clean entries older than 0 days (everything before now)
+        let deleted = audit::clean_old_entries(conn, now + 1)?;
+        assert_eq!(deleted, 2, "should delete all remaining entries");
+
+        assert_eq!(audit::count_audit(conn, &no_filter)?, 0);
+
+        Ok(())
+    })
+    .expect("audit clean test failed");
+}
+
+// ---------------------------------------------------------------------------
 // 10. NextDNS categories
 // ---------------------------------------------------------------------------
 #[test]

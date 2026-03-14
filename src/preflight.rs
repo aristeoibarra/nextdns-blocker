@@ -27,6 +27,10 @@ fn run_inner() -> Result<(), crate::error::AppError> {
     // Watchdog health: auto-repair if missing or binary path stale
     let _ = crate::watchdog::ensure_healthy();
 
+    // Audit log retention: prune entries older than 90 days (best-effort)
+    let cutoff = crate::common::time::now_unix() - (90 * 86_400);
+    let _ = db.with_conn(|conn| crate::db::audit::clean_old_entries(conn, cutoff));
+
     // Enforcement (DB-only, no API needed)
     // Audit-log failures so they're visible in `ndb audit list`
     if let Err(e) = crate::app_blocker::enforce_blocked_apps(&db) {

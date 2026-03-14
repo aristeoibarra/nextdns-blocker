@@ -11,7 +11,7 @@ CLI tool (`ndb`) for managing NextDNS domain blocking with scheduling, notificat
 ```bash
 cargo build                    # Build debug binary
 cargo build --release          # Build optimized binary (LTO, stripped)
-cargo test                     # Run all tests (79 total: 25 unit + 54 integration)
+cargo test                     # Run all tests (93 total: 39 unit + 54 integration)
 cargo test --lib               # Unit tests only
 cargo test --test cli_test     # CLI integration tests only (12)
 cargo test --test db_test      # Database tests only (15)
@@ -38,14 +38,14 @@ main.rs → Cli::parse() → preflight::run() → run(command) → handlers::<cm
 
 `preflight` module runs before every command (except init, watchdog, schema). Best-effort, never blocks. Handles:
 - App enforcement (batch `ps` check + killall)
-- Hosts enforcement (re-apply /etc/hosts if drifted)
 - Android Firebase retry (re-push failed packages if `in_firebase = 0`)
 - Process due pending actions (if API client available)
 - Process due retries (if API client available)
+- Audit log auto-cleanup (prune entries older than 90 days)
 
 This makes the watchdog lighter — enforcement happens at command-time instead of polling.
 
-17 top-level commands: init, status, sync, block, unblock, fix, apps, denylist, allowlist, category, nextdns, config, pending, audit, watchdog, hosts, schema.
+18 top-level commands: init, status, sync, block, unblock, fix, apps, denylist, allowlist, category, nextdns, config, pending, audit, watchdog, android, doctor, schema.
 
 Everything is sync — no async/await anywhere. Every handler returns `Result<ExitCode, AppError>`. On success, it constructs a struct implementing `Renderable` and calls `output::render()`. On error, `main.rs` catches it and calls `output::render_error()`.
 
@@ -84,10 +84,6 @@ The `Renderable` trait has only two methods: `command_name()` and `to_json()`. N
 ### App Blocker
 
 `app_blocker` module handles local macOS app blocking alongside DNS blocking. When `ndb block whatsapp.com` runs, it also blocks the WhatsApp.app locally (rename `.app` to `.app.blocked` + `killall`). Uses `mdfind` (Spotlight) for app discovery. Known domain-to-bundle-ID mappings in `app_blocker::mappings::KNOWN_MAPPINGS`. DB tables: `app_mappings` (domain↔bundle_id), `blocked_apps` (rename state). `ndb apps scan` auto-populates mappings. `enforce_blocked_apps()` uses batch `ps -Ac` (1 subprocess) instead of N `pgrep` calls. Runs in pre-flight on every command.
-
-### Hosts Blocker
-
-`hosts_blocker` module is the 3rd blocking layer (DNS + apps + hosts). Writes domains to `/etc/hosts` as `0.0.0.0 domain.com` inside `# ndb-start` / `# ndb-end` markers. Uses `sudo -n cp` for atomic writes and auto-flushes DNS cache (`dscacheutil` + `mDNSResponder`). Requires `ndb hosts setup` first for passwordless sudo. DB table: `hosts_entries`. `enforce_hosts_entries()` runs in pre-flight on every command. `api.nextdns.io` is a protected domain that is never blocked in hosts.
 
 ### Browser Blocker
 

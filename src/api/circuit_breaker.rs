@@ -143,4 +143,48 @@ mod tests {
         assert_eq!(cb.failure_count(), 0);
         assert_eq!(cb.state(), State::Closed);
     }
+
+    #[test]
+    fn half_open_success_closes() {
+        // Tiny timeout so we can trigger HalfOpen immediately
+        let cb = CircuitBreaker::with_config(1, Duration::from_millis(1));
+        cb.record_failure();
+        assert_eq!(cb.state(), State::Open);
+
+        std::thread::sleep(Duration::from_millis(5));
+        // Next allow_request should transition to HalfOpen
+        assert!(cb.allow_request());
+        assert_eq!(cb.state(), State::HalfOpen);
+
+        // Success in HalfOpen should reset to Closed
+        cb.record_success();
+        assert_eq!(cb.state(), State::Closed);
+        assert_eq!(cb.failure_count(), 0);
+    }
+
+    #[test]
+    fn half_open_failure_reopens() {
+        let cb = CircuitBreaker::with_config(1, Duration::from_millis(1));
+        cb.record_failure();
+        assert_eq!(cb.state(), State::Open);
+
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(cb.allow_request()); // Transitions to HalfOpen
+
+        // Failure in HalfOpen should re-open
+        cb.record_failure();
+        assert_eq!(cb.state(), State::Open);
+        assert!(!cb.allow_request());
+    }
+
+    #[test]
+    fn open_blocks_requests() {
+        let cb = CircuitBreaker::with_config(2, Duration::from_secs(300));
+        cb.record_failure();
+        cb.record_failure();
+        assert_eq!(cb.state(), State::Open);
+        // Should block all requests while Open (timeout is 300s so won't expire)
+        assert!(!cb.allow_request());
+        assert!(!cb.allow_request());
+    }
 }

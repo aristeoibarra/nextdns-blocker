@@ -100,7 +100,7 @@ pub fn eager_push_denylist(db: &Database, client: &NextDnsClient, domains: &[Str
     let mut changed = false;
     for domain in domains {
         let api_call = || if add { client.add_to_denylist(domain) } else { client.remove_from_denylist(domain) };
-        if api_call().is_ok() || api_call().is_ok() {
+        if api_call().or_else(|_| api_call()).is_ok() {
             changed = true;
             result.pushed += 1;
             update_in_nextdns(db, domain, "denylist", add);
@@ -123,7 +123,7 @@ pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[St
     let mut changed = false;
     for domain in domains {
         let api_call = || if add { client.add_to_allowlist(domain) } else { client.remove_from_allowlist(domain) };
-        if api_call().is_ok() || api_call().is_ok() {
+        if api_call().or_else(|_| api_call()).is_ok() {
             changed = true;
             result.pushed += 1;
             update_in_nextdns(db, domain, "allowlist", add);
@@ -141,8 +141,8 @@ pub fn eager_push_allowlist(db: &Database, client: &NextDnsClient, domains: &[St
 /// Immediately push a parental control category change. Retries once on failure before enqueuing.
 pub fn eager_push_category(db: &Database, client: &NextDnsClient, id: &str, add: bool) -> EagerPushResult {
     let mut result = EagerPushResult::default();
-    let ok = client.set_parental_category(id, add).is_ok()
-        || client.set_parental_category(id, add).is_ok();
+    let set_cat = || client.set_parental_category(id, add);
+    let ok = set_cat().or_else(|_| set_cat()).is_ok();
     if ok {
         crate::common::platform::flush_dns_cache();
         result.pushed = 1;

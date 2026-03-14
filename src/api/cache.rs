@@ -58,3 +58,59 @@ impl<V: Clone> Default for TtlCache<V> {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cache_with_ttl(ttl_ms: u64) -> TtlCache<String> {
+        TtlCache {
+            inner: RwLock::new(HashMap::new()),
+            ttl: Duration::from_millis(ttl_ms),
+        }
+    }
+
+    #[test]
+    fn get_returns_none_for_missing_key() {
+        let cache = TtlCache::<String>::new();
+        assert!(cache.get("missing").is_none());
+    }
+
+    #[test]
+    fn set_and_get() {
+        let cache = TtlCache::new();
+        cache.set("key".to_string(), "value".to_string());
+        assert_eq!(cache.get("key"), Some("value".to_string()));
+    }
+
+    #[test]
+    fn expired_entry_returns_none() {
+        let cache = cache_with_ttl(1); // 1ms TTL
+        cache.set("key".to_string(), "value".to_string());
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(cache.get("key").is_none());
+    }
+
+    #[test]
+    fn invalidate_removes_entry() {
+        let cache = TtlCache::new();
+        cache.set("key".to_string(), "value".to_string());
+        cache.invalidate("key");
+        assert!(cache.get("key").is_none());
+    }
+
+    #[test]
+    fn expired_entries_are_cleaned_on_get() {
+        let cache = cache_with_ttl(1);
+        cache.set("a".to_string(), "1".to_string());
+        cache.set("b".to_string(), "2".to_string());
+        std::thread::sleep(Duration::from_millis(5));
+
+        // Trigger cleanup by reading a missing key
+        cache.get("a");
+
+        // Internal map should have been cleaned
+        let inner = cache.inner.read().unwrap();
+        assert!(inner.is_empty());
+    }
+}
