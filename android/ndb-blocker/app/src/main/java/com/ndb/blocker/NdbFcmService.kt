@@ -9,7 +9,6 @@ class NdbFcmService : FirebaseMessagingService() {
 
     companion object {
         private const val TAG = "NdbFcmService"
-        private const val DEVICE_ID = "android_pixel"
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
@@ -21,8 +20,12 @@ class NdbFcmService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         Log.i(TAG, "FCM token refreshed")
+        val deviceId = NdbConfig.DEVICE_ID
         FirebaseDatabase.getInstance()
-            .getReference("devices/$DEVICE_ID/fcm_token")
+            .getReference("devices/$deviceId/fcm_token")
             .setValue(token)
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Failed to push FCM token, will retry on next sync", e)
+            }
     }
 }

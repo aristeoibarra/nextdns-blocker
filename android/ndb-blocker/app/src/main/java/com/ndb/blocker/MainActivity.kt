@@ -77,7 +77,7 @@ class MainActivity : AppCompatActivity() {
             val btn = it as Button
             btn.isEnabled = false
             btn.text = "Syncing..."
-            engine.sync {
+            engine.sync { _ ->
                 runOnUiThread {
                     refresh()
                     btn.isEnabled = true

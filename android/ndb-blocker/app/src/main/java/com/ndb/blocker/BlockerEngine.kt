@@ -1,24 +1,29 @@
 package com.ndb.blocker
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
+import android.view.accessibility.AccessibilityManager
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.messaging.FirebaseMessaging
 
 class BlockerEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "BlockerEngine"
-        private const val DEVICE_ID = "android_pixel"
     }
 
     private val db = FirebaseDatabase.getInstance()
+    private val deviceId = NdbConfig.DEVICE_ID
 
-    fun sync(onComplete: (() -> Unit)? = null) {
+    fun sync(onComplete: ((Boolean) -> Unit)? = null) {
         reportInstalledApps()
+        pushFcmToken()
 
-        val ref = db.getReference("devices/$DEVICE_ID/blocked_packages")
+        val ref = db.getReference("devices/$deviceId/blocked_packages")
         ref.get().addOnSuccessListener { snapshot ->
             val now = System.currentTimeMillis() / 1000
             val blocked = mutableSetOf<String>()
@@ -40,14 +45,61 @@ class BlockerEngine(private val context: Context) {
             NdbAccessibilityService.updateBlockedPackages(context, blocked)
             AppCache.invalidate()
 
-            db.getReference("devices/$DEVICE_ID/last_sync")
+            db.getReference("devices/$deviceId/last_sync")
                 .setValue(System.currentTimeMillis() / 1000)
 
+            reportHealth(blocked.size, syncSuccess = true)
+
             Log.i(TAG, "Sync complete, ${blocked.size} packages blocked")
-            onComplete?.invoke()
+            onComplete?.invoke(true)
         }.addOnFailureListener { e ->
             Log.e(TAG, "Failed to read blocked_packages", e)
-            onComplete?.invoke()
+
+            // Offline fallback: preserve cached blocked list from SharedPreferences
+            val cached = NdbAccessibilityService.getBlockedPackages(context)
+            if (cached.isNotEmpty()) {
+                Log.i(TAG, "Using cached blocked list: ${cached.size} packages")
+                NdbAccessibilityService.updateBlockedPackages(context, cached)
+            }
+
+            reportHealth(cached.size, syncSuccess = false)
+            onComplete?.invoke(false)
+        }
+    }
+
+    private fun pushFcmToken() {
+        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+            if (!token.isNullOrEmpty()) {
+                db.getReference("devices/$deviceId/fcm_token").setValue(token)
+            }
+        }
+    }
+
+    private fun reportHealth(blockedCount: Int, syncSuccess: Boolean) {
+        val health = mapOf(
+            "accessibility_active" to isAccessibilityEnabled(),
+            "last_sync_success" to syncSuccess,
+            "last_sync_at" to System.currentTimeMillis() / 1000,
+            "blocked_count" to blockedCount,
+            "app_version" to getAppVersion(),
+            "android_sdk" to Build.VERSION.SDK_INT,
+            "device_model" to "${Build.MANUFACTURER} ${Build.MODEL}"
+        )
+        db.getReference("devices/$deviceId/health").setValue(health)
+    }
+
+    private fun isAccessibilityEnabled(): Boolean {
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+            ?: return false
+        val enabled = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+        return enabled.any { it.resolveInfo.serviceInfo.packageName == context.packageName }
+    }
+
+    private fun getAppVersion(): String {
+        return try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+        } catch (_: PackageManager.NameNotFoundException) {
+            "unknown"
         }
     }
 
@@ -60,7 +112,7 @@ class BlockerEngine(private val context: Context) {
             .map { it.activityInfo.packageName }
             .toSet()
 
-        val ref = db.getReference("devices/$DEVICE_ID/installed_packages")
+        val ref = db.getReference("devices/$deviceId/installed_packages")
         var count = 0
 
         for (pkg in launchable) {
@@ -90,7 +142,7 @@ class BlockerEngine(private val context: Context) {
     }
 
     fun getBlockedCount(callback: (Int) -> Unit) {
-        val ref = db.getReference("devices/$DEVICE_ID/blocked_packages")
+        val ref = db.getReference("devices/$deviceId/blocked_packages")
         ref.get().addOnSuccessListener { snapshot ->
             callback(snapshot.childrenCount.toInt())
         }.addOnFailureListener {
@@ -99,7 +151,7 @@ class BlockerEngine(private val context: Context) {
     }
 
     fun getLastSync(callback: (Long?) -> Unit) {
-        val ref = db.getReference("devices/$DEVICE_ID/last_sync")
+        val ref = db.getReference("devices/$deviceId/last_sync")
         ref.get().addOnSuccessListener { snapshot ->
             callback(snapshot.getValue(Long::class.java))
         }.addOnFailureListener {
@@ -108,7 +160,7 @@ class BlockerEngine(private val context: Context) {
     }
 
     fun getSyncState(callback: (SyncState?) -> Unit) {
-        val ref = db.getReference("devices/$DEVICE_ID/sync_state")
+        val ref = db.getReference("devices/$deviceId/sync_state")
         ref.get().addOnSuccessListener { snapshot ->
             if (!snapshot.exists()) {
                 callback(null)
@@ -149,7 +201,7 @@ class BlockerEngine(private val context: Context) {
     }
 
     fun getDnsState(callback: (DnsState?) -> Unit) {
-        val ref = db.getReference("devices/$DEVICE_ID/dns_state")
+        val ref = db.getReference("devices/$deviceId/dns_state")
         ref.get().addOnSuccessListener { snapshot ->
             if (!snapshot.exists()) {
                 callback(null)
@@ -204,7 +256,7 @@ class BlockerEngine(private val context: Context) {
     }
 
     fun getDashboardState(callback: (DashboardState?) -> Unit) {
-        val ref = db.getReference("devices/$DEVICE_ID/dashboard_state")
+        val ref = db.getReference("devices/$deviceId/dashboard_state")
         ref.get().addOnSuccessListener { snapshot ->
             if (!snapshot.exists()) {
                 callback(null)
