@@ -1,25 +1,298 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@color/bg_dark">
+    android:background="@color/bg_dark"
+    android:fillViewport="true">
 
-    <FrameLayout
-        android:id="@+id/fragmentContainer"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
-
-    <com.google.android.material.bottomnavigation.BottomNavigationView
-        android:id="@+id/bottomNavigation"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/bottom_nav_bg"
-        app:itemIconTint="@color/bottom_nav_color"
-        app:itemTextColor="@color/bottom_nav_color"
-        app:menu="@menu/bottom_navigation"
-        app:labelVisibilityMode="labeled" />
+        android:orientation="vertical"
+        android:padding="24dp">
 
-</LinearLayout>
+        <!-- Protection status -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="24dp"
+            android:paddingBottom="40dp">
+
+            <View
+                android:id="@+id/protectionDot"
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:background="@drawable/status_dot"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/tvProtectionStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_secondary" />
+
+        </LinearLayout>
+
+        <!-- Stats row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="32dp">
+
+            <!-- Apps -->
+            <LinearLayout
+                android:id="@+id/statsApps"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvAppsBlocked"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textSize="40sp"
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="apps"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_secondary" />
+
+            </LinearLayout>
+
+            <!-- DNS -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvDnsBlocked"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textSize="40sp"
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="dns"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_secondary" />
+
+            </LinearLayout>
+
+            <!-- Pending -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvPendingCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textSize="40sp"
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_secondary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="pending"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_secondary" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Category chips -->
+        <HorizontalScrollView
+            android:id="@+id/chipScrollView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:layout_marginBottom="32dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/chipContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+
+        </HorizontalScrollView>
+
+        <!-- Divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/divider"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Config: Service -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="16dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Service"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_secondary" />
+
+            <View
+                android:id="@+id/serviceDot"
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:background="@drawable/status_dot"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/tvServiceStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_primary" />
+
+        </LinearLayout>
+
+        <!-- Config: Admin -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="16dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Admin"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_secondary" />
+
+            <View
+                android:id="@+id/adminDot"
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:background="@drawable/status_dot"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/tvAdminStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_primary" />
+
+        </LinearLayout>
+
+        <!-- Config: Firebase -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="24dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Firebase"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_secondary" />
+
+            <View
+                android:id="@+id/fcmDot"
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:background="@drawable/status_dot"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/tvFcmStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_primary" />
+
+        </LinearLayout>
+
+        <!-- Divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/divider"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Last sync -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="24dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Last sync"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_secondary" />
+
+            <TextView
+                android:id="@+id/tvLastSync"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_primary" />
+
+        </LinearLayout>
+
+        <!-- Sync button -->
+        <Button
+            android:id="@+id/btnSync"
+            style="@style/Widget.NdbBlocker.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_sync" />
+
+    </LinearLayout>
+
+</ScrollView>
