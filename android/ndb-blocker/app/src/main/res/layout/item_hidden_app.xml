@@ -1,28 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tvAppName"
+    android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
+    android:textSize="26sp"
+    android:textColor="#E0E0E0"
+    android:fontFamily="@font/outfit_light"
     android:paddingStart="24dp"
     android:paddingEnd="24dp"
-    android:paddingTop="14dp"
-    android:paddingBottom="14dp"
-    android:background="?attr/selectableItemBackground">
-
-    <TextView
-        android:id="@+id/tvAppName"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:textSize="16sp"
-        android:textColor="#E0E0E0" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/launcher_long_press_unhide"
-        android:textSize="11sp"
-        android:textColor="#444444" />
-
-</LinearLayout>
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp" />

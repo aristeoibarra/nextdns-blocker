@@ -40,6 +40,21 @@
         <item name="android:textStyle">bold</item>
     </style>
 
+    <style name="Theme.NdbBlocker.BottomSheet" parent="Theme.MaterialComponents.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.NdbBlocker.BottomSheet</item>
+        <item name="android:backgroundDimAmount">0.6</item>
+    </style>
+
+    <style name="Widget.NdbBlocker.BottomSheet" parent="Widget.MaterialComponents.BottomSheet">
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.NdbBlocker.BottomSheet</item>
+        <item name="backgroundTint">#111111</item>
+    </style>
+
+    <style name="ShapeAppearance.NdbBlocker.BottomSheet" parent="">
+        <item name="cornerSizeTopLeft">16dp</item>
+        <item name="cornerSizeTopRight">16dp</item>
+    </style>
+
     <style name="Theme.NdbBlocker.Dialog" parent="Theme.MaterialComponents.Dialog.Alert">
         <item name="android:background">@color/bg_card</item>
         <item name="android:textColor">@color/text_primary</item>

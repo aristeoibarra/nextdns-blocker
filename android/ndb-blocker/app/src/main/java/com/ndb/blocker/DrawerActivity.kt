@@ -9,7 +9,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.EditText
 import android.widget.ImageView
-import android.widget.PopupMenu
+import android.widget.TextView
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -29,7 +30,7 @@ class DrawerActivity : AppCompatActivity() {
 
         adapter = DrawerAdapter(
             onTap = { pkg -> launchApp(pkg) },
-            onLongPress = { app, anchor -> showPopup(app, anchor) }
+            onLongPress = { app, _ -> showBottomSheet(app) }
         )
 
         val rv = findViewById<RecyclerView>(R.id.rvApps)
@@ -103,24 +104,24 @@ class DrawerActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    private fun showPopup(app: AppModel, anchor: View) {
-        val popup = PopupMenu(this, anchor)
-        popup.menu.add(0, 1, 0, getString(R.string.launcher_add_to_home))
-        popup.menu.add(0, 2, 1, getString(R.string.launcher_hide))
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> {
-                    prefs.addFavorite(app.packageName)
-                    true
-                }
-                2 -> {
-                    prefs.hidePackage(app.packageName)
-                    loadApps()
-                    true
-                }
-                else -> false
-            }
+    private fun showBottomSheet(app: AppModel) {
+        val dialog = BottomSheetDialog(this, R.style.Theme_NdbBlocker_BottomSheet)
+        val view = layoutInflater.inflate(R.layout.bottom_sheet_app_actions, null)
+
+        view.findViewById<TextView>(R.id.tvSheetTitle).text = app.label
+
+        view.findViewById<TextView>(R.id.btnAddHome).setOnClickListener {
+            prefs.addFavorite(app.packageName)
+            dialog.dismiss()
         }
-        popup.show()
+
+        view.findViewById<TextView>(R.id.btnHide).setOnClickListener {
+            prefs.hidePackage(app.packageName)
+            loadApps()
+            dialog.dismiss()
+        }
+
+        dialog.setContentView(view)
+        dialog.show()
     }
 }

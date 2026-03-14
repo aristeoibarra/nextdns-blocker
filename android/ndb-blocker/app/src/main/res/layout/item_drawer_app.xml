@@ -3,10 +3,10 @@
     android:id="@+id/tvAppName"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:textSize="22sp"
+    android:textSize="26sp"
     android:textColor="#E0E0E0"
-    android:fontFamily="sans-serif-light"
+    android:fontFamily="@font/outfit_light"
     android:paddingStart="24dp"
     android:paddingEnd="24dp"
-    android:paddingTop="14dp"
-    android:paddingBottom="14dp" />
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp" />

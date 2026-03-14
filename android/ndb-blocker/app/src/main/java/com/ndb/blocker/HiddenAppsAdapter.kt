@@ -27,10 +27,10 @@ class HiddenAppsAdapter(
         val app = items[position]
         holder.name.text = app.label
         holder.name.setOnClickListener {
-            val intent = holder.itemView.context.packageManager.getLaunchIntentForPackage(app.packageName)
-            if (intent != null) holder.itemView.context.startActivity(intent)
+            val intent = it.context.packageManager.getLaunchIntentForPackage(app.packageName)
+            if (intent != null) it.context.startActivity(intent)
         }
-        holder.itemView.setOnLongClickListener {
+        holder.name.setOnLongClickListener {
             onLongPress(app)
             true
         }
