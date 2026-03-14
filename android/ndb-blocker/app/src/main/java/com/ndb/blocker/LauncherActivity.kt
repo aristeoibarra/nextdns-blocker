@@ -8,9 +8,10 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.widget.TextView
+import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -126,14 +127,21 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     private fun confirmRemoveFavorite(pkg: String, label: String) {
-        AlertDialog.Builder(this, R.style.Theme_NdbBlocker_Dialog)
-            .setMessage("Remove \"$label\"?")
-            .setPositiveButton("Remove") { _, _ ->
+        val dialog = BottomSheetDialog(this, R.style.Theme_NdbBlocker_BottomSheet)
+        val view = layoutInflater.inflate(R.layout.bottom_sheet_single_action, null)
+
+        view.findViewById<TextView>(R.id.tvSheetTitle).text = label
+        view.findViewById<TextView>(R.id.btnAction).apply {
+            text = "Remove"
+            setOnClickListener {
                 prefs.removeFavorite(pkg)
                 refreshFavorites()
+                dialog.dismiss()
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
+
+        dialog.setContentView(view)
+        dialog.show()
     }
 
     private fun openDrawer() {

@@ -3,10 +3,10 @@ package com.ndb.blocker
 import android.os.Bundle
 import android.view.View
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.bottomsheet.BottomSheetDialog
 
 class HiddenAppsActivity : AppCompatActivity() {
 
@@ -20,9 +20,7 @@ class HiddenAppsActivity : AppCompatActivity() {
         prefs = LauncherPrefs(this)
 
         adapter = HiddenAppsAdapter { app ->
-            prefs.unhidePackage(app.packageName)
-            Toast.makeText(this, "${app.label} unhidden", Toast.LENGTH_SHORT).show()
-            loadHidden()
+            showUnhideSheet(app)
         }
 
         val rv = findViewById<RecyclerView>(R.id.rvHidden)
@@ -48,5 +46,24 @@ class HiddenAppsActivity : AppCompatActivity() {
         val rv = findViewById<RecyclerView>(R.id.rvHidden)
         tvEmpty.visibility = if (hiddenApps.isEmpty()) View.VISIBLE else View.GONE
         rv.visibility = if (hiddenApps.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun showUnhideSheet(app: AppModel) {
+        val dialog = BottomSheetDialog(this, R.style.Theme_NdbBlocker_BottomSheet)
+        val view = layoutInflater.inflate(R.layout.bottom_sheet_single_action, null)
+
+        view.findViewById<TextView>(R.id.tvSheetTitle).text = app.label
+        view.findViewById<TextView>(R.id.btnAction).apply {
+            text = "Unhide"
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener {
+                prefs.unhidePackage(app.packageName)
+                loadHidden()
+                dialog.dismiss()
+            }
+        }
+
+        dialog.setContentView(view)
+        dialog.show()
     }
 }
