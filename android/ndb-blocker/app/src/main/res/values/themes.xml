@@ -40,4 +40,15 @@
         <item name="android:textStyle">bold</item>
     </style>
 
+    <style name="Theme.NdbBlocker.Dialog" parent="Theme.MaterialComponents.Dialog.Alert">
+        <item name="android:background">@color/bg_card</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.NdbBlocker.DialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.NdbBlocker.DialogButton</item>
+    </style>
+
+    <style name="Widget.NdbBlocker.DialogButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/accent_purple</item>
+    </style>
+
 </resources>

@@ -45,4 +45,11 @@
     <string name="status_not_registered">Not registered</string>
     <string name="status_not_configured">Not configured</string>
     <string name="status_error">Error</string>
+    <string name="launcher_empty">Swipe left to browse apps</string>
+    <string name="launcher_search_hint">Search apps</string>
+    <string name="launcher_add_to_home">Add to Home</string>
+    <string name="launcher_hide">Hide</string>
+    <string name="launcher_hidden_apps">Hidden Apps</string>
+    <string name="launcher_no_hidden">No hidden apps</string>
+    <string name="launcher_long_press_unhide">long press to unhide</string>
 </resources>

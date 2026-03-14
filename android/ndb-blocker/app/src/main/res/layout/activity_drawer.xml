@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0D0D0D">
+
+    <!-- Search bar -->
+    <EditText
+        android:id="@+id/etSearch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/launcher_search_hint"
+        android:textSize="16sp"
+        android:textColor="#E0E0E0"
+        android:textColorHint="#444444"
+        android:background="@drawable/card_background"
+        android:padding="16dp"
+        android:layout_margin="16dp"
+        android:inputType="text"
+        android:imeOptions="actionSearch"
+        android:maxLines="1"
+        android:importantForAutofill="no" />
+
+    <!-- App list -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvApps"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false" />
+
+    <!-- Bottom bar: gear + hidden -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingTop="12dp"
+        android:paddingBottom="16dp"
+        android:background="#121212">
+
+        <ImageView
+            android:id="@+id/btnSettings"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:src="@drawable/ic_nav_settings"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/tab_settings"
+            android:layout_marginEnd="32dp" />
+
+        <ImageView
+            android:id="@+id/btnHidden"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:src="@drawable/ic_nav_blocked"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/launcher_hidden_apps" />
+
+    </LinearLayout>
+
+</LinearLayout>

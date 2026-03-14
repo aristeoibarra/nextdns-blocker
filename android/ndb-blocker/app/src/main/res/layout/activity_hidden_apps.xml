@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0D0D0D">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/launcher_hidden_apps"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="#E0E0E0"
+        android:padding="20dp" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvHidden"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/tvEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="@string/launcher_no_hidden"
+        android:textSize="14sp"
+        android:textColor="#444444"
+        android:visibility="gone" />
+
+</LinearLayout>
