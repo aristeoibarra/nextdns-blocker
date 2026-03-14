@@ -21,17 +21,9 @@ pub fn handle(args: SyncArgs) -> Result<ExitCode, AppError> {
     let result = crate::sync::execute_drift_sync(&db, &client, &evaluator, args.dry_run)?;
     crate::sync::record_drift_check(&db);
 
-    // Auto-sync Android if there were any changes (best-effort)
+    // Always sync Android state (best-effort, skipped on dry-run)
     if !args.dry_run {
-        let had_changes = !result.denylist.added.is_empty()
-            || !result.denylist.removed.is_empty()
-            || !result.allowlist.added.is_empty()
-            || !result.allowlist.removed.is_empty()
-            || !result.categories.added.is_empty()
-            || !result.categories.removed.is_empty();
-        if had_changes {
-            let _ = crate::android_blocker::compute_and_sync(&db);
-        }
+        let _ = crate::android_blocker::compute_and_sync(&db);
     }
 
     output::render(&result);
