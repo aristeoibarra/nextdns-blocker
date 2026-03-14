@@ -29,12 +29,5 @@ pub struct ParentalCategory {
     pub recreation: bool,
 }
 
-/// API response for parental control services.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ParentalService {
-    pub id: String,
-    pub active: bool,
-}
-
 /// Generic API result type.
 pub type ApiResult<T> = Result<T, crate::error::AppError>;

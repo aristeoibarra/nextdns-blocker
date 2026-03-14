@@ -417,49 +417,6 @@ fn test_nextdns_categories() {
 }
 
 // ---------------------------------------------------------------------------
-// 11. NextDNS services
-// ---------------------------------------------------------------------------
-#[test]
-fn test_nextdns_services() {
-    let db = setup_db();
-
-    db.with_conn(|conn| {
-        // Initially empty
-        assert!(nextdns::list_nextdns_services(conn)?.is_empty());
-
-        // Add
-        nextdns::add_nextdns_service(conn, "tiktok")?;
-        nextdns::add_nextdns_service(conn, "facebook")?;
-
-        let list = nextdns::list_nextdns_services(conn)?;
-        assert_eq!(list.len(), 2);
-
-        let ids: Vec<&str> = list.iter().map(|s| s.id.as_str()).collect();
-        assert!(ids.contains(&"tiktok"));
-        assert!(ids.contains(&"facebook"));
-        assert!(list.iter().all(|s| s.active));
-
-        // Duplicate insert should not create duplicates
-        nextdns::add_nextdns_service(conn, "tiktok")?;
-        assert_eq!(nextdns::list_nextdns_services(conn)?.len(), 2);
-
-        // Remove
-        let removed = nextdns::remove_nextdns_service(conn, "tiktok")?;
-        assert!(removed);
-
-        let list = nextdns::list_nextdns_services(conn)?;
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].id, "facebook");
-
-        // Remove non-existent
-        let removed = nextdns::remove_nextdns_service(conn, "nonexistent")?;
-        assert!(!removed);
-
-        Ok(())
-    })
-    .expect("nextdns services test failed");
-}
-
 // ---------------------------------------------------------------------------
 // 12. App mappings CRUD
 // ---------------------------------------------------------------------------

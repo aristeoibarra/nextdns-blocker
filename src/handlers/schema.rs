@@ -50,7 +50,7 @@ impl Renderable for CommandsOut {
             "denylist add", "denylist remove", "denylist list", "denylist import", "denylist export",
             "allowlist add", "allowlist remove", "allowlist list", "allowlist import", "allowlist export",
             "category create", "category delete", "category list", "category show", "category add-domain", "category remove-domain",
-            "nextdns list", "nextdns add-category", "nextdns remove-category", "nextdns add-service", "nextdns remove-service", "nextdns categories", "nextdns services",
+            "nextdns list", "nextdns add-category", "nextdns remove-category", "nextdns categories",
             "config show", "config set", "config set-secret", "config remove-secret", "config validate",
             "apps list", "apps scan", "apps map", "apps unmap", "apps restore", "apps doctor",
             "audit list",

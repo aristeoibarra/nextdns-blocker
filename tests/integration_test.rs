@@ -295,8 +295,6 @@ fn nextdns_categories_and_services_stored() {
     db.with_transaction(|conn| {
         nextdns_blocker::db::nextdns::add_nextdns_category(conn, "gambling")?;
         nextdns_blocker::db::nextdns::add_nextdns_category(conn, "malware")?;
-        nextdns_blocker::db::nextdns::add_nextdns_service(conn, "tiktok")?;
-        nextdns_blocker::db::nextdns::add_nextdns_service(conn, "facebook")?;
         Ok(())
     })
     .unwrap();
@@ -305,11 +303,6 @@ fn nextdns_categories_and_services_stored() {
         .with_conn(nextdns_blocker::db::nextdns::list_nextdns_categories)
         .unwrap();
     assert_eq!(cats.len(), 2);
-
-    let svcs = db
-        .with_conn(nextdns_blocker::db::nextdns::list_nextdns_services)
-        .unwrap();
-    assert_eq!(svcs.len(), 2);
 }
 
 // ---------------------------------------------------------------------------

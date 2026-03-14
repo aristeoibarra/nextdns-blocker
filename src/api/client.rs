@@ -179,19 +179,6 @@ impl NextDnsClient {
         }
     }
 
-    pub fn get_parental_services(&self) -> ApiResult<Vec<ParentalService>> {
-        let wrapper: ApiWrapper<ParentalService> = self.get_json(&self.endpoint("parentalControl/services"))?;
-        Ok(wrapper.data)
-    }
-
-    pub fn set_parental_service(&self, id: &str, active: bool) -> ApiResult<()> {
-        if active {
-            let body = serde_json::json!({ "id": id, "active": true });
-            self.post_json(&self.endpoint("parentalControl/services"), &body)
-        } else {
-            self.delete(&format!("{}/{id}", self.endpoint("parentalControl/services")))
-        }
-    }
 }
 
 fn map_ureq_error(e: ureq::Error) -> AppError {

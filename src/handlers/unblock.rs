@@ -1,5 +1,5 @@
 use crate::cli::unblock::UnblockArgs;
-use crate::config::constants::{NEXTDNS_CATEGORIES, NEXTDNS_SERVICES};
+use crate::config::constants::NEXTDNS_CATEGORIES;
 use crate::db::Database;
 use crate::error::{AppError, ExitCode};
 use crate::output::{self, Renderable};
@@ -9,7 +9,6 @@ enum UnblockTarget {
     Domain,
     LocalCategory,
     NextdnsCategory,
-    NextdnsService,
 }
 
 pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
@@ -22,13 +21,10 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         UnblockTarget::LocalCategory
     } else if db.with_conn(|conn| crate::db::nextdns::is_active_nextdns_category(conn, &args.target))? {
         UnblockTarget::NextdnsCategory
-    } else if db.with_conn(|conn| crate::db::nextdns::is_active_nextdns_service(conn, &args.target))? {
-        UnblockTarget::NextdnsService
     } else {
         // Also check if it's a valid NextDNS ID that's not currently active
         let is_valid_cat = NEXTDNS_CATEGORIES.iter().any(|(id, _)| *id == args.target);
-        let is_valid_svc = NEXTDNS_SERVICES.iter().any(|(id, _)| *id == args.target);
-        let hint = if is_valid_cat || is_valid_svc {
+        let hint = if is_valid_cat {
             format!("'{}' is a valid NextDNS ID but is not currently active", args.target)
         } else {
             "Use 'ndb denylist list', 'ndb category list', or 'ndb nextdns list' to check".to_string()
@@ -133,23 +129,6 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                     if r.pushed == 0 { eager_push_failed = true; }
                 }
             }
-            UnblockTarget::NextdnsService => {
-                db.with_transaction(|conn| {
-                    crate::db::nextdns::deactivate_nextdns_service(conn, &args.target)
-                        .map_err(crate::error::AppError::from)?;
-                    crate::db::pending::create_pending(
-                        conn, &id, "add", Some(&args.target), "service", execute_at,
-                        Some(&format!("Auto re-enable service after {dur_str}")),
-                    ).map_err(crate::error::AppError::from)?;
-                    crate::db::audit::log_action(conn, "unblock", "nextdns_service", &args.target, detail_str.as_deref(), "cli")
-                        .map_err(crate::error::AppError::from)?;
-                    Ok(())
-                })?;
-                if let Some((_, ref client)) = api_client {
-                    let r = crate::sync::eager_push_service(&db, client, &args.target, false);
-                    if r.pushed == 0 { eager_push_failed = true; }
-                }
-            }
         }
 
         let mut watchdog_warning = None;
@@ -184,14 +163,6 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
                 db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "nextdns_category", &args.target, None, "cli"))?;
                 if let Some((_, ref client)) = api_client {
                     let r = crate::sync::eager_push_category(&db, client, &args.target, false);
-                    if r.pushed == 0 { eager_push_failed = true; }
-                }
-            }
-            UnblockTarget::NextdnsService => {
-                db.with_conn(|conn| crate::db::nextdns::remove_nextdns_service(conn, &args.target))?;
-                db.with_conn(|conn| crate::db::audit::log_action(conn, "unblock", "nextdns_service", &args.target, None, "cli"))?;
-                if let Some((_, ref client)) = api_client {
-                    let r = crate::sync::eager_push_service(&db, client, &args.target, false);
                     if r.pushed == 0 { eager_push_failed = true; }
                 }
             }

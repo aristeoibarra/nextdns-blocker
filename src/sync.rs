@@ -34,7 +34,6 @@ pub struct SyncResult {
     pub denylist: SyncListResult,
     pub allowlist: SyncListResult,
     pub categories: SyncListResult,
-    pub services: SyncListResult,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -68,19 +67,16 @@ impl Renderable for SyncResult {
     fn to_json(&self) -> serde_json::Value {
         let total_added = self.denylist.added.len()
             + self.allowlist.added.len()
-            + self.categories.added.len()
-            + self.services.added.len();
+            + self.categories.added.len();
         let total_removed = self.denylist.removed.len()
             + self.allowlist.removed.len()
-            + self.categories.removed.len()
-            + self.services.removed.len();
+            + self.categories.removed.len();
 
         serde_json::json!({
             "data": {
                 "denylist": self.denylist,
                 "allowlist": self.allowlist,
                 "categories": self.categories,
-                "services": self.services,
             },
             "summary": { "added": total_added, "removed": total_removed }
         })
@@ -152,21 +148,6 @@ pub fn eager_push_category(db: &Database, client: &NextDnsClient, id: &str, add:
         result.pushed = 1;
     } else {
         enqueue_retry(db, if add { "add" } else { "remove" }, Some(id), "category");
-        result.retrying = 1;
-    }
-    result
-}
-
-/// Immediately push a parental control service change. Retries once on failure before enqueuing.
-pub fn eager_push_service(db: &Database, client: &NextDnsClient, id: &str, add: bool) -> EagerPushResult {
-    let mut result = EagerPushResult::default();
-    let ok = client.set_parental_service(id, add).is_ok()
-        || client.set_parental_service(id, add).is_ok();
-    if ok {
-        crate::common::platform::flush_dns_cache();
-        result.pushed = 1;
-    } else {
-        enqueue_retry(db, if add { "add" } else { "remove" }, Some(id), "service");
         result.retrying = 1;
     }
     result
@@ -379,6 +360,7 @@ pub fn execute_schedule_sync(
         if !deny_added.is_empty() {
             let _ = crate::app_blocker::block_apps_for_domains(db, &deny_added);
             let _ = crate::android_blocker::block_android_for_domains(db, &deny_added, None);
+            crate::browser_blocker::close_tabs_for_domains(&deny_added);
         }
     }
     if !removed.is_empty() {
@@ -453,20 +435,12 @@ pub fn execute_drift_sync(
 
     // === NextDNS categories and services ===
     let local_categories = db.with_conn(crate::db::nextdns::list_nextdns_categories)?;
-    let local_services = db.with_conn(crate::db::nextdns::list_nextdns_services)?;
-
     let remote_categories = client.get_parental_categories()?;
-    let remote_services = client.get_parental_services()?;
 
     let local_cat_set: HashSet<String> = local_categories.iter().filter(|c| c.active).map(|c| c.id.clone()).collect();
     let remote_cat_set: HashSet<String> = remote_categories.iter().filter(|c| c.active).map(|c| c.id.clone()).collect();
-    let local_svc_set: HashSet<String> = local_services.iter().filter(|s| s.active).map(|s| s.id.clone()).collect();
-    let remote_svc_set: HashSet<String> = remote_services.iter().filter(|s| s.active).map(|s| s.id.clone()).collect();
-
     let to_add_cats: Vec<String> = local_cat_set.difference(&remote_cat_set).cloned().collect();
     let to_remove_cats: Vec<String> = remote_cat_set.difference(&local_cat_set).cloned().collect();
-    let to_add_svcs: Vec<String> = local_svc_set.difference(&remote_svc_set).cloned().collect();
-    let to_remove_svcs: Vec<String> = remote_svc_set.difference(&local_svc_set).cloned().collect();
 
     if dry_run {
         return Ok(SyncResult {
@@ -481,10 +455,6 @@ pub fn execute_drift_sync(
             categories: SyncListResult {
                 added: to_add_cats, removed: to_remove_cats,
                 unchanged: local_cat_set.intersection(&remote_cat_set).count(), errors: vec![],
-            },
-            services: SyncListResult {
-                added: to_add_svcs, removed: to_remove_svcs,
-                unchanged: local_svc_set.intersection(&remote_svc_set).count(), errors: vec![],
             },
         });
     }
@@ -578,34 +548,10 @@ pub fn execute_drift_sync(
         }
     }
 
-    // === Execute services sync ===
-    let mut svc_errors = Vec::new();
-    let mut svc_added = Vec::new();
-    for id in &to_add_svcs {
-        match client.set_parental_service(id, true) {
-            Ok(()) => svc_added.push(id.clone()),
-            Err(e) => {
-                let se = SyncError { domain: id.clone(), error: e.to_string(), auth_error: e.is_auth_error() };
-                svc_errors.push(se);
-            }
-        }
-    }
-    let mut svc_removed = Vec::new();
-    for id in &to_remove_svcs {
-        match client.set_parental_service(id, false) {
-            Ok(()) => svc_removed.push(id.clone()),
-            Err(e) => {
-                let se = SyncError { domain: id.clone(), error: e.to_string(), auth_error: e.is_auth_error() };
-                svc_errors.push(se);
-            }
-        }
-    }
-
     // Enqueue retries only for non-auth errors (auth errors are permanent, not retryable)
     let all_errors: Vec<(&str, &str, &SyncError)> = denylist_errors.iter().map(|e| ("add", "denylist", e))
         .chain(allowlist_errors.iter().map(|e| ("add", "allowlist", e)))
         .chain(cat_errors.iter().map(|e| ("add", "category", e)))
-        .chain(svc_errors.iter().map(|e| ("add", "service", e)))
         .collect();
 
     if !all_errors.is_empty() {
@@ -624,8 +570,7 @@ pub fn execute_drift_sync(
 
     let had_changes = !denylist_added.is_empty() || !denylist_removed.is_empty()
         || !allowlist_added.is_empty() || !allowlist_removed.is_empty()
-        || !cat_added.is_empty() || !cat_removed.is_empty()
-        || !svc_added.is_empty() || !svc_removed.is_empty();
+        || !cat_added.is_empty() || !cat_removed.is_empty();
 
     if had_changes {
         crate::common::platform::flush_dns_cache();
@@ -643,10 +588,6 @@ pub fn execute_drift_sync(
         categories: SyncListResult {
             added: cat_added, removed: cat_removed,
             unchanged: local_cat_set.intersection(&remote_cat_set).count(), errors: cat_errors,
-        },
-        services: SyncListResult {
-            added: svc_added, removed: svc_removed,
-            unchanged: local_svc_set.intersection(&remote_svc_set).count(), errors: svc_errors,
         },
     })
 }

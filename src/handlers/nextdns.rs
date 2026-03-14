@@ -1,5 +1,5 @@
 use crate::cli::nextdns::*;
-use crate::config::constants::{NEXTDNS_CATEGORIES, NEXTDNS_SERVICES};
+use crate::config::constants::NEXTDNS_CATEGORIES;
 use crate::db::Database;
 use crate::error::{AppError, ExitCode};
 use crate::output::{self, Renderable};
@@ -10,29 +10,25 @@ pub fn handle(cmd: NextdnsCommands) -> Result<ExitCode, AppError> {
         NextdnsCommands::List(_) => handle_list(&db),
         NextdnsCommands::AddCategory(args) => handle_add_category(&db, args),
         NextdnsCommands::RemoveCategory(args) => handle_remove_category(&db, args),
-        NextdnsCommands::AddService(args) => handle_add_service(&db, args),
-        NextdnsCommands::RemoveService(args) => handle_remove_service(&db, args),
         NextdnsCommands::Categories(_) => handle_available_categories(),
-        NextdnsCommands::Services(_) => handle_available_services(),
     }
 }
 
 fn handle_list(db: &Database) -> Result<ExitCode, AppError> {
     let categories = db.with_conn(crate::db::nextdns::list_nextdns_categories)?;
-    let services = db.with_conn(crate::db::nextdns::list_nextdns_services)?;
 
-    let result = NextdnsListResult { categories, services };
+    let result = NextdnsListResult { categories };
     output::render(&result);
     Ok(ExitCode::Success)
 }
 
-struct NextdnsListResult { categories: Vec<crate::types::NextDnsCategory>, services: Vec<crate::types::NextDnsService> }
+struct NextdnsListResult { categories: Vec<crate::types::NextDnsCategory> }
 impl Renderable for NextdnsListResult {
     fn command_name(&self) -> &str { "nextdns list" }
     fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "data": { "categories": self.categories, "services": self.services },
-            "summary": { "categories": self.categories.len(), "services": self.services.len() }
+            "data": { "categories": self.categories },
+            "summary": { "categories": self.categories.len() }
         })
     }
 }
@@ -71,54 +67,11 @@ fn handle_remove_category(db: &Database, args: NextdnsRemoveCategoryArgs) -> Res
     Ok(ExitCode::Success)
 }
 
-fn handle_add_service(db: &Database, args: NextdnsAddServiceArgs) -> Result<ExitCode, AppError> {
-    validate_service_id(&args.id)?;
-    db.with_conn(|conn| crate::db::nextdns::add_nextdns_service(conn, &args.id))?;
-    db.with_conn(|conn| crate::db::audit::log_action(conn, "add", "nextdns_service", &args.id, None, "cli"))?;
-
-    if let Ok(env) = crate::config::types::EnvConfig::from_env() {
-        if let Ok(client) = crate::api::NextDnsClient::new(&env.api_key, env.profile_id) {
-            crate::sync::eager_push_service(db, &client, &args.id, true);
-        }
-    }
-
-    let result = SimpleMsg { command: "nextdns add-service", data: serde_json::json!({ "id": args.id }) };
-    output::render(&result);
-    Ok(ExitCode::Success)
-}
-
-fn handle_remove_service(db: &Database, args: NextdnsRemoveServiceArgs) -> Result<ExitCode, AppError> {
-    let removed = db.with_conn(|conn| crate::db::nextdns::remove_nextdns_service(conn, &args.id))?;
-    if !removed {
-        return Err(AppError::NotFound { message: format!("NextDNS service '{}' not found", args.id), hint: None });
-    }
-    db.with_conn(|conn| crate::db::audit::log_action(conn, "remove", "nextdns_service", &args.id, None, "cli"))?;
-
-    if let Ok(env) = crate::config::types::EnvConfig::from_env() {
-        if let Ok(client) = crate::api::NextDnsClient::new(&env.api_key, env.profile_id) {
-            crate::sync::eager_push_service(db, &client, &args.id, false);
-        }
-    }
-
-    let result = SimpleMsg { command: "nextdns remove-service", data: serde_json::json!({ "id": args.id }) };
-    output::render(&result);
-    Ok(ExitCode::Success)
-}
-
 fn handle_available_categories() -> Result<ExitCode, AppError> {
     let cats: Vec<serde_json::Value> = NEXTDNS_CATEGORIES.iter()
         .map(|(id, name)| serde_json::json!({ "id": id, "name": name }))
         .collect();
     let result = SimpleMsg { command: "nextdns categories", data: serde_json::json!({ "categories": cats }) };
-    output::render(&result);
-    Ok(ExitCode::Success)
-}
-
-fn handle_available_services() -> Result<ExitCode, AppError> {
-    let svcs: Vec<serde_json::Value> = NEXTDNS_SERVICES.iter()
-        .map(|(id, name)| serde_json::json!({ "id": id, "name": name }))
-        .collect();
-    let result = SimpleMsg { command: "nextdns services", data: serde_json::json!({ "services": svcs }) };
     output::render(&result);
     Ok(ExitCode::Success)
 }
@@ -130,15 +83,6 @@ fn validate_category_id(id: &str) -> Result<(), AppError> {
         message: format!("Unknown NextDNS category: {id}"),
         details: vec![],
         hint: Some(format!("Valid categories: {}", valid.join(", "))),
-    })
-}
-
-fn validate_service_id(id: &str) -> Result<(), AppError> {
-    if NEXTDNS_SERVICES.iter().any(|(sid, _)| *sid == id) { return Ok(()); }
-    Err(AppError::Validation {
-        message: format!("Unknown NextDNS service: {id}"),
-        details: vec![],
-        hint: Some("Use 'ndb nextdns services' to see available services".to_string()),
     })
 }
 

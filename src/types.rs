@@ -114,14 +114,6 @@ pub struct NextDnsCategory {
     pub created_at: i64,
 }
 
-/// NextDNS native service.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NextDnsService {
-    pub id: String,
-    pub active: bool,
-    pub created_at: i64,
-}
-
 /// Pending action to be executed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingAction {
