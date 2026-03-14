@@ -77,12 +77,13 @@ class MainActivity : AppCompatActivity() {
             val btn = it as Button
             btn.isEnabled = false
             btn.text = "Syncing..."
-            engine.sync()
-            btn.postDelayed({
-                refresh()
-                btn.isEnabled = true
-                btn.text = getString(R.string.btn_sync)
-            }, 2500)
+            engine.sync {
+                runOnUiThread {
+                    refresh()
+                    btn.isEnabled = true
+                    btn.text = getString(R.string.btn_sync)
+                }
+            }
         }
     }
 

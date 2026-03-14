@@ -15,7 +15,7 @@ class BlockerEngine(private val context: Context) {
 
     private val db = FirebaseDatabase.getInstance()
 
-    fun sync() {
+    fun sync(onComplete: (() -> Unit)? = null) {
         reportInstalledApps()
 
         val ref = db.getReference("devices/$DEVICE_ID/blocked_packages")
@@ -25,7 +25,6 @@ class BlockerEngine(private val context: Context) {
 
             for (child in snapshot.children) {
                 val encodedKey = child.key ?: continue
-                // CLI encodes '.' as '~' in Firebase keys; decode back
                 val pkg = encodedKey.replace('~', '.')
                 val unblockAt = child.child("unblock_at").getValue(Long::class.java)
                 val shouldBlock = unblockAt == null || unblockAt > now
@@ -33,20 +32,22 @@ class BlockerEngine(private val context: Context) {
                 if (shouldBlock) {
                     blocked.add(pkg)
                 } else {
-                    // Expired, remove from Firebase
                     child.ref.removeValue()
                     Log.i(TAG, "Expired, unblocked: $pkg")
                 }
             }
 
             NdbAccessibilityService.updateBlockedPackages(context, blocked)
+            AppCache.invalidate()
 
             db.getReference("devices/$DEVICE_ID/last_sync")
                 .setValue(System.currentTimeMillis() / 1000)
 
             Log.i(TAG, "Sync complete, ${blocked.size} packages blocked")
+            onComplete?.invoke()
         }.addOnFailureListener { e ->
             Log.e(TAG, "Failed to read blocked_packages", e)
+            onComplete?.invoke()
         }
     }
 
