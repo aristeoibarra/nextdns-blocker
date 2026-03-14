@@ -1,4 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.NdbBlocker" parent="Theme.AppCompat.Light.NoActionBar" />
+    <style name="Theme.NdbBlocker" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">@color/accent_purple</item>
+        <item name="colorPrimaryVariant">@color/accent_purple</item>
+        <item name="colorPrimaryDark">@color/bottom_nav_bg</item>
+        <item name="colorSecondary">@color/accent_purple</item>
+        <item name="colorSecondaryVariant">@color/accent_purple</item>
+        <item name="colorAccent">@color/accent_purple</item>
+        <item name="colorSurface">@color/bg_card</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnPrimary">@color/bg_dark</item>
+        <item name="colorOnSecondary">@color/bg_dark</item>
+        <item name="android:colorBackground">@color/bg_dark</item>
+        <item name="colorOnBackground">@color/text_primary</item>
+        <item name="android:windowBackground">@color/bg_dark</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:statusBarColor">@color/bg_dark</item>
+        <item name="android:navigationBarColor">@color/bg_dark</item>
+    </style>
+
+    <style name="Widget.NdbBlocker.Card" parent="">
+        <item name="android:background">@drawable/card_background</item>
+        <item name="android:padding">20dp</item>
+    </style>
+
+    <style name="Widget.NdbBlocker.Button" parent="">
+        <item name="android:background">@drawable/btn_background</item>
+        <item name="android:textColor">#E0E0E0</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+    </style>
+
+    <style name="Widget.NdbBlocker.Button.Primary" parent="Widget.NdbBlocker.Button">
+        <item name="android:background">@drawable/btn_primary_background</item>
+        <item name="android:textColor">#0D0D0D</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
 </resources>

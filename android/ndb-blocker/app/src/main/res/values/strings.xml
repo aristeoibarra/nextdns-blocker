@@ -1,17 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ndb blocker</string>
-    <string name="label_service">Accessibility Service</string>
+    <string name="label_service">Protection Status</string>
     <string name="label_last_sync">Last Sync</string>
-    <string name="label_blocked_count">Blocked Packages</string>
-    <string name="btn_enable">Enable Service</string>
+    <string name="label_blocked_count">Blocked</string>
+    <string name="btn_enable">Enable Protection</string>
     <string name="btn_settings">Accessibility Settings</string>
     <string name="btn_sync">Sync Now</string>
-    <string name="status_active">Active</string>
-    <string name="status_inactive">Inactive</string>
+    <string name="status_active">Protection Active</string>
+    <string name="status_inactive">Protection Inactive</string>
     <string name="status_never">Never</string>
+    <string name="hint_active">Blocked apps will be intercepted and redirected.</string>
+    <string name="hint_inactive">Enable the accessibility service to start blocking apps.</string>
+    <string name="blocked_icon">\u26D4</string>
     <string name="blocked_title">Blocked</string>
-    <string name="blocked_message">This app has been blocked by ndb blocker.</string>
+    <string name="blocked_message">This app has been blocked.\nClose and do something else.</string>
     <string name="btn_go_home">Go Home</string>
+    <string name="label_device_admin">Device Admin</string>
+    <string name="admin_active">Device Admin Active</string>
+    <string name="admin_inactive">Device Admin Inactive</string>
+    <string name="admin_hint_active">App can prevent uninstall and lock settings.</string>
+    <string name="admin_hint_inactive">Enable to prevent the app from being uninstalled.</string>
+    <string name="btn_enable_admin">Enable Device Admin</string>
+    <string name="btn_disable_admin">Disable Device Admin</string>
     <string name="accessibility_description">ndb blocker monitors which app is in the foreground and blocks apps that are on the block list.</string>
+    <string name="tab_status">Status</string>
+    <string name="tab_blocked">Blocked</string>
+    <string name="tab_allowed">Allowed</string>
+    <string name="label_categories">Active Categories</string>
+    <string name="empty_blocked">No blocked apps. Run ndb android sync from the CLI.</string>
+    <string name="empty_allowed">No allowed apps.</string>
+    <string name="tab_dns">DNS</string>
+    <string name="empty_dns">No DNS data. Run ndb android sync from the CLI.</string>
 </resources>

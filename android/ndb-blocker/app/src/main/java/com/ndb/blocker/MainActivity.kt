@@ -1,66 +1,57 @@
 package com.ndb.blocker
 
-import android.content.Intent
 import android.os.Bundle
-import android.provider.Settings
-import android.widget.Button
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import androidx.fragment.app.Fragment
+import com.google.android.material.bottomnavigation.BottomNavigationView
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var engine: BlockerEngine
+    lateinit var engine: BlockerEngine
+        private set
+
+    private val statusFragment = StatusFragment()
+    private val blockedFragment = BlockedFragment()
+    private val allowedFragment = AllowedFragment()
+    private val dnsFragment = DnsFragment()
+    private var activeFragment: Fragment = statusFragment
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         engine = BlockerEngine(this)
 
-        findViewById<Button>(R.id.btnEnable).setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
+        // Add all fragments, hide non-active
+        supportFragmentManager.beginTransaction()
+            .add(R.id.fragmentContainer, dnsFragment, "dns").hide(dnsFragment)
+            .add(R.id.fragmentContainer, allowedFragment, "allowed").hide(allowedFragment)
+            .add(R.id.fragmentContainer, blockedFragment, "blocked").hide(blockedFragment)
+            .add(R.id.fragmentContainer, statusFragment, "status")
+            .commit()
 
-        findViewById<Button>(R.id.btnSync).setOnClickListener {
-            engine.sync()
-            // Refresh after a short delay to let Firebase respond
-            it.postDelayed({ refreshStatus() }, 2000)
+        val bottomNav = findViewById<BottomNavigationView>(R.id.bottomNavigation)
+        bottomNav.setOnItemSelectedListener { item ->
+            val selected: Fragment = when (item.itemId) {
+                R.id.nav_status -> statusFragment
+                R.id.nav_blocked -> blockedFragment
+                R.id.nav_allowed -> allowedFragment
+                R.id.nav_dns -> dnsFragment
+                else -> statusFragment
+            }
+            if (selected != activeFragment) {
+                supportFragmentManager.beginTransaction()
+                    .hide(activeFragment)
+                    .show(selected)
+                    .commit()
+                activeFragment = selected
+            }
+            true
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        refreshStatus()
-    }
-
-    private fun refreshStatus() {
-        val tvServiceStatus = findViewById<TextView>(R.id.tvServiceStatus)
-        val tvLastSync = findViewById<TextView>(R.id.tvLastSync)
-        val tvBlockedCount = findViewById<TextView>(R.id.tvBlockedCount)
-        val btnEnable = findViewById<Button>(R.id.btnEnable)
-
-        val running = NdbAccessibilityService.isRunning
-        tvServiceStatus.text = if (running) getString(R.string.status_active) else getString(R.string.status_inactive)
-        tvServiceStatus.setTextColor(if (running) 0xFF4CAF50.toInt() else 0xFFF44336.toInt())
-        btnEnable.text = if (running) getString(R.string.btn_settings) else getString(R.string.btn_enable)
-
-        engine.getLastSync { timestamp ->
-            runOnUiThread {
-                tvLastSync.text = if (timestamp != null) {
-                    val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-                    fmt.format(Date(timestamp * 1000))
-                } else {
-                    getString(R.string.status_never)
-                }
-            }
-        }
-
-        engine.getBlockedCount { count ->
-            runOnUiThread {
-                tvBlockedCount.text = count.toString()
-            }
-        }
+    fun onSyncComplete() {
+        blockedFragment.loadData()
+        allowedFragment.loadData()
+        dnsFragment.loadData()
     }
 }

@@ -109,6 +109,42 @@ impl FirebaseClient {
         Ok(())
     }
 
+    /// Write the full sync_state node to Firebase RTDB.
+    /// This is used by the Android app to display categories, blocked/allowed apps.
+    pub fn set_sync_state(&self, state: &serde_json::Value) -> Result<(), AppError> {
+        let url = format!(
+            "{}/devices/{}/sync_state.json?auth={}",
+            self.rtdb_url, self.device_id, self.access_token
+        );
+        self.agent
+            .put(&url)
+            .send_json(state)
+            .map_err(|e| AppError::Api {
+                message: format!("Firebase RTDB PUT sync_state failed: {e}"),
+                status_code: extract_status(&e),
+                hint: Some("Check Firebase config and network connectivity".to_string()),
+            })?;
+        Ok(())
+    }
+
+    /// Write the dns_state node to Firebase RTDB.
+    /// Contains custom categories + denylist domains for the Android DNS tab.
+    pub fn set_dns_state(&self, state: &serde_json::Value) -> Result<(), AppError> {
+        let url = format!(
+            "{}/devices/{}/dns_state.json?auth={}",
+            self.rtdb_url, self.device_id, self.access_token
+        );
+        self.agent
+            .put(&url)
+            .send_json(state)
+            .map_err(|e| AppError::Api {
+                message: format!("Firebase RTDB PUT dns_state failed: {e}"),
+                status_code: extract_status(&e),
+                hint: Some("Check Firebase config and network connectivity".to_string()),
+            })?;
+        Ok(())
+    }
+
     /// Get the access token for external use (e.g., FCM).
     pub fn access_token(&self) -> &str {
         &self.access_token

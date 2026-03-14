@@ -267,6 +267,44 @@ pub fn compute_and_sync(db: &Database) -> Result<AndroidSyncResult, AppError> {
     let total = blocked_list.len();
     client.set_all_blocked_packages(&firebase_data)?;
 
+    // 5. Build and push sync_state for Android UI
+    let category_ids: Vec<serde_json::Value> = active_categories.iter()
+        .map(|c| serde_json::json!(c.id))
+        .collect();
+
+    let mut sync_blocked = serde_json::Map::new();
+    for entry in &blocked_list {
+        let encoded = entry.package_name.replace('.', "~");
+        sync_blocked.insert(encoded, serde_json::json!({
+            "name": entry.display_name,
+            "reason": entry.reason,
+        }));
+    }
+
+    let mut sync_allowed = serde_json::Map::new();
+    for entry in &allowed_entries {
+        let encoded = entry.package_name.replace('.', "~");
+        sync_allowed.insert(encoded, serde_json::json!({
+            "name": entry.display_name,
+            "reason": entry.reason,
+        }));
+    }
+
+    let sync_state = serde_json::json!({
+        "categories": category_ids,
+        "blocked": sync_blocked,
+        "allowed": sync_allowed,
+        "total_blocked": total,
+        "total_allowed": allowed_entries.len(),
+        "synced_at": now,
+    });
+
+    // Best-effort: don't fail the whole sync if sync_state push fails
+    let _ = client.set_sync_state(&sync_state);
+
+    // 6. Build and push dns_state for Android DNS tab (custom categories + denylist)
+    let _ = build_and_push_dns_state(db, &client);
+
     // Send FCM push to wake the Android app
     if !firebase_data.is_empty() {
         let _ = fcm::send_sync_push(&client);
@@ -314,4 +352,59 @@ fn get_display_name(db: &Database, package_name: &str, domain: &str) -> String {
     }
 
     package_name.to_string()
+}
+
+/// Build dns_state (custom categories + denylist) and push to Firebase.
+/// Best-effort: errors are silently ignored.
+fn build_and_push_dns_state(db: &Database, client: &firebase::FirebaseClient) -> Result<(), AppError> {
+    let now = crate::common::time::now_unix();
+
+    // Custom categories with their domains
+    let categories = db.with_conn(crate::db::categories::list_categories)?;
+    let mut cats_json = serde_json::Map::new();
+    let mut total_domains: usize = 0;
+
+    for cat in &categories {
+        let domains = db.with_conn(|conn| crate::db::categories::list_category_domains(conn, &cat.name))?;
+        total_domains += domains.len();
+        cats_json.insert(cat.name.clone(), serde_json::json!({
+            "description": cat.description,
+            "domains": domains,
+            "count": domains.len(),
+        }));
+    }
+
+    // Denylist domains not in any custom category
+    let denylist = db.with_conn(|conn| crate::db::domains::list_blocked(conn, true))?;
+    let mut uncategorized: Vec<serde_json::Value> = Vec::new();
+
+    for entry in &denylist {
+        if entry.category.is_none() {
+            uncategorized.push(serde_json::json!({
+                "domain": entry.domain,
+                "description": entry.description,
+            }));
+            total_domains += 1;
+        }
+    }
+
+    // Allowlist domains (for context)
+    let allowlist = db.with_conn(|conn| crate::db::domains::list_allowed(conn, true))?;
+    let allowed_domains: Vec<serde_json::Value> = allowlist.iter()
+        .map(|e| serde_json::json!({
+            "domain": e.domain,
+            "description": e.description,
+        }))
+        .collect();
+
+    let dns_state = serde_json::json!({
+        "custom_categories": cats_json,
+        "uncategorized": uncategorized,
+        "allowed_domains": allowed_domains,
+        "total_blocked_domains": total_domains,
+        "total_allowed_domains": allowed_domains.len(),
+        "synced_at": now,
+    });
+
+    client.set_dns_state(&dns_state)
 }

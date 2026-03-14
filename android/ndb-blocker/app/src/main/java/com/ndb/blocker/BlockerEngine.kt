@@ -105,4 +105,89 @@ class BlockerEngine(private val context: Context) {
             callback(null)
         }
     }
+
+    fun getSyncState(callback: (SyncState?) -> Unit) {
+        val ref = db.getReference("devices/$DEVICE_ID/sync_state")
+        ref.get().addOnSuccessListener { snapshot ->
+            if (!snapshot.exists()) {
+                callback(null)
+                return@addOnSuccessListener
+            }
+
+            val categories = mutableListOf<String>()
+            for (child in snapshot.child("categories").children) {
+                child.getValue(String::class.java)?.let { categories.add(it) }
+            }
+
+            val blocked = mutableListOf<AppEntry>()
+            for (child in snapshot.child("blocked").children) {
+                val encodedKey = child.key ?: continue
+                val pkg = encodedKey.replace('~', '.')
+                val name = child.child("name").getValue(String::class.java) ?: pkg
+                val reason = child.child("reason").getValue(String::class.java) ?: ""
+                blocked.add(AppEntry(pkg, name, reason))
+            }
+
+            val allowed = mutableListOf<AppEntry>()
+            for (child in snapshot.child("allowed").children) {
+                val encodedKey = child.key ?: continue
+                val pkg = encodedKey.replace('~', '.')
+                val name = child.child("name").getValue(String::class.java) ?: pkg
+                val reason = child.child("reason").getValue(String::class.java) ?: ""
+                allowed.add(AppEntry(pkg, name, reason))
+            }
+
+            val totalBlocked = snapshot.child("total_blocked").getValue(Int::class.java) ?: blocked.size
+            val totalAllowed = snapshot.child("total_allowed").getValue(Int::class.java) ?: allowed.size
+            val syncedAt = snapshot.child("synced_at").getValue(Long::class.java) ?: 0L
+
+            callback(SyncState(categories, blocked, allowed, totalBlocked, totalAllowed, syncedAt))
+        }.addOnFailureListener {
+            callback(null)
+        }
+    }
+
+    fun getDnsState(callback: (DnsState?) -> Unit) {
+        val ref = db.getReference("devices/$DEVICE_ID/dns_state")
+        ref.get().addOnSuccessListener { snapshot ->
+            if (!snapshot.exists()) {
+                callback(null)
+                return@addOnSuccessListener
+            }
+
+            val customCategories = mutableListOf<DnsCategory>()
+            for (child in snapshot.child("custom_categories").children) {
+                val name = child.key ?: continue
+                val description = child.child("description").getValue(String::class.java)
+                val count = child.child("count").getValue(Int::class.java) ?: 0
+                val domains = mutableListOf<String>()
+                for (d in child.child("domains").children) {
+                    d.getValue(String::class.java)?.let { domains.add(it) }
+                }
+                customCategories.add(DnsCategory(name, description, domains, count))
+            }
+
+            val uncategorized = mutableListOf<DnsDomain>()
+            for (child in snapshot.child("uncategorized").children) {
+                val domain = child.child("domain").getValue(String::class.java) ?: continue
+                val description = child.child("description").getValue(String::class.java)
+                uncategorized.add(DnsDomain(domain, description))
+            }
+
+            val allowedDomains = mutableListOf<DnsDomain>()
+            for (child in snapshot.child("allowed_domains").children) {
+                val domain = child.child("domain").getValue(String::class.java) ?: continue
+                val description = child.child("description").getValue(String::class.java)
+                allowedDomains.add(DnsDomain(domain, description))
+            }
+
+            val totalBlocked = snapshot.child("total_blocked_domains").getValue(Int::class.java) ?: 0
+            val totalAllowed = snapshot.child("total_allowed_domains").getValue(Int::class.java) ?: 0
+            val syncedAt = snapshot.child("synced_at").getValue(Long::class.java) ?: 0L
+
+            callback(DnsState(customCategories, uncategorized, allowedDomains, totalBlocked, totalAllowed, syncedAt))
+        }.addOnFailureListener {
+            callback(null)
+        }
+    }
 }

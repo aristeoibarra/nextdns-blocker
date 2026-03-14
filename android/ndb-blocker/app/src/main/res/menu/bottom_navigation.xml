@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/nav_status"
+        android:icon="@android:drawable/ic_menu_info_details"
+        android:title="@string/tab_status" />
+    <item
+        android:id="@+id/nav_blocked"
+        android:icon="@android:drawable/ic_lock_lock"
+        android:title="@string/tab_blocked" />
+    <item
+        android:id="@+id/nav_allowed"
+        android:icon="@android:drawable/ic_lock_idle_lock"
+        android:title="@string/tab_allowed" />
+    <item
+        android:id="@+id/nav_dns"
+        android:icon="@android:drawable/ic_menu_mapmode"
+        android:title="@string/tab_dns" />
+</menu>
