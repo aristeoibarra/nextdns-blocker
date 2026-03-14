@@ -110,9 +110,10 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         }
     }
 
-    // Block mapped apps for newly added domains
+    // Block mapped apps for all targeted domains (added + already in denylist)
     let mut partial_failures = Vec::new();
-    let apps_blocked = crate::app_blocker::block_apps_for_domains(&db, &added)
+    let domains_to_enforce: Vec<String> = added.iter().chain(skipped.iter()).cloned().collect();
+    let apps_blocked = crate::app_blocker::block_apps_for_domains(&db, &domains_to_enforce)
         .unwrap_or_else(|e| {
             let _ = db.with_conn(|conn| {
                 crate::db::audit::log_action(conn, "block_app_failed", "app", &e.to_string(), None, "cli")
@@ -126,8 +127,8 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
-    // Close browser tabs for newly blocked domains
-    let tabs_closed = crate::browser_blocker::close_tabs_for_domains(&added);
+    // Close browser tabs for all targeted domains
+    let tabs_closed = crate::browser_blocker::close_tabs_for_domains(&domains_to_enforce);
     for result in &tabs_closed {
         let _ = db.with_conn(|conn| {
             crate::db::audit::log_action(
@@ -138,7 +139,7 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
     }
 
     // Block Android apps via Firebase RTDB + FCM push
-    let android_blocked = crate::android_blocker::block_android_for_domains(&db, &added, parsed_duration.as_ref())
+    let android_blocked = crate::android_blocker::block_android_for_domains(&db, &domains_to_enforce, parsed_duration.as_ref())
         .unwrap_or_else(|e| {
             let _ = db.with_conn(|conn| {
                 crate::db::audit::log_action(conn, "block_android_failed", "android", &e.to_string(), None, "cli")

@@ -163,7 +163,6 @@ pub const CATEGORY_PACKAGES: &[(&str, &str, &str)] = &[
     ("video-streaming", "com.google.android.apps.youtube.kids", "YouTube Kids"),
     ("video-streaming", "com.netflix.mediaclient", "Netflix"),
     ("video-streaming", "tv.twitch.android.app", "Twitch"),
-    ("video-streaming", "com.spotify.music", "Spotify"),
     ("video-streaming", "com.amazon.avod.thirdpartyclient", "Prime Video"),
     ("video-streaming", "com.disney.disneyplus", "Disney+"),
     ("video-streaming", "com.hbo.hbonow", "Max"),
@@ -175,8 +174,6 @@ pub const CATEGORY_PACKAGES: &[(&str, &str, &str)] = &[
     ("video-streaming", "tv.pluto.android", "Pluto TV"),
     ("video-streaming", "com.peacocktv.peacockandroid", "Peacock"),
     ("video-streaming", "com.cbs.ott", "Paramount+"),
-    ("video-streaming", "com.pandora.android", "Pandora"),
-    ("video-streaming", "deezer.android.app", "Deezer"),
     ("video-streaming", "com.aspiro.tidal", "TIDAL"),
     ("video-streaming", "com.soundcloud.android", "SoundCloud"),
 

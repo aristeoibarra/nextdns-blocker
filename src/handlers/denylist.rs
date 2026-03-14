@@ -108,9 +108,43 @@ fn handle_add(db: &Database, args: DenylistAddArgs) -> Result<ExitCode, AppError
     if !added.is_empty() {
         if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
             if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id) {
-                crate::sync::eager_push_denylist(db, &client, &added, true);
+                // Only eager push domains that should be blocked now (schedule-aware)
+                let domains_to_push = if args.schedule.is_some() {
+                    let tz_str = db.with_conn(crate::db::config::get_timezone).unwrap_or_else(|_| "UTC".to_string());
+                    if let Ok(tz) = tz_str.parse::<chrono_tz::Tz>() {
+                        let evaluator = crate::scheduler::ScheduleEvaluator::new(tz);
+                        let schedule = args.schedule.as_deref().and_then(|s| {
+                            serde_json::from_str::<crate::config::types::Schedule>(s).ok()
+                        });
+                        let parsed = schedule.as_ref().and_then(crate::scheduler::parse_config_schedule);
+                        if evaluator.should_block(parsed.as_ref()) { added.clone() } else { vec![] }
+                    } else { added.clone() }
+                } else { added.clone() };
+
+                if !domains_to_push.is_empty() {
+                    crate::sync::eager_push_denylist(db, &client, &domains_to_push, true);
+                }
             }
         }
+    }
+
+    // If schedule says blocked now, enforce app + browser + android blocking
+    let domains_to_enforce = if args.schedule.is_some() {
+        let tz_str = db.with_conn(crate::db::config::get_timezone).unwrap_or_else(|_| "UTC".to_string());
+        if let Ok(tz) = tz_str.parse::<chrono_tz::Tz>() {
+            let evaluator = crate::scheduler::ScheduleEvaluator::new(tz);
+            let schedule = args.schedule.as_deref().and_then(|s| {
+                serde_json::from_str::<crate::config::types::Schedule>(s).ok()
+            });
+            let parsed = schedule.as_ref().and_then(crate::scheduler::parse_config_schedule);
+            if evaluator.should_block(parsed.as_ref()) { added.clone() } else { vec![] }
+        } else { vec![] }
+    } else { vec![] };
+
+    if !domains_to_enforce.is_empty() {
+        let _ = crate::app_blocker::block_apps_for_domains(db, &domains_to_enforce);
+        crate::browser_blocker::close_tabs_for_domains(&domains_to_enforce);
+        let _ = crate::android_blocker::block_android_for_domains(db, &domains_to_enforce, None);
     }
 
     // Check congruency for added domains

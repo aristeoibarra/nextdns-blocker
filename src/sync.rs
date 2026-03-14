@@ -442,6 +442,14 @@ pub fn execute_drift_sync(
     let to_add_cats: Vec<String> = local_cat_set.difference(&remote_cat_set).cloned().collect();
     let to_remove_cats: Vec<String> = remote_cat_set.difference(&local_cat_set).cloned().collect();
 
+    // Confirm unchanged domains are marked as in_nextdns (local-only, safe for dry-run)
+    for domain in should_block.intersection(&remote_blocked_set) {
+        update_in_nextdns(db, domain, "denylist", true);
+    }
+    for domain in should_allow.intersection(&remote_allowed_set) {
+        update_in_nextdns(db, domain, "allowlist", true);
+    }
+
     if dry_run {
         return Ok(SyncResult {
             denylist: SyncListResult {
@@ -515,14 +523,6 @@ pub fn execute_drift_sync(
                 allowlist_errors.push(se);
             }
         }
-    }
-
-    // Confirm unchanged domains are marked as in_nextdns
-    for domain in should_block.intersection(&remote_blocked_set) {
-        update_in_nextdns(db, domain, "denylist", true);
-    }
-    for domain in should_allow.intersection(&remote_allowed_set) {
-        update_in_nextdns(db, domain, "allowlist", true);
     }
 
     // === Execute categories sync ===
