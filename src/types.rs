@@ -193,3 +193,25 @@ pub struct BlockedApp {
     pub blocked_at: i64,
 }
 
+/// Android domain-to-package mapping entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AndroidMapping {
+    pub domain: String,
+    pub package_name: String,
+    pub display_name: String,
+    pub auto: bool,
+    pub created_at: i64,
+}
+
+/// Remote Android blocked package state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteAndroidBlocked {
+    pub package_name: String,
+    pub domain: String,
+    pub device_id: String,
+    pub blocked_at: i64,
+    pub unblock_at: Option<i64>,
+    pub in_firebase: bool,
+    pub push_error: Option<String>,
+}
+

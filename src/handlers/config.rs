@@ -121,7 +121,7 @@ fn handle_validate() -> Result<ExitCode, AppError> {
 }
 
 fn handle_set_secret(args: ConfigSetSecretArgs) -> Result<ExitCode, AppError> {
-    const VALID_NAMES: &[&str] = &["api-key", "profile-id"];
+    const VALID_NAMES: &[&str] = &["api-key", "profile-id", "firebase-service-account"];
     if !VALID_NAMES.contains(&args.name.as_str()) {
         return Err(AppError::Validation {
             message: format!("Unknown secret name: '{}'", args.name),

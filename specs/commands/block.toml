@@ -47,6 +47,7 @@ schema = """
     "apps_blocked": [],
     "hosts_blocked": [],
     "tabs_closed": [],
+    "android_blocked": [],
     "partial_failures": []
   },
   "summary": {
@@ -55,7 +56,8 @@ schema = """
     "errors": 0,
     "apps_blocked": 0,
     "hosts_blocked": 0,
-    "tabs_closed": 0
+    "tabs_closed": 0,
+    "android_blocked": 0
   },
   "timestamp": "..."
 }

@@ -1,4 +1,6 @@
+pub mod android_blocker;
 pub mod api;
+pub mod congruency;
 pub mod app_blocker;
 pub mod browser_blocker;
 pub mod cli;

@@ -50,6 +50,9 @@ pub const KNOWN_KEYS: &[(&str, &str)] = &[
     ("youtube_restricted_mode", "false"),
     ("block_bypass", "true"),
     ("notification_sound", "Blow"),
+    ("firebase_project_id", ""),
+    ("firebase_rtdb_url", ""),
+    ("android_device_id", "android_pixel"),
 ];
 
 pub fn is_known_key(key: &str) -> bool {

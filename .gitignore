@@ -23,6 +23,16 @@ Thumbs.db
 blocked.txt
 allowed.txt
 
+# Android
+google-services.json
+*.apk
+.gradle/
+build/
+local.properties
+gradle/wrapper/gradle-wrapper.jar
+gradlew
+gradlew.bat
+
 # Claude Code
 .claude/
 .agents/

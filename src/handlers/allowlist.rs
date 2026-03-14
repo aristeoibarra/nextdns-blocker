@@ -112,8 +112,17 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
         }
     }
 
+    // Check congruency for added domains
+    let mut warnings = Vec::new();
+    for domain in &added {
+        let issues = crate::congruency::check_allowlist_add(db, domain);
+        for issue in issues {
+            warnings.push(serde_json::json!(issue));
+        }
+    }
+
     let result = AllowlistAddResult {
-        added, skipped,
+        added, skipped, warnings,
         errors: errors.iter().map(|(d,r)| format!("{d}: {r}")).collect(),
         duration: args.duration, pending_ids, watchdog_warning,
     };
@@ -226,6 +235,7 @@ struct AllowlistAddResult {
     added: Vec<String>,
     skipped: Vec<String>,
     errors: Vec<String>,
+    warnings: Vec<serde_json::Value>,
     duration: Option<String>,
     pending_ids: Vec<String>,
     watchdog_warning: Option<String>,
@@ -236,10 +246,11 @@ impl Renderable for AllowlistAddResult {
         serde_json::json!({
             "data": {
                 "added": self.added, "skipped": self.skipped, "errors": self.errors,
+                "warnings": self.warnings,
                 "duration": self.duration, "pending_ids": self.pending_ids,
                 "watchdog_warning": self.watchdog_warning,
             },
-            "summary": { "added": self.added.len(), "skipped": self.skipped.len() }
+            "summary": { "added": self.added.len(), "skipped": self.skipped.len(), "warnings": self.warnings.len() }
         })
     }
 }

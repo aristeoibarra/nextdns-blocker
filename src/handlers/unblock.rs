@@ -80,6 +80,24 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
+    // Unblock Android apps via Firebase RTDB + FCM push
+    let android_unblocked = if matches!(target_kind, UnblockTarget::Domain) {
+        crate::android_blocker::unblock_android_for_domain(&db, &args.target)
+            .unwrap_or_else(|e| {
+                let _ = db.with_conn(|conn| {
+                    crate::db::audit::log_action(conn, "unblock_android_failed", "android", &e.to_string(), None, "cli")
+                });
+                Vec::new()
+            })
+    } else {
+        Vec::new()
+    };
+    for ab in &android_unblocked {
+        let _ = db.with_conn(|conn| {
+            crate::db::audit::log_action(conn, "unblock_android", "android", &ab.package_name, Some(&ab.domain), "cli")
+        });
+    }
+
     // Build API client for eager push
     let api_client: Option<(crate::config::types::EnvConfig, crate::api::NextDnsClient)> =
         crate::config::types::EnvConfig::from_env().ok().and_then(|env| {
@@ -159,7 +177,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
             }
         }
 
-        let result = UnblockResult { target: args.target, duration: Some(dur_str.clone()), pending_id: Some(id), watchdog_warning, eager_push_failed, apps_unblocked, hosts_unblocked };
+        let result = UnblockResult { target: args.target, duration: Some(dur_str.clone()), pending_id: Some(id), watchdog_warning, eager_push_failed, apps_unblocked, hosts_unblocked, android_unblocked };
         output::render(&result);
     } else {
         match target_kind {
@@ -197,7 +215,7 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
             }
         }
 
-        let result = UnblockResult { target: args.target, duration: None, pending_id: None, watchdog_warning: None, eager_push_failed, apps_unblocked, hosts_unblocked };
+        let result = UnblockResult { target: args.target, duration: None, pending_id: None, watchdog_warning: None, eager_push_failed, apps_unblocked, hosts_unblocked, android_unblocked };
         output::render(&result);
     }
 
@@ -212,6 +230,7 @@ struct UnblockResult {
     eager_push_failed: bool,
     apps_unblocked: Vec<crate::app_blocker::AppUnblockResult>,
     hosts_unblocked: Vec<String>,
+    android_unblocked: Vec<crate::android_blocker::AndroidUnblockResult>,
 }
 impl Renderable for UnblockResult {
     fn command_name(&self) -> &str { "unblock" }
@@ -223,8 +242,9 @@ impl Renderable for UnblockResult {
                 "eager_push_failed": self.eager_push_failed,
                 "apps_unblocked": self.apps_unblocked,
                 "hosts_unblocked": self.hosts_unblocked,
+                "android_unblocked": self.android_unblocked,
             },
-            "summary": { "unblocked": 1, "apps_unblocked": self.apps_unblocked.len(), "hosts_unblocked": self.hosts_unblocked.len() }
+            "summary": { "unblocked": 1, "apps_unblocked": self.apps_unblocked.len(), "hosts_unblocked": self.hosts_unblocked.len(), "android_unblocked": self.android_unblocked.len() }
         })
     }
 }

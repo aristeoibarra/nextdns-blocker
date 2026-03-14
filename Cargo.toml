@@ -44,6 +44,9 @@ humantime = "2"
 # UUID for IDs
 uuid = { version = "1", features = ["v4"] }
 
+# JWT signing for Firebase OAuth2
+jsonwebtoken = "9"
+
 [dev-dependencies]
 # CLI testing
 assert_cmd = "2"

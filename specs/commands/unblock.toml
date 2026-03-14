@@ -29,12 +29,14 @@ schema = """
     "pending_id": "uuid",
     "watchdog_warning": null,
     "apps_unblocked": [],
-    "hosts_unblocked": []
+    "hosts_unblocked": [],
+    "android_unblocked": []
   },
   "summary": {
     "unblocked": 1,
     "apps_unblocked": 0,
-    "hosts_unblocked": 0
+    "hosts_unblocked": 0,
+    "android_unblocked": 0
   },
   "timestamp": "..."
 }

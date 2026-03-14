@@ -79,21 +79,30 @@ fn handle_add(db: &Database, args: DenylistAddArgs) -> Result<ExitCode, AppError
         }
     }
 
+    // Check congruency for added domains
+    let mut warnings = Vec::new();
+    for domain in &added {
+        let issues = crate::congruency::check_denylist_add(db, domain, args.schedule.is_some());
+        for issue in issues {
+            warnings.push(serde_json::json!(issue));
+        }
+    }
+
     let result = DenylistAddResult {
-        added, skipped,
+        added, skipped, warnings,
         errors: errors.iter().map(|(d, r)| format!("{d}: {r}")).collect(),
     };
     output::render(&result);
     Ok(ExitCode::Success)
 }
 
-struct DenylistAddResult { added: Vec<String>, skipped: Vec<String>, errors: Vec<String> }
+struct DenylistAddResult { added: Vec<String>, skipped: Vec<String>, errors: Vec<String>, warnings: Vec<serde_json::Value> }
 impl Renderable for DenylistAddResult {
     fn command_name(&self) -> &str { "denylist add" }
     fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "data": { "added": self.added, "skipped": self.skipped, "errors": self.errors },
-            "summary": { "added": self.added.len(), "skipped": self.skipped.len(), "errors": self.errors.len() }
+            "data": { "added": self.added, "skipped": self.skipped, "errors": self.errors, "warnings": self.warnings },
+            "summary": { "added": self.added.len(), "skipped": self.skipped.len(), "errors": self.errors.len(), "warnings": self.warnings.len() }
         })
     }
 }

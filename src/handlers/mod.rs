@@ -1,5 +1,7 @@
 pub mod allowlist;
+pub mod android;
 pub mod apps;
+pub mod doctor;
 pub mod audit;
 pub mod block;
 pub mod category;

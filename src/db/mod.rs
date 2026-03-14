@@ -1,3 +1,4 @@
+pub mod android;
 pub mod apps;
 pub mod audit;
 pub mod categories;

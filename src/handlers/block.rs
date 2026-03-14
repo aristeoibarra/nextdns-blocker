@@ -135,6 +135,21 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
+    // Block Android apps via Firebase RTDB + FCM push
+    let android_blocked = crate::android_blocker::block_android_for_domains(&db, &added, parsed_duration.as_ref())
+        .unwrap_or_else(|e| {
+            let _ = db.with_conn(|conn| {
+                crate::db::audit::log_action(conn, "block_android_failed", "android", &e.to_string(), None, "cli")
+            });
+            partial_failures.push(format!("Android blocking failed: {e}"));
+            Vec::new()
+        });
+    for ab in &android_blocked {
+        let _ = db.with_conn(|conn| {
+            crate::db::audit::log_action(conn, "block_android", "android", &ab.package_name, Some(&ab.domain), "cli")
+        });
+    }
+
     // Surface API retry warning so caller knows push is deferred
     if api_retrying > 0 && watchdog_warning.is_none() {
         watchdog_warning = Some(format!(
@@ -148,7 +163,7 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         duration: args.duration,
         pending_ids, watchdog_warning,
         apps_blocked, hosts_blocked,
-        tabs_closed,
+        tabs_closed, android_blocked,
         partial_failures,
     };
     output::render(&result);
@@ -165,6 +180,7 @@ struct BlockResult {
     apps_blocked: Vec<crate::app_blocker::AppBlockResult>,
     hosts_blocked: Vec<String>,
     tabs_closed: Vec<crate::browser_blocker::BrowserCloseResult>,
+    android_blocked: Vec<crate::android_blocker::AndroidBlockResult>,
     partial_failures: Vec<String>,
 }
 
@@ -179,6 +195,7 @@ impl Renderable for BlockResult {
                 "apps_blocked": self.apps_blocked,
                 "hosts_blocked": self.hosts_blocked,
                 "tabs_closed": self.tabs_closed,
+                "android_blocked": self.android_blocked,
                 "partial_failures": self.partial_failures,
             },
             "summary": {
@@ -186,6 +203,7 @@ impl Renderable for BlockResult {
                 "errors": self.errors.len(), "apps_blocked": self.apps_blocked.len(),
                 "hosts_blocked": self.hosts_blocked.len(),
                 "tabs_closed": self.tabs_closed.iter().map(|r| r.tabs_closed).sum::<u32>(),
+                "android_blocked": self.android_blocked.len(),
             }
         })
     }

@@ -378,6 +378,7 @@ pub fn execute_schedule_sync(
             .collect();
         if !deny_added.is_empty() {
             let _ = crate::app_blocker::block_apps_for_domains(db, &deny_added);
+            let _ = crate::android_blocker::block_android_for_domains(db, &deny_added, None);
         }
     }
     if !removed.is_empty() {
@@ -387,6 +388,7 @@ pub fn execute_schedule_sync(
             .collect();
         for domain in &deny_removed {
             let _ = crate::app_blocker::unblock_apps_for_domain(db, domain);
+            let _ = crate::android_blocker::unblock_android_for_domain(db, domain);
         }
     }
 

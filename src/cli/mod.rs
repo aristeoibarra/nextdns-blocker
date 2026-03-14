@@ -1,5 +1,7 @@
 pub mod allowlist;
+pub mod android;
 pub mod apps;
+pub mod doctor;
 pub mod audit;
 pub mod block;
 pub mod category;
@@ -90,6 +92,13 @@ pub enum Commands {
     /// Manage /etc/hosts blocking entries
     #[command(subcommand)]
     Hosts(hosts::HostsCommands),
+
+    /// Manage Android remote app blocking
+    #[command(subcommand)]
+    Android(android::AndroidCommands),
+
+    /// Check blocking rules for contradictions and redundancies
+    Doctor(doctor::DoctorArgs),
 
     /// Introspect command schemas and output formats
     #[command(subcommand)]

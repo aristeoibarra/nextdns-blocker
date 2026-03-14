@@ -1,4 +1,5 @@
 use nextdns_blocker::common::time::now_unix;
+use nextdns_blocker::db::android;
 use nextdns_blocker::db::apps;
 use nextdns_blocker::db::audit;
 use nextdns_blocker::db::categories;
@@ -575,7 +576,106 @@ fn test_blocked_app_crud() {
 }
 
 // ---------------------------------------------------------------------------
-// 14. Blocked domain deactivate / activate
+// 14. Android package mapping CRUD
+// ---------------------------------------------------------------------------
+#[test]
+fn test_android_mapping_crud() {
+    let db = setup_db();
+
+    db.with_conn(|conn| {
+        // Initially empty
+        assert!(android::list_mappings(conn)?.is_empty());
+
+        // Add mappings
+        android::add_mapping(conn, "youtube.com", "com.google.android.youtube", "YouTube", false)?;
+        android::add_mapping(conn, "tiktok.com", "com.zhiliaoapp.musically", "TikTok", true)?;
+
+        let list = android::list_mappings(conn)?;
+        assert_eq!(list.len(), 2);
+
+        // Get by domain
+        let yt = android::get_mappings_for_domain(conn, "youtube.com")?;
+        assert_eq!(yt.len(), 1);
+        assert_eq!(yt[0].package_name, "com.google.android.youtube");
+        assert_eq!(yt[0].display_name, "YouTube");
+        assert!(!yt[0].auto);
+
+        // Upsert (update display_name)
+        android::add_mapping(conn, "youtube.com", "com.google.android.youtube", "YouTube App", true)?;
+        let yt = android::get_mappings_for_domain(conn, "youtube.com")?;
+        assert_eq!(yt[0].display_name, "YouTube App");
+        assert!(yt[0].auto);
+
+        // Non-existent domain
+        let empty = android::get_mappings_for_domain(conn, "nonexistent.com")?;
+        assert!(empty.is_empty());
+
+        Ok(())
+    })
+    .expect("android mapping CRUD failed");
+}
+
+// ---------------------------------------------------------------------------
+// 15. Remote Android blocked CRUD
+// ---------------------------------------------------------------------------
+#[test]
+fn test_remote_android_blocked_crud() {
+    let db = setup_db();
+
+    db.with_conn(|conn| {
+        // Initially empty
+        assert!(android::list_remote_blocked(conn)?.is_empty());
+
+        // Add blocked package
+        android::add_remote_blocked(conn, "com.google.android.youtube", "youtube.com", "android_pixel", None)?;
+        android::add_remote_blocked(conn, "com.zhiliaoapp.musically", "tiktok.com", "android_pixel", Some(1710003600))?;
+
+        let list = android::list_remote_blocked(conn)?;
+        assert_eq!(list.len(), 2);
+
+        // Check fields
+        let yt = list.iter().find(|e| e.package_name == "com.google.android.youtube").unwrap();
+        assert_eq!(yt.domain, "youtube.com");
+        assert_eq!(yt.device_id, "android_pixel");
+        assert!(yt.unblock_at.is_none());
+        assert!(!yt.in_firebase);
+
+        let tt = list.iter().find(|e| e.package_name == "com.zhiliaoapp.musically").unwrap();
+        assert_eq!(tt.unblock_at, Some(1710003600));
+
+        // Get by domain
+        let by_domain = android::get_blocked_for_domain(conn, "youtube.com")?;
+        assert_eq!(by_domain.len(), 1);
+        assert_eq!(by_domain[0].package_name, "com.google.android.youtube");
+
+        // Set in_firebase
+        android::set_in_firebase(conn, "com.google.android.youtube", true, None)?;
+        let pending = android::get_pending_push(conn)?;
+        assert_eq!(pending.len(), 1); // only tiktok still pending
+        assert_eq!(pending[0].package_name, "com.zhiliaoapp.musically");
+
+        // Set error
+        android::set_in_firebase(conn, "com.zhiliaoapp.musically", false, Some("network error"))?;
+        let pending = android::get_pending_push(conn)?;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].push_error.as_deref(), Some("network error"));
+
+        // Remove
+        let removed = android::remove_remote_blocked(conn, "com.google.android.youtube")?;
+        assert!(removed);
+        assert_eq!(android::list_remote_blocked(conn)?.len(), 1);
+
+        // Remove non-existent
+        let removed = android::remove_remote_blocked(conn, "com.google.android.youtube")?;
+        assert!(!removed);
+
+        Ok(())
+    })
+    .expect("remote android blocked CRUD failed");
+}
+
+// ---------------------------------------------------------------------------
+// 16. Blocked domain deactivate / activate
 // ---------------------------------------------------------------------------
 #[test]
 fn test_blocked_domain_deactivate_activate() {

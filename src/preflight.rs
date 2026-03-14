@@ -46,6 +46,20 @@ fn run_inner() -> Result<(), crate::error::AppError> {
         });
     }
 
+    // Retry failed Android Firebase pushes (only if there are pending items)
+    if let Ok(pending) = db.with_conn(crate::db::android::get_pending_push) {
+        if !pending.is_empty() {
+            if let Err(e) = crate::android_blocker::retry_pending_pushes(&db) {
+                let _ = db.with_conn(|conn| {
+                    crate::db::audit::log_action(
+                        conn, "enforce_failed", "android_blocker", "preflight",
+                        Some(&e.to_string()), "preflight",
+                    )
+                });
+            }
+        }
+    }
+
     // Check if there's pending/retry work before building API client
     let has_pending = db.with_conn(crate::db::pending::has_due_pending)?;
     let has_retries = db.with_conn(crate::db::retry::has_due_retries)?;

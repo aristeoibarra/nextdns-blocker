@@ -55,5 +55,10 @@ pub fn get_migrations() -> Vec<(i64, &'static str, &'static str)> {
             "audit_source",
             include_str!("../../migrations/010_audit_source.sql"),
         ),
+        (
+            11,
+            "android_blocking",
+            include_str!("../../migrations/011_android_blocking.sql"),
+        ),
     ]
 }
