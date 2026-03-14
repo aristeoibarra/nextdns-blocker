@@ -86,8 +86,9 @@ class DrawerActivity : AppCompatActivity() {
     private fun loadApps() {
         val blocked = NdbAccessibilityService.getBlockedPackages(this)
         val hidden = prefs.getHiddenPackages()
+        val favorites = prefs.getFavorites().toSet()
         val apps = queryLaunchableApps(this)
-            .filter { it.packageName !in blocked && it.packageName !in hidden }
+            .filter { it.packageName !in blocked && it.packageName !in hidden && it.packageName !in favorites }
         adapter.submit(apps)
     }
 
@@ -104,6 +105,7 @@ class DrawerActivity : AppCompatActivity() {
 
         view.findViewById<TextView>(R.id.btnAddHome).setOnClickListener {
             prefs.addFavorite(app.packageName)
+            loadApps()
             dialog.dismiss()
         }
 
