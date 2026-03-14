@@ -39,12 +39,20 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
     let mut added = Vec::new();
     let mut skipped = Vec::new();
     let mut pending_ids = Vec::new();
+    let mut removed_from_allowlist = Vec::new();
 
     db.with_transaction(|conn| {
         for domain in &valid {
             if crate::common::domain::is_protected(domain.as_str()) {
                 skipped.push(domain.to_string());
                 continue;
+            }
+            // Auto-remove from allowlist if present (last action wins)
+            if crate::db::domains::is_allowed(conn, domain.as_str())? {
+                crate::db::domains::remove_allowed(conn, domain.as_str())?;
+                crate::db::audit::log_action(conn, "auto_remove", "allowlist", domain.as_str(),
+                    Some("removed from allowlist because domain is being blocked"), "cli")?;
+                removed_from_allowlist.push(domain.to_string());
             }
             let existed = crate::db::domains::is_blocked(conn, domain.as_str())?;
             crate::db::domains::add_blocked(
@@ -57,6 +65,15 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         }
         Ok(())
     })?;
+
+    // Eagerly remove from NextDNS allowlist if auto-removed
+    if !removed_from_allowlist.is_empty() {
+        if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
+            if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id.clone()) {
+                crate::sync::eager_push_allowlist(&db, &client, &removed_from_allowlist, false);
+            }
+        }
+    }
 
     let mut watchdog_warning = None;
     if let Some(ref dur_str) = args.duration {
@@ -142,11 +159,30 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         ));
     }
 
+    // Congruency checks for added domains
+    let mut warnings = Vec::new();
+    for domain in &added {
+        let issues = crate::congruency::check_denylist_add(&db, domain, false);
+        for issue in issues {
+            warnings.push(serde_json::json!(issue));
+        }
+    }
+    if !removed_from_allowlist.is_empty() {
+        for domain in &removed_from_allowlist {
+            warnings.push(serde_json::json!({
+                "code": "AUTO_REMOVED_FROM_ALLOWLIST",
+                "severity": "warning",
+                "domain": domain,
+                "message": format!("'{}' was automatically removed from allowlist", domain),
+            }));
+        }
+    }
+
     let result = BlockResult {
         added, skipped,
         errors: errors.iter().map(|(d, r)| format!("{d}: {r}")).collect(),
         duration: args.duration,
-        pending_ids, watchdog_warning,
+        pending_ids, watchdog_warning, warnings,
         apps_blocked,
         tabs_closed, android_blocked,
         partial_failures,
@@ -162,6 +198,7 @@ struct BlockResult {
     duration: Option<String>,
     pending_ids: Vec<String>,
     watchdog_warning: Option<String>,
+    warnings: Vec<serde_json::Value>,
     apps_blocked: Vec<crate::app_blocker::AppBlockResult>,
     tabs_closed: Vec<crate::browser_blocker::BrowserCloseResult>,
     android_blocked: Vec<crate::android_blocker::AndroidBlockResult>,
@@ -176,6 +213,7 @@ impl Renderable for BlockResult {
                 "added": self.added, "skipped": self.skipped, "errors": self.errors,
                 "duration": self.duration, "pending_ids": self.pending_ids,
                 "watchdog_warning": self.watchdog_warning,
+                "warnings": self.warnings,
                 "apps_blocked": self.apps_blocked,
                 "tabs_closed": self.tabs_closed,
                 "android_blocked": self.android_blocked,

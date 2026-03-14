@@ -49,9 +49,20 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
 
     let mut added = Vec::new();
     let mut skipped = Vec::new();
+    let mut removed_from_denylist = Vec::new();
 
     db.with_transaction(|conn| {
         for domain in &valid {
+            // Auto-remove from denylist if present (last action wins)
+            if crate::db::domains::is_blocked(conn, domain.as_str())
+                .map_err(AppError::from)? {
+                crate::db::domains::remove_blocked(conn, domain.as_str())
+                    .map_err(AppError::from)?;
+                crate::db::audit::log_action(conn, "auto_remove", "denylist", domain.as_str(),
+                    Some("removed from denylist because domain is being added to allowlist"), "cli")
+                    .map_err(AppError::from)?;
+                removed_from_denylist.push(domain.to_string());
+            }
             let existed = crate::db::domains::is_allowed(conn, domain.as_str())
                 .map_err(AppError::from)?;
             crate::db::domains::add_allowed(conn, domain.as_str(), args.description.as_deref(), args.schedule.as_deref())
@@ -63,6 +74,15 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
         }
         Ok(())
     })?;
+
+    // Eagerly remove from NextDNS denylist if auto-removed
+    if !removed_from_denylist.is_empty() {
+        if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
+            if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id.clone()) {
+                crate::sync::eager_push_denylist(&db, &client, &removed_from_denylist, false);
+            }
+        }
+    }
 
     // Create pending removal actions for --duration
     let mut pending_ids = Vec::new();
@@ -115,10 +135,18 @@ fn handle_add(db: &Database, args: AllowlistAddArgs) -> Result<ExitCode, AppErro
     // Check congruency for added domains
     let mut warnings = Vec::new();
     for domain in &added {
-        let issues = crate::congruency::check_allowlist_add(db, domain);
+        let issues = crate::congruency::check_allowlist_add(&db, domain);
         for issue in issues {
             warnings.push(serde_json::json!(issue));
         }
+    }
+    for domain in &removed_from_denylist {
+        warnings.push(serde_json::json!({
+            "code": "AUTO_REMOVED_FROM_DENYLIST",
+            "severity": "warning",
+            "domain": domain,
+            "message": format!("'{}' was automatically removed from denylist", domain),
+        }));
     }
 
     let result = AllowlistAddResult {

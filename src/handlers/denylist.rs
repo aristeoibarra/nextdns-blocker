@@ -48,14 +48,39 @@ fn handle_add(db: &Database, args: DenylistAddArgs) -> Result<ExitCode, AppError
         });
     }
 
+    // Hard reject: schedule + covered by NextDNS category = ineffective
+    if args.schedule.is_some() {
+        for domain in &valid {
+            let issues = crate::congruency::check_denylist_add(&db, domain.as_str(), true);
+            if let Some(issue) = issues.iter().find(|i| i.code == "INEFFECTIVE_SCHEDULE") {
+                return Err(AppError::Validation {
+                    message: issue.message.clone(),
+                    details: vec![],
+                    hint: Some(issue.suggestion.clone()),
+                });
+            }
+        }
+    }
+
     let mut added = Vec::new();
     let mut skipped = Vec::new();
+    let mut removed_from_allowlist = Vec::new();
 
     db.with_transaction(|conn| {
         for domain in &valid {
             if crate::common::domain::is_protected(domain.as_str()) {
                 skipped.push(domain.to_string());
                 continue;
+            }
+            // Auto-remove from allowlist if present (last action wins)
+            if crate::db::domains::is_allowed(conn, domain.as_str())
+                .map_err(AppError::from)? {
+                crate::db::domains::remove_allowed(conn, domain.as_str())
+                    .map_err(AppError::from)?;
+                crate::db::audit::log_action(conn, "auto_remove", "allowlist", domain.as_str(),
+                    Some("removed from allowlist because domain is being added to denylist"), "cli")
+                    .map_err(AppError::from)?;
+                removed_from_allowlist.push(domain.to_string());
             }
             let existed = crate::db::domains::is_blocked(conn, domain.as_str())
                 .map_err(AppError::from)?;
@@ -71,6 +96,15 @@ fn handle_add(db: &Database, args: DenylistAddArgs) -> Result<ExitCode, AppError
         Ok(())
     })?;
 
+    // Eagerly remove from NextDNS allowlist if auto-removed
+    if !removed_from_allowlist.is_empty() {
+        if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
+            if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id.clone()) {
+                crate::sync::eager_push_allowlist(&db, &client, &removed_from_allowlist, false);
+            }
+        }
+    }
+
     if !added.is_empty() {
         if let Ok(env_config) = crate::config::types::EnvConfig::from_env() {
             if let Ok(client) = crate::api::NextDnsClient::new(&env_config.api_key, env_config.profile_id) {
@@ -82,10 +116,18 @@ fn handle_add(db: &Database, args: DenylistAddArgs) -> Result<ExitCode, AppError
     // Check congruency for added domains
     let mut warnings = Vec::new();
     for domain in &added {
-        let issues = crate::congruency::check_denylist_add(db, domain, args.schedule.is_some());
+        let issues = crate::congruency::check_denylist_add(&db, domain, args.schedule.is_some());
         for issue in issues {
             warnings.push(serde_json::json!(issue));
         }
+    }
+    for domain in &removed_from_allowlist {
+        warnings.push(serde_json::json!({
+            "code": "AUTO_REMOVED_FROM_ALLOWLIST",
+            "severity": "warning",
+            "domain": domain,
+            "message": format!("'{}' was automatically removed from allowlist", domain),
+        }));
     }
 
     let result = DenylistAddResult {
