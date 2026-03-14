@@ -11,65 +11,30 @@
         android:orientation="vertical"
         android:padding="20dp">
 
-        <!-- Header -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textSize="28sp"
-            android:textStyle="bold"
-            android:textColor="@color/text_primary"
-            android:letterSpacing="0.05"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="32dp" />
-
-        <!-- Service Status Card -->
+        <!-- Protection Status Indicator (compact) -->
         <LinearLayout
-            style="@style/Widget.NdbBlocker.Card"
+            android:id="@+id/protectionBanner"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
             android:layout_marginBottom="16dp">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="16dp">
-
-                <View
-                    android:id="@+id/statusDot"
-                    android:layout_width="10dp"
-                    android:layout_height="10dp"
-                    android:background="@drawable/status_dot"
-                    android:layout_marginEnd="10dp" />
-
-                <TextView
-                    android:id="@+id/tvServiceStatus"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/text_primary" />
-
-            </LinearLayout>
+            <View
+                android:id="@+id/protectionDot"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:background="@drawable/status_dot"
+                android:layout_marginEnd="8dp" />
 
             <TextView
-                android:id="@+id/tvServiceHint"
-                android:layout_width="match_parent"
+                android:id="@+id/tvProtectionStatus"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textSize="13sp"
-                android:textColor="@color/text_secondary"
-                android:layout_marginBottom="16dp" />
-
-            <Button
-                android:id="@+id/btnEnable"
-                style="@style/Widget.NdbBlocker.Button.Primary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/btn_enable" />
+                android:textColor="@color/text_secondary" />
 
         </LinearLayout>
 
@@ -78,6 +43,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
+            android:layout_marginTop="16dp"
             android:layout_marginBottom="16dp">
 
             <!-- Apps Blocked -->
@@ -265,58 +231,7 @@
             style="@style/Widget.NdbBlocker.Button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/btn_sync"
-            android:layout_marginBottom="16dp" />
-
-        <!-- Device Admin Card -->
-        <LinearLayout
-            android:id="@+id/cardDeviceAdmin"
-            style="@style/Widget.NdbBlocker.Card"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="12dp">
-
-                <View
-                    android:id="@+id/adminDot"
-                    android:layout_width="10dp"
-                    android:layout_height="10dp"
-                    android:background="@drawable/status_dot"
-                    android:layout_marginEnd="10dp" />
-
-                <TextView
-                    android:id="@+id/tvAdminStatus"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/text_primary" />
-
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/tvAdminHint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="12sp"
-                android:textColor="#555555"
-                android:layout_marginBottom="12dp" />
-
-            <Button
-                android:id="@+id/btnDeviceAdmin"
-                style="@style/Widget.NdbBlocker.Button"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/btn_enable_admin" />
-
-        </LinearLayout>
+            android:text="@string/btn_sync" />
 
     </LinearLayout>
 

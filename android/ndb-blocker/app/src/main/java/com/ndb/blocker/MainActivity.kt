@@ -14,6 +14,7 @@ class MainActivity : AppCompatActivity() {
     private val blockedFragment = BlockedFragment()
     private val allowedFragment = AllowedFragment()
     private val dnsFragment = DnsFragment()
+    private val settingsFragment = SettingsFragment()
     private var activeFragment: Fragment = statusFragment
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -23,6 +24,7 @@ class MainActivity : AppCompatActivity() {
 
         // Add all fragments, hide non-active
         supportFragmentManager.beginTransaction()
+            .add(R.id.fragmentContainer, settingsFragment, "settings").hide(settingsFragment)
             .add(R.id.fragmentContainer, dnsFragment, "dns").hide(dnsFragment)
             .add(R.id.fragmentContainer, allowedFragment, "allowed").hide(allowedFragment)
             .add(R.id.fragmentContainer, blockedFragment, "blocked").hide(blockedFragment)
@@ -36,6 +38,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.nav_blocked -> blockedFragment
                 R.id.nav_allowed -> allowedFragment
                 R.id.nav_dns -> dnsFragment
+                R.id.nav_settings -> settingsFragment
                 else -> statusFragment
             }
             if (selected != activeFragment) {

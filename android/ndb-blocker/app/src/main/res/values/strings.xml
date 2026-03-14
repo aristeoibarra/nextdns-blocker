@@ -36,4 +36,13 @@
     <string name="empty_allowed">No allowed apps or domains.</string>
     <string name="tab_dns">DNS</string>
     <string name="empty_dns">No DNS data. Run ndb android sync from the CLI.</string>
+    <string name="tab_settings">Settings</string>
+    <string name="label_accessibility_service">Accessibility Service</string>
+    <string name="label_firebase">Firebase</string>
+    <string name="label_firebase_project">Project</string>
+    <string name="label_fcm_token">FCM Token</string>
+    <string name="status_registered">Registered</string>
+    <string name="status_not_registered">Not registered</string>
+    <string name="status_not_configured">Not configured</string>
+    <string name="status_error">Error</string>
 </resources>

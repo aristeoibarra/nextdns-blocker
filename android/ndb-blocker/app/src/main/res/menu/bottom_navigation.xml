@@ -2,18 +2,22 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:id="@+id/nav_status"
-        android:icon="@android:drawable/ic_menu_info_details"
+        android:icon="@drawable/ic_nav_status"
         android:title="@string/tab_status" />
     <item
         android:id="@+id/nav_blocked"
-        android:icon="@android:drawable/ic_lock_lock"
+        android:icon="@drawable/ic_nav_blocked"
         android:title="@string/tab_blocked" />
     <item
         android:id="@+id/nav_allowed"
-        android:icon="@android:drawable/ic_lock_idle_lock"
+        android:icon="@drawable/ic_nav_allowed"
         android:title="@string/tab_allowed" />
     <item
         android:id="@+id/nav_dns"
-        android:icon="@android:drawable/ic_menu_mapmode"
+        android:icon="@drawable/ic_nav_dns"
         android:title="@string/tab_dns" />
+    <item
+        android:id="@+id/nav_settings"
+        android:icon="@drawable/ic_nav_settings"
+        android:title="@string/tab_settings" />
 </menu>
