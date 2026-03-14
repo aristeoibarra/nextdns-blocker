@@ -5,37 +5,15 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Shield shape -->
+    <!-- Single lowercase "n" — thin geometric, centered in safe zone -->
+    <!-- Left vertical stroke -->
     <path
-        android:fillColor="#BB86FC"
-        android:pathData="M54,22 L78,32 L78,52 C78,66 68,78 54,84 C40,78 30,66 30,52 L30,32 Z" />
+        android:fillColor="#7A9E7E"
+        android:pathData="M36,72 L36,36 L39.5,36 L39.5,72 Z" />
 
-    <!-- Inner shield (dark cutout) -->
+    <!-- Arch + right vertical stroke -->
     <path
-        android:fillColor="#0D0D0D"
-        android:pathData="M54,27 L74,35.5 L74,52 C74,64 65.5,74.5 54,80 C42.5,74.5 34,64 34,52 L34,35.5 Z" />
-
-    <!-- Block/ban circle -->
-    <path
-        android:fillColor="#F44336"
-        android:pathData="M54,42 m-13,0 a13,13 0 1,1 26,0 a13,13 0 1,1 -26,0"
-        android:strokeWidth="0" />
-
-    <!-- Diagonal line through circle (ban symbol) -->
-    <path
-        android:fillColor="#0D0D0D"
-        android:pathData="M44.8,46.2 L58.8,36.8 C60.4,38.2 61.5,40.1 62,42.2 L47.2,52.2 C45.2,50.6 44.2,48.4 44.8,46.2 Z" />
-
-    <!-- Inner ban circle (donut hole) -->
-    <path
-        android:fillColor="#0D0D0D"
-        android:pathData="M54,46 m-5,0 a5,5 0 1,1 10,0 a5,5 0 1,1 -10,0" />
-
-    <!-- Ban diagonal stripe (cleaner) -->
-    <path
-        android:strokeColor="#0D0D0D"
-        android:strokeWidth="3.5"
-        android:pathData="M44,51 L64,39"
-        android:strokeLineCap="round" />
+        android:fillColor="#7A9E7E"
+        android:pathData="M39.5,46 C39.5,39 45,34 53,34 C61,34 66.5,39 66.5,46 L66.5,72 L63,72 L63,46 C63,41 59,37 53,37 C47,37 43,41 43,46" />
 
 </vector>
