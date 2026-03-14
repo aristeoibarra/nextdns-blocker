@@ -51,7 +51,7 @@
 
     <style name="Widget.NdbBlocker.BottomSheet" parent="Widget.MaterialComponents.BottomSheet">
         <item name="shapeAppearanceOverlay">@style/ShapeAppearance.NdbBlocker.BottomSheet</item>
-        <item name="backgroundTint">#0A0A0A</item>
+        <item name="backgroundTint">#000000</item>
     </style>
 
     <style name="ShapeAppearance.NdbBlocker.BottomSheet" parent="">
