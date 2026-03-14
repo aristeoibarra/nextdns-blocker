@@ -27,8 +27,8 @@ class HomeAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val app = items[position]
         holder.name.text = app.label
-        holder.itemView.setOnClickListener { onTap(app.packageName) }
-        holder.itemView.setOnLongClickListener {
+        holder.name.setOnClickListener { onTap(app.packageName) }
+        holder.name.setOnLongClickListener {
             onLongPress(app.packageName, app.label)
             true
         }
