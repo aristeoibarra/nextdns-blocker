@@ -3,6 +3,8 @@ package com.ndb.blocker
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -39,6 +41,13 @@ class MainActivity : AppCompatActivity() {
         // Tap apps count → show blocked list
         findViewById<LinearLayout>(R.id.statsApps).setOnClickListener {
             showBlockedList()
+        }
+
+        // Tap service row → open accessibility settings if inactive
+        findViewById<LinearLayout>(R.id.rowService).setOnClickListener {
+            if (!NdbAccessibilityService.isRunning) {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
         }
 
         // Sync button
