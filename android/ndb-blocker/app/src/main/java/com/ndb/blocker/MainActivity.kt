@@ -230,18 +230,23 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<TextView>(R.id.tvSheetTitle).text = "${state.blocked.size} apps blocked"
 
         val container = view.findViewById<LinearLayout>(R.id.listContainer)
+        val font = androidx.core.content.res.ResourcesCompat.getFont(this, R.font.outfit_light)
         for (entry in state.blocked.sortedBy { it.name }) {
             val row = TextView(this).apply {
                 text = entry.name
                 textSize = 18f
                 setTextColor(0xFFFFFFFF.toInt())
-                typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
-                setPadding(0, 12, 0, 12)
+                typeface = font
+                setPadding(0, 10, 0, 10)
             }
             container.addView(row)
         }
 
         dialog.setContentView(view)
+
+        // Limit height to 70% of screen
+        dialog.behavior.maxHeight = (resources.displayMetrics.heightPixels * 0.7).toInt()
+
         dialog.show()
     }
 }
