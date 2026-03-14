@@ -11,11 +11,11 @@ CLI tool (`ndb`) for managing NextDNS domain blocking with scheduling, notificat
 ```bash
 cargo build                    # Build debug binary
 cargo build --release          # Build optimized binary (LTO, stripped)
-cargo test                     # Run all tests (63 total: 16 unit + 47 integration)
+cargo test                     # Run all tests (79 total: 25 unit + 54 integration)
 cargo test --lib               # Unit tests only
 cargo test --test cli_test     # CLI integration tests only (12)
-cargo test --test db_test      # Database tests only (13)
-cargo test --test integration_test  # Integration tests (10)
+cargo test --test db_test      # Database tests only (15)
+cargo test --test integration_test  # Integration tests (15)
 cargo test --test spec_contract_test  # Spec contract tests only (12)
 cargo test <test_name>         # Run a single test by name
 ```
@@ -39,6 +39,7 @@ main.rs → Cli::parse() → preflight::run() → run(command) → handlers::<cm
 `preflight` module runs before every command (except init, watchdog, schema). Best-effort, never blocks. Handles:
 - App enforcement (batch `ps` check + killall)
 - Hosts enforcement (re-apply /etc/hosts if drifted)
+- Android Firebase retry (re-push failed packages if `in_firebase = 0`)
 - Process due pending actions (if API client available)
 - Process due retries (if API client available)
 
@@ -64,7 +65,7 @@ The `Renderable` trait has only two methods: `command_name()` and `to_json()`. N
 
 ### Database Layer
 
-`db::Database` wraps `rusqlite::Connection` in `Mutex`. Access via `db.with_conn(|conn| { ... })` or `db.with_transaction(|conn| { ... })` for atomic multi-write operations. All tables use SQLite STRICT mode. Migrations in `src/db/schema.rs` via `include_str!()` from `migrations/` (9 migration files). WAL mode enabled.
+`db::Database` wraps `rusqlite::Connection` in `Mutex`. Access via `db.with_conn(|conn| { ... })` or `db.with_transaction(|conn| { ... })` for atomic multi-write operations. All tables use SQLite STRICT mode. Migrations in `src/db/schema.rs` via `include_str!()` from `migrations/` (11 migration files). WAL mode enabled.
 
 ### Config System
 
@@ -91,6 +92,10 @@ The `Renderable` trait has only two methods: `command_name()` and `to_json()`. N
 ### Browser Blocker
 
 `browser_blocker` module closes browser tabs matching blocked domains via AppleScript. Supports Chromium-based browsers (Chrome, Brave) only — Firefox/Zen don't support tab-level scripting. `close_tabs_for_domains(domains)` checks if browser is running before executing, iterates tabs in reverse to avoid index shifting during close, and escapes strings for AppleScript safety.
+
+### Android Blocker
+
+`android_blocker` module is the 5th blocking layer — remote Android app blocking via Firebase. When `ndb block youtube.com` runs, it also pushes the block to Firebase RTDB and sends an FCM push to wake the Android app (Device Owner) which calls `setApplicationHidden()`. Uses OAuth2 with service account JWT (RS256) for Firebase auth, tokens cached in `~/.ndb/.firebase_token`. Known domain-to-Android-package mappings in `android_blocker::mappings::ANDROID_PACKAGES`. DB tables: `android_package_mappings` (domain↔package), `remote_android_blocked` (push state with `in_firebase` flag). Failed pushes retry in pre-flight. Config: `firebase_project_id`, `firebase_rtdb_url`, `android_device_id` in kv_config; `firebase-service-account` secret (path to JSON). Silently skips if Firebase not configured.
 
 ### Notifications
 
