@@ -7,7 +7,9 @@ import android.content.Intent
 import android.provider.Settings
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.view.GestureDetector
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.HorizontalScrollView
@@ -29,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adminComponent: ComponentName
 
     private var cachedSyncState: SyncState? = null
+    private lateinit var gestureDetector: GestureDetector
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,6 +53,20 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Swipe right → back to home
+        gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, vX: Float, vY: Float): Boolean {
+                if (e1 == null) return false
+                val dx = e2.x - e1.x
+                val dy = e2.y - e1.y
+                if (dx > 80 && kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
+                    goBack()
+                    return true
+                }
+                return false
+            }
+        })
+
         // Sync button
         findViewById<Button>(R.id.btnSync).setOnClickListener {
             val btn = it as Button
@@ -62,6 +79,21 @@ class MainActivity : AppCompatActivity() {
                 btn.text = getString(R.string.btn_sync)
             }, 2500)
         }
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        gestureDetector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        goBack()
+    }
+
+    private fun goBack() {
+        finish()
+        overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right)
     }
 
     override fun onResume() {

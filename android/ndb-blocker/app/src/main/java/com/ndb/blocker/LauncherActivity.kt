@@ -64,6 +64,10 @@ class LauncherActivity : AppCompatActivity() {
                     openDrawer()
                     return true
                 }
+                if (dx < -80 && abs(dx) > abs(dy)) {
+                    openSettings()
+                    return true
+                }
                 return false
             }
 
@@ -135,6 +139,11 @@ class LauncherActivity : AppCompatActivity() {
     private fun openDrawer() {
         startActivity(Intent(this, DrawerActivity::class.java))
         overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right)
+    }
+
+    private fun openSettings() {
+        startActivity(Intent(this, MainActivity::class.java))
+        overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
     }
 
     private fun openStockLauncher() {

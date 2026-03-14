@@ -46,10 +46,6 @@ class DrawerActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) {}
         })
 
-        findViewById<ImageView>(R.id.btnSettings).setOnClickListener {
-            startActivity(Intent(this, MainActivity::class.java))
-        }
-
         findViewById<ImageView>(R.id.btnHidden).setOnClickListener {
             startActivity(Intent(this, HiddenAppsActivity::class.java))
         }

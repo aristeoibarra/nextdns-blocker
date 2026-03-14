@@ -34,25 +34,13 @@
         android:layout_weight="1"
         android:clipToPadding="false" />
 
-    <!-- Bottom bar: gear + hidden -->
+    <!-- Bottom bar: hidden apps only -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
         android:gravity="center"
         android:paddingTop="12dp"
-        android:paddingBottom="16dp"
-        android:background="@android:color/transparent">
-
-        <ImageView
-            android:id="@+id/btnSettings"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_nav_settings"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/tab_settings"
-            android:layout_marginEnd="32dp" />
+        android:paddingBottom="16dp">
 
         <ImageView
             android:id="@+id/btnHidden"
