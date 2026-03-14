@@ -45,77 +45,69 @@ class DnsFragment : Fragment() {
         }
         tvEmpty.visibility = View.GONE
 
-        tvSummary.text = "${state.totalBlockedDomains} domains blocked \u00B7 ${state.totalAllowedDomains} allowed"
+        tvSummary.text = "${state.totalBlockedDomains} blocked \u00B7 ${state.totalAllowedDomains} allowed"
 
-        // Render custom categories as collapsible sections
         for (cat in state.customCategories.sortedByDescending { it.count }) {
             addCategorySection(container, cat)
         }
 
-        // Uncategorized denylist
         if (state.uncategorized.isNotEmpty()) {
             val section = CollapsibleSection(requireContext())
-            section.setTitle("UNCATEGORIZED")
+            section.setTitle("Uncategorized")
             section.setCount(state.uncategorized.size)
-            section.setBarColor(0xFFF44336.toInt())
+            section.setBarColor(0xFF555555.toInt())
 
             val body = section.getContentContainer()
             for (domain in state.uncategorized.sortedBy { it.domain }) {
-                addDomainRow(body, domain.domain, domain.description, 0xFFF44336.toInt())
+                addDomainRow(body, domain.domain, domain.description, 0xFF333333.toInt())
             }
-
             container.addView(section)
         }
 
-        // Allowed domains
         if (state.allowedDomains.isNotEmpty()) {
             val section = CollapsibleSection(requireContext())
-            section.setTitle("ALLOWED")
+            section.setTitle("Allowed")
             section.setCount(state.allowedDomains.size)
-            section.setBarColor(0xFF4CAF50.toInt())
+            section.setBarColor(0xFF7A9E7E.toInt())
 
             val body = section.getContentContainer()
             for (domain in state.allowedDomains.sortedBy { it.domain }) {
-                addDomainRow(body, domain.domain, domain.description, 0xFF4CAF50.toInt())
+                addDomainRow(body, domain.domain, domain.description, 0xFF7A9E7E.toInt())
             }
-
             container.addView(section)
         }
     }
 
     private fun addCategorySection(container: LinearLayout, cat: DnsCategory) {
         val section = CollapsibleSection(requireContext())
-        section.setTitle(cat.name.uppercase().replace('-', ' '))
+        section.setTitle(cat.name.replace('-', ' ').replaceFirstChar { it.uppercase() })
         section.setCount(cat.count)
-        section.setBarColor(0xFFF44336.toInt())
+        section.setBarColor(0xFF555555.toInt())
 
         val body = section.getContentContainer()
 
-        // Description inside the body
         if (!cat.description.isNullOrEmpty()) {
             val desc = TextView(requireContext()).apply {
                 text = cat.description
                 textSize = 12f
-                setTextColor(0xFF888888.toInt())
+                setTextColor(0xFF555555.toInt())
                 setPadding(4, 8, 0, 12)
             }
             body.addView(desc)
         }
 
-        // Schedule hint
         if (!cat.schedule.isNullOrEmpty()) {
             val sched = TextView(requireContext()).apply {
                 text = "\u23F0 Scheduled"
                 textSize = 11f
-                setTextColor(0xFFFFD740.toInt())
+                setTextColor(0xFF555555.toInt())
                 setPadding(4, 0, 0, 8)
             }
             body.addView(sched)
         }
 
-        // Domain list with descriptions
         for (d in cat.domains.sortedBy { it.domain }) {
-            addDomainRow(body, d.domain, d.description, 0xFFF44336.toInt())
+            addDomainRow(body, d.domain, d.description, 0xFF333333.toInt())
         }
 
         container.addView(section)
@@ -128,14 +120,12 @@ class DnsFragment : Fragment() {
             setPadding(4, 8, 4, 8)
         }
 
-        // Color bar
         val bar = View(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(3, 28).apply { marginEnd = 12 }
+            layoutParams = LinearLayout.LayoutParams(2, 24).apply { marginEnd = 12 }
             setBackgroundColor(accentColor)
         }
         row.addView(bar)
 
-        // Text column
         val textCol = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -144,7 +134,7 @@ class DnsFragment : Fragment() {
         val domainTv = TextView(requireContext()).apply {
             text = domain
             textSize = 13f
-            setTextColor(0xFFE0E0E0.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
             typeface = Typeface.MONOSPACE
         }
         textCol.addView(domainTv)
@@ -153,7 +143,7 @@ class DnsFragment : Fragment() {
             val descTv = TextView(requireContext()).apply {
                 text = description
                 textSize = 11f
-                setTextColor(0xFF666666.toInt())
+                setTextColor(0xFF444444.toInt())
             }
             textCol.addView(descTv)
         }

@@ -9,36 +9,25 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
-
-        <!-- Header -->
-        <TextView
-            android:id="@+id/tvBlockedHeader"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/tab_blocked"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:textColor="@color/text_primary"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="8dp" />
+        android:padding="24dp">
 
         <TextView
             android:id="@+id/tvBlockedSummary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
+            android:textSize="13sp"
+            android:fontFamily="@font/outfit_light"
             android:textColor="@color/text_secondary"
-            android:layout_marginBottom="16dp" />
+            android:paddingTop="16dp"
+            android:layout_marginBottom="24dp" />
 
-        <!-- Summary card with breakdown -->
+        <!-- Summary breakdown -->
         <LinearLayout
             android:id="@+id/summaryCard"
-            style="@style/Widget.NdbBlocker.Card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginBottom="20dp"
+            android:layout_marginBottom="24dp"
             android:visibility="gone">
 
             <LinearLayout
@@ -49,20 +38,21 @@
 
         </LinearLayout>
 
-        <!-- Blocked Apps List (collapsible sections) -->
+        <!-- Collapsible sections -->
         <LinearLayout
             android:id="@+id/blockedListContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical" />
 
-        <!-- Empty State -->
+        <!-- Empty -->
         <TextView
             android:id="@+id/tvEmptyBlocked"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/empty_blocked"
-            android:textSize="14sp"
+            android:textSize="13sp"
+            android:fontFamily="@font/outfit_light"
             android:textColor="@color/text_secondary"
             android:gravity="center"
             android:paddingTop="40dp"

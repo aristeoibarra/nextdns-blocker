@@ -70,7 +70,7 @@ class SettingsFragment : Fragment() {
         btnEnable.text = if (running) getString(R.string.btn_settings) else getString(R.string.btn_enable)
 
         val dotDrawable = statusDot.background as? GradientDrawable
-        dotDrawable?.setColor(if (running) 0xFF4CAF50.toInt() else 0xFFF44336.toInt())
+        dotDrawable?.setColor(if (running) 0xFF7A9E7E.toInt() else 0xFF555555.toInt())
 
         // Device Admin status
         val tvAdminStatus = view.findViewById<TextView>(R.id.tvAdminStatus)
@@ -85,7 +85,7 @@ class SettingsFragment : Fragment() {
         btnDeviceAdmin.text = if (isAdmin) getString(R.string.btn_disable_admin) else getString(R.string.btn_enable_admin)
 
         val adminDotDrawable = adminDot.background as? GradientDrawable
-        adminDotDrawable?.setColor(if (isAdmin) 0xFF4CAF50.toInt() else 0xFF666666.toInt())
+        adminDotDrawable?.setColor(if (isAdmin) 0xFF7A9E7E.toInt() else 0xFF333333.toInt())
 
         // Firebase info
         val tvFirebaseProject = view.findViewById<TextView>(R.id.tvFirebaseProject)
@@ -103,17 +103,17 @@ class SettingsFragment : Fragment() {
                 val fcmDotDrawable = fcmDot.background as? GradientDrawable
                 if (token.isNullOrEmpty()) {
                     tvFcmStatus.text = getString(R.string.status_not_registered)
-                    fcmDotDrawable?.setColor(0xFFF44336.toInt())
+                    fcmDotDrawable?.setColor(0xFF555555.toInt())
                 } else {
                     tvFcmStatus.text = getString(R.string.status_registered)
-                    fcmDotDrawable?.setColor(0xFF4CAF50.toInt())
+                    fcmDotDrawable?.setColor(0xFF7A9E7E.toInt())
                 }
             }
         }.addOnFailureListener {
             activity?.runOnUiThread {
                 tvFcmStatus.text = getString(R.string.status_error)
                 val fcmDotDrawable = fcmDot.background as? GradientDrawable
-                fcmDotDrawable?.setColor(0xFFF44336.toInt())
+                fcmDotDrawable?.setColor(0xFF555555.toInt())
             }
         }
     }

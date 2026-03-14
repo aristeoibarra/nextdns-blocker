@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="category_social_networks">#E040FB</color>
-    <color name="category_video_streaming">#FF5252</color>
-    <color name="category_gaming">#69F0AE</color>
-    <color name="category_dating">#FF4081</color>
-    <color name="category_gambling">#FFD740</color>
-    <color name="accent_purple">#BB86FC</color>
-    <color name="accent_green">#4CAF50</color>
+    <color name="category_social_networks">#888888</color>
+    <color name="category_video_streaming">#777777</color>
+    <color name="category_gaming">#999999</color>
+    <color name="category_dating">#777777</color>
+    <color name="category_gambling">#888888</color>
+    <color name="accent">#7A9E7E</color>
+    <color name="accent_purple">#7A9E7E</color>
+    <color name="accent_green">#7A9E7E</color>
     <color name="bg_dark">#000000</color>
-    <color name="bg_card">#1A1A1A</color>
-    <color name="text_primary">#E0E0E0</color>
-    <color name="text_secondary">#666666</color>
-    <color name="bottom_nav_bg">#121212</color>
+    <color name="bg_card">#0A0A0A</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#555555</color>
+    <color name="text_tertiary">#333333</color>
+    <color name="bottom_nav_bg">#000000</color>
+    <color name="divider">#1A1A1A</color>
 </resources>

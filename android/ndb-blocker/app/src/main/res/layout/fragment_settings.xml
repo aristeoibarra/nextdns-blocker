@@ -9,201 +9,190 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:padding="24dp">
 
-        <!-- Section: Accessibility Service -->
+        <!-- Accessibility Service -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/label_accessibility_service"
-            android:textSize="12sp"
+            android:textSize="11sp"
+            android:fontFamily="@font/outfit_light"
             android:textColor="@color/text_secondary"
-            android:textAllCaps="true"
-            android:letterSpacing="0.1"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="12dp" />
+            android:paddingTop="16dp"
+            android:layout_marginBottom="16dp" />
 
         <LinearLayout
-            style="@style/Widget.NdbBlocker.Card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginBottom="24dp">
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="12dp">
-
-                <View
-                    android:id="@+id/statusDot"
-                    android:layout_width="10dp"
-                    android:layout_height="10dp"
-                    android:background="@drawable/status_dot"
-                    android:layout_marginEnd="10dp" />
-
-                <TextView
-                    android:id="@+id/tvServiceStatus"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/text_primary" />
-
-            </LinearLayout>
+            <View
+                android:id="@+id/statusDot"
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:background="@drawable/status_dot"
+                android:layout_marginEnd="10dp" />
 
             <TextView
-                android:id="@+id/tvServiceHint"
-                android:layout_width="match_parent"
+                android:id="@+id/tvServiceStatus"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="13sp"
-                android:textColor="@color/text_secondary"
-                android:layout_marginBottom="16dp" />
-
-            <Button
-                android:id="@+id/btnEnable"
-                style="@style/Widget.NdbBlocker.Button.Primary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/btn_enable" />
+                android:textSize="15sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_primary" />
 
         </LinearLayout>
 
-        <!-- Section: Device Admin -->
+        <TextView
+            android:id="@+id/tvServiceHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:fontFamily="@font/outfit_light"
+            android:textColor="@color/text_secondary"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/btnEnable"
+            style="@style/Widget.NdbBlocker.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_enable" />
+
+        <!-- Divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/divider"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Device Admin -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/label_device_admin"
-            android:textSize="12sp"
+            android:textSize="11sp"
+            android:fontFamily="@font/outfit_light"
             android:textColor="@color/text_secondary"
-            android:textAllCaps="true"
-            android:letterSpacing="0.1"
-            android:layout_marginBottom="12dp" />
+            android:layout_marginBottom="16dp" />
 
         <LinearLayout
-            style="@style/Widget.NdbBlocker.Card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginBottom="24dp">
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="12dp">
-
-                <View
-                    android:id="@+id/adminDot"
-                    android:layout_width="10dp"
-                    android:layout_height="10dp"
-                    android:background="@drawable/status_dot"
-                    android:layout_marginEnd="10dp" />
-
-                <TextView
-                    android:id="@+id/tvAdminStatus"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/text_primary" />
-
-            </LinearLayout>
+            <View
+                android:id="@+id/adminDot"
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:background="@drawable/status_dot"
+                android:layout_marginEnd="10dp" />
 
             <TextView
-                android:id="@+id/tvAdminHint"
-                android:layout_width="match_parent"
+                android:id="@+id/tvAdminStatus"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="13sp"
-                android:textColor="@color/text_secondary"
-                android:layout_marginBottom="16dp" />
-
-            <Button
-                android:id="@+id/btnDeviceAdmin"
-                style="@style/Widget.NdbBlocker.Button"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/btn_enable_admin" />
+                android:textSize="15sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_primary" />
 
         </LinearLayout>
 
-        <!-- Section: Firebase -->
+        <TextView
+            android:id="@+id/tvAdminHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:fontFamily="@font/outfit_light"
+            android:textColor="@color/text_secondary"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/btnDeviceAdmin"
+            style="@style/Widget.NdbBlocker.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_enable_admin" />
+
+        <!-- Divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/divider"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Firebase -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/label_firebase"
-            android:textSize="12sp"
+            android:textSize="11sp"
+            android:fontFamily="@font/outfit_light"
             android:textColor="@color/text_secondary"
-            android:textAllCaps="true"
-            android:letterSpacing="0.1"
-            android:layout_marginBottom="12dp" />
+            android:layout_marginBottom="16dp" />
 
         <LinearLayout
-            style="@style/Widget.NdbBlocker.Card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
 
-            <!-- Project -->
-            <LinearLayout
-                android:layout_width="match_parent"
+            <TextView
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="12dp">
+                android:layout_weight="1"
+                android:text="@string/label_firebase_project"
+                android:textSize="13sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_secondary" />
 
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/label_firebase_project"
-                    android:textSize="13sp"
-                    android:textColor="@color/text_secondary" />
-
-                <TextView
-                    android:id="@+id/tvFirebaseProject"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="14sp"
-                    android:textColor="@color/text_primary" />
-
-            </LinearLayout>
-
-            <!-- FCM Token -->
-            <LinearLayout
-                android:layout_width="match_parent"
+            <TextView
+                android:id="@+id/tvFirebaseProject"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:textSize="13sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_primary" />
 
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/label_fcm_token"
-                    android:textSize="13sp"
-                    android:textColor="@color/text_secondary" />
+        </LinearLayout>
 
-                <View
-                    android:id="@+id/fcmDot"
-                    android:layout_width="8dp"
-                    android:layout_height="8dp"
-                    android:background="@drawable/status_dot"
-                    android:layout_marginEnd="8dp" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-                <TextView
-                    android:id="@+id/tvFcmStatus"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="14sp"
-                    android:textColor="@color/text_primary" />
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/label_fcm_token"
+                android:textSize="13sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_secondary" />
 
-            </LinearLayout>
+            <View
+                android:id="@+id/fcmDot"
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:background="@drawable/status_dot"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/tvFcmStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_primary" />
 
         </LinearLayout>
 

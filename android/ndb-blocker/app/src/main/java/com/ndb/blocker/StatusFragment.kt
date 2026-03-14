@@ -62,7 +62,7 @@ class StatusFragment : Fragment() {
         val running = NdbAccessibilityService.isRunning
         tvProtectionStatus.text = if (running) getString(R.string.status_active) else getString(R.string.status_inactive)
         val protectionDotDrawable = protectionDot.background as? GradientDrawable
-        protectionDotDrawable?.setColor(if (running) 0xFF4CAF50.toInt() else 0xFFF44336.toInt())
+        protectionDotDrawable?.setColor(if (running) 0xFF7A9E7E.toInt() else 0xFF555555.toInt())
 
         // Dashboard state from Firebase
         engine.getDashboardState { dashboard ->
@@ -110,7 +110,7 @@ class StatusFragment : Fragment() {
 
         val pending = dashboard.pendingActions.size
         tvPendingCount.text = pending.toString()
-        tvPendingCount.setTextColor(if (pending == 0) 0xFF4CAF50.toInt() else 0xFFFFD740.toInt())
+        tvPendingCount.setTextColor(if (pending == 0) 0xFF555555.toInt() else 0xFFFFFFFF.toInt())
 
         // Category chips
         chipContainer.removeAllViews()
@@ -153,7 +153,7 @@ class StatusFragment : Fragment() {
                 val domainTv = TextView(requireContext()).apply {
                     text = entry.domain
                     textSize = 13f
-                    setTextColor(0xFFE0E0E0.toInt())
+                    setTextColor(0xFFFFFFFF.toInt())
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 }
                 row.addView(domainTv)
@@ -171,7 +171,7 @@ class StatusFragment : Fragment() {
                 val timeTv = TextView(requireContext()).apply {
                     text = timeText
                     textSize = 12f
-                    setTextColor(0xFFFFD740.toInt())
+                    setTextColor(0xFF555555.toInt())
                 }
                 row.addView(timeTv)
 

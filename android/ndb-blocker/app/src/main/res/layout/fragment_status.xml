@@ -9,23 +9,21 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:padding="24dp">
 
-        <!-- Protection Status Indicator (compact) -->
+        <!-- Protection Status -->
         <LinearLayout
             android:id="@+id/protectionBanner"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp"
-            android:layout_marginBottom="16dp">
+            android:paddingBottom="32dp">
 
             <View
                 android:id="@+id/protectionDot"
-                android:layout_width="8dp"
-                android:layout_height="8dp"
+                android:layout_width="6dp"
+                android:layout_height="6dp"
                 android:background="@drawable/status_dot"
                 android:layout_marginEnd="8dp" />
 
@@ -34,106 +32,93 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textSize="13sp"
+                android:fontFamily="@font/outfit_light"
                 android:textColor="@color/text_secondary" />
 
         </LinearLayout>
 
-        <!-- Stats Row: Apps / DNS / Pending -->
+        <!-- Stats Row -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="32dp">
 
-            <!-- Apps Blocked -->
+            <!-- Apps -->
             <LinearLayout
-                style="@style/Widget.NdbBlocker.Card"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginEnd="6dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/label_apps_blocked"
-                    android:textSize="11sp"
-                    android:textColor="@color/text_secondary"
-                    android:textAllCaps="true"
-                    android:letterSpacing="0.1"
-                    android:layout_marginBottom="8dp" />
+                android:orientation="vertical">
 
                 <TextView
                     android:id="@+id/tvAppsBlocked"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="0"
-                    android:textSize="28sp"
-                    android:textStyle="bold"
-                    android:textColor="#F44336" />
-
-            </LinearLayout>
-
-            <!-- DNS Blocked -->
-            <LinearLayout
-                style="@style/Widget.NdbBlocker.Card"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="6dp"
-                android:layout_marginEnd="6dp">
+                    android:textSize="36sp"
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_primary" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/label_dns_blocked"
+                    android:text="@string/label_apps_blocked"
                     android:textSize="11sp"
-                    android:textColor="@color/text_secondary"
-                    android:textAllCaps="true"
-                    android:letterSpacing="0.1"
-                    android:layout_marginBottom="8dp" />
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_secondary" />
+
+            </LinearLayout>
+
+            <!-- DNS -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
 
                 <TextView
                     android:id="@+id/tvDnsBlocked"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="0"
-                    android:textSize="28sp"
-                    android:textStyle="bold"
-                    android:textColor="#F44336" />
+                    android:textSize="36sp"
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_dns_blocked"
+                    android:textSize="11sp"
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_secondary" />
 
             </LinearLayout>
 
             <!-- Pending -->
             <LinearLayout
-                style="@style/Widget.NdbBlocker.Card"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="6dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/label_pending"
-                    android:textSize="11sp"
-                    android:textColor="@color/text_secondary"
-                    android:textAllCaps="true"
-                    android:letterSpacing="0.1"
-                    android:layout_marginBottom="8dp" />
+                android:orientation="vertical">
 
                 <TextView
                     android:id="@+id/tvPendingCount"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="0"
-                    android:textSize="28sp"
-                    android:textStyle="bold"
-                    android:textColor="#4CAF50" />
+                    android:textSize="36sp"
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_secondary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_pending"
+                    android:textSize="11sp"
+                    android:fontFamily="@font/outfit_light"
+                    android:textColor="@color/text_secondary" />
 
             </LinearLayout>
 
@@ -145,10 +130,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/label_categories"
-            android:textSize="12sp"
+            android:textSize="11sp"
+            android:fontFamily="@font/outfit_light"
             android:textColor="@color/text_secondary"
-            android:textAllCaps="true"
-            android:letterSpacing="0.1"
             android:layout_marginBottom="10dp"
             android:visibility="gone" />
 
@@ -157,7 +141,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:scrollbars="none"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="32dp"
             android:visibility="gone">
 
             <LinearLayout
@@ -170,51 +154,54 @@
 
         <!-- Last Sync -->
         <LinearLayout
-            style="@style/Widget.NdbBlocker.Card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="24dp">
 
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="@string/label_last_sync"
-                android:textSize="12sp"
-                android:textColor="@color/text_secondary"
-                android:textAllCaps="true"
-                android:letterSpacing="0.1" />
+                android:textSize="13sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_secondary" />
 
             <TextView
                 android:id="@+id/tvLastSync"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="14sp"
+                android:textSize="13sp"
+                android:fontFamily="@font/outfit_light"
                 android:textColor="@color/text_primary" />
 
         </LinearLayout>
 
-        <!-- Pending Actions Card (conditional) -->
+        <!-- Divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/divider"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Pending Actions (conditional) -->
         <LinearLayout
             android:id="@+id/pendingCard"
-            style="@style/Widget.NdbBlocker.Card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="24dp"
             android:visibility="gone">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/label_upcoming_changes"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:textColor="#FFD740"
-                android:textAllCaps="true"
-                android:letterSpacing="0.1"
+                android:textSize="11sp"
+                android:fontFamily="@font/outfit_light"
+                android:textColor="@color/text_secondary"
                 android:layout_marginBottom="12dp" />
 
             <LinearLayout

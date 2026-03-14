@@ -9,42 +9,31 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
-
-        <!-- Header -->
-        <TextView
-            android:id="@+id/tvAllowedHeader"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/tab_allowed"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:textColor="@color/text_primary"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="8dp" />
+        android:padding="24dp">
 
         <TextView
             android:id="@+id/tvAllowedSummary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
+            android:textSize="13sp"
+            android:fontFamily="@font/outfit_light"
             android:textColor="@color/text_secondary"
-            android:layout_marginBottom="20dp" />
+            android:paddingTop="16dp"
+            android:layout_marginBottom="24dp" />
 
-        <!-- Allowed Apps List -->
         <LinearLayout
             android:id="@+id/allowedListContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical" />
 
-        <!-- Empty State -->
         <TextView
             android:id="@+id/tvEmptyAllowed"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/empty_allowed"
-            android:textSize="14sp"
+            android:textSize="13sp"
+            android:fontFamily="@font/outfit_light"
             android:textColor="@color/text_secondary"
             android:gravity="center"
             android:paddingTop="40dp"

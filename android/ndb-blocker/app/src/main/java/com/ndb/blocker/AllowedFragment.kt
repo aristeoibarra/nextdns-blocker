@@ -59,9 +59,9 @@ class AllowedFragment : Fragment() {
         // Apps Allowed section
         if (allowedApps.isNotEmpty()) {
             val section = CollapsibleSection(requireContext())
-            section.setTitle("APPS ALLOWED")
+            section.setTitle("Apps")
             section.setCount(allowedApps.size)
-            section.setBarColor(0xFF4CAF50.toInt())
+            section.setBarColor(0xFF7A9E7E.toInt())
 
             val body = section.getContentContainer()
             for (entry in allowedApps.sortedBy { it.name }) {
@@ -83,9 +83,9 @@ class AllowedFragment : Fragment() {
         // Domains Allowed section
         if (allowedDomains.isNotEmpty()) {
             val section = CollapsibleSection(requireContext())
-            section.setTitle("DOMAINS ALLOWED")
+            section.setTitle("Domains")
             section.setCount(allowedDomains.size)
-            section.setBarColor(0xFF4CAF50.toInt())
+            section.setBarColor(0xFF7A9E7E.toInt())
 
             val body = section.getContentContainer()
             for (d in allowedDomains.sortedBy { it.domain }) {
@@ -97,7 +97,7 @@ class AllowedFragment : Fragment() {
 
                 val bar = View(requireContext()).apply {
                     layoutParams = LinearLayout.LayoutParams(3, 28).apply { marginEnd = 12 }
-                    setBackgroundColor(0xFF4CAF50.toInt())
+                    setBackgroundColor(0xFF7A9E7E.toInt())
                 }
                 row.addView(bar)
 
@@ -109,7 +109,7 @@ class AllowedFragment : Fragment() {
                 val domainTv = TextView(requireContext()).apply {
                     text = d.domain
                     textSize = 13f
-                    setTextColor(0xFFE0E0E0.toInt())
+                    setTextColor(0xFFFFFFFF.toInt())
                     typeface = Typeface.MONOSPACE
                 }
                 textCol.addView(domainTv)
@@ -118,7 +118,7 @@ class AllowedFragment : Fragment() {
                     val descTv = TextView(requireContext()).apply {
                         text = d.description
                         textSize = 11f
-                        setTextColor(0xFF666666.toInt())
+                        setTextColor(0xFF444444.toInt())
                     }
                     textCol.addView(descTv)
                 }

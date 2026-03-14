@@ -7,12 +7,12 @@
     android:paddingVertical="10dp"
     android:paddingHorizontal="4dp">
 
-    <!-- Green indicator -->
+    <!-- Indicator -->
     <View
         android:id="@+id/colorBar"
-        android:layout_width="3dp"
-        android:layout_height="36dp"
-        android:background="@color/accent_green"
+        android:layout_width="2dp"
+        android:layout_height="28dp"
+        android:background="@color/accent"
         android:layout_marginEnd="12dp" />
 
     <!-- App info -->
@@ -27,7 +27,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="15sp"
-            android:textStyle="bold"
+            android:fontFamily="@font/outfit_light"
             android:textColor="@color/text_primary" />
 
         <TextView
@@ -35,7 +35,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="11sp"
-            android:textColor="#555555"
+            android:textColor="#333333"
             android:fontFamily="monospace"
             android:layout_marginTop="2dp" />
 
@@ -50,6 +50,7 @@
         android:paddingHorizontal="8dp"
         android:paddingVertical="3dp"
         android:textSize="10sp"
-        android:textColor="@color/accent_green" />
+        android:fontFamily="@font/outfit_light"
+        android:textColor="@color/accent" />
 
 </LinearLayout>

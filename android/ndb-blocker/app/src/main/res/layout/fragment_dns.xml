@@ -9,41 +9,31 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
-
-        <!-- Header -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/tab_dns"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:textColor="@color/text_primary"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="8dp" />
+        android:padding="24dp">
 
         <TextView
             android:id="@+id/tvDnsSummary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
+            android:textSize="13sp"
+            android:fontFamily="@font/outfit_light"
             android:textColor="@color/text_secondary"
+            android:paddingTop="16dp"
             android:layout_marginBottom="24dp" />
 
-        <!-- Categories + Domains -->
         <LinearLayout
             android:id="@+id/dnsListContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical" />
 
-        <!-- Empty State -->
         <TextView
             android:id="@+id/tvEmptyDns"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/empty_dns"
-            android:textSize="14sp"
+            android:textSize="13sp"
+            android:fontFamily="@font/outfit_light"
             android:textColor="@color/text_secondary"
             android:gravity="center"
             android:paddingTop="40dp"

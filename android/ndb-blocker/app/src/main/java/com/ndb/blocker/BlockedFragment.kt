@@ -68,7 +68,7 @@ class BlockedFragment : Fragment() {
             val color = if (group.startsWith("category:")) {
                 Categories.colorForReason(group)
             } else {
-                0xFFBB86FC.toInt()
+                0xFF555555.toInt()
             }
 
             val row = LinearLayout(requireContext()).apply {
@@ -106,7 +106,7 @@ class BlockedFragment : Fragment() {
             val color = if (group.startsWith("category:")) {
                 Categories.colorForReason(group)
             } else {
-                0xFFBB86FC.toInt()
+                0xFF555555.toInt()
             }
             section.setBarColor(color)
 
@@ -141,10 +141,10 @@ class BlockedFragment : Fragment() {
         return when {
             group.startsWith("category:") -> {
                 val catId = group.removePrefix("category:")
-                Categories.get(catId).displayName.uppercase()
+                Categories.get(catId).displayName
             }
-            group == "denylist" -> "DENYLIST"
-            else -> group.uppercase()
+            group == "denylist" -> "Denylist"
+            else -> group.replaceFirstChar { it.uppercase() }
         }
     }
 }
