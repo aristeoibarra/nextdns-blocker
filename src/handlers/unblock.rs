@@ -62,15 +62,24 @@ pub fn handle(args: UnblockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
-    // Unblock from /etc/hosts (only for domains)
+    // Unblock from /etc/hosts only if domain is currently in hosts
+    // (hosts are only added via explicit --hosts flag, so only remove if present)
     let hosts_unblocked = if matches!(target_kind, UnblockTarget::Domain) {
-        crate::hosts_blocker::unblock_hosts_for_domain(&db, &args.target)
-            .unwrap_or_else(|e| {
-                let _ = db.with_conn(|conn| {
-                    crate::db::audit::log_action(conn, "unblock_hosts_failed", "hosts", &e.to_string(), None, "cli")
-                });
-                Vec::new()
-            })
+        let in_hosts = db.with_conn(|conn| {
+            let entries = crate::db::hosts::list_host_entries(conn)?;
+            Ok::<bool, rusqlite::Error>(entries.iter().any(|e| e.domain == args.target || e.source_domain.as_deref() == Some(&args.target)))
+        }).unwrap_or(false);
+        if in_hosts {
+            crate::hosts_blocker::unblock_hosts_for_domain(&db, &args.target)
+                .unwrap_or_else(|e| {
+                    let _ = db.with_conn(|conn| {
+                        crate::db::audit::log_action(conn, "unblock_hosts_failed", "hosts", &e.to_string(), None, "cli")
+                    });
+                    Vec::new()
+                })
+        } else {
+            Vec::new()
+        }
     } else {
         Vec::new()
     };

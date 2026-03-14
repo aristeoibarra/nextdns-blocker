@@ -109,20 +109,25 @@ pub fn handle(args: BlockArgs) -> Result<ExitCode, AppError> {
         });
     }
 
-    // Block domains in /etc/hosts
-    let hosts_blocked = crate::hosts_blocker::block_hosts_for_domains(&db, &added)
-        .unwrap_or_else(|e| {
-            let _ = db.with_conn(|conn| {
-                crate::db::audit::log_action(conn, "block_hosts_failed", "hosts", &e.to_string(), None, "cli")
+    // Block domains in /etc/hosts (only if --hosts flag is set)
+    let hosts_blocked = if args.hosts {
+        let blocked = crate::hosts_blocker::block_hosts_for_domains(&db, &added)
+            .unwrap_or_else(|e| {
+                let _ = db.with_conn(|conn| {
+                    crate::db::audit::log_action(conn, "block_hosts_failed", "hosts", &e.to_string(), None, "cli")
+                });
+                partial_failures.push(format!("Hosts blocking failed: {e}"));
+                Vec::new()
             });
-            partial_failures.push(format!("Hosts blocking failed: {e}"));
-            Vec::new()
-        });
-    for domain in &hosts_blocked {
-        let _ = db.with_conn(|conn| {
-            crate::db::audit::log_action(conn, "block_hosts", "hosts", domain, None, "cli")
-        });
-    }
+        for domain in &blocked {
+            let _ = db.with_conn(|conn| {
+                crate::db::audit::log_action(conn, "block_hosts", "hosts", domain, None, "cli")
+            });
+        }
+        blocked
+    } else {
+        Vec::new()
+    };
 
     // Close browser tabs for newly blocked domains
     let tabs_closed = crate::browser_blocker::close_tabs_for_domains(&added);
